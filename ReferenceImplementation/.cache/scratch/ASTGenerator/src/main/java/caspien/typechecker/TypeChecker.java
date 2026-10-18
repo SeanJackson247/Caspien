@@ -38,6 +38,7 @@ public final class TypeChecker {
     public final TypeCheckerCalls calls = new TypeCheckerCalls(this);
     public final TypeCheckerLocksAndProofs locksAndProofs = new TypeCheckerLocksAndProofs(this);
     public final TypeCheckerAccessAndAsync accessAndAsync = new TypeCheckerAccessAndAsync(this);
+    public final TypeCheckerLifetimes lifetimes = new TypeCheckerLifetimes(this);
     public final CheckDriver driver = new CheckDriver(this);
 
     /** The public entry point; the checker's state is public through the part fields (`model` holds most of it). */

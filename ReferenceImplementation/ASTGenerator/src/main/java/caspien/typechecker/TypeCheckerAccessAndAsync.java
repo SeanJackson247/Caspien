@@ -278,6 +278,7 @@ public final class TypeCheckerAccessAndAsync {
             throw new CompilerException("type", op.file, op.line,
                     "use of '" + slotKey + "' after its ownership was moved");
         }
+        hub.lifetimes.onMemberRead(op, scope, memberType);
         return memberType;
     }
 

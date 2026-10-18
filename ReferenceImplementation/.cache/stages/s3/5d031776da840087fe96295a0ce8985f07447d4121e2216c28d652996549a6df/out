@@ -1,0 +1,621 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "float arithmetic"
+STRING string_id4 "float compares"
+STRING string_id5 "float args and return"
+STRING string_id6 "float select"
+STRING string_id7 "sqrtf of an expression"
+STRING string_id8 "u8 wraps on store"
+STRING string_id9 "u8 compare"
+STRING string_id10 "u16 wraps on store"
+STRING string_id11 "u32 wraps on store"
+STRING string_id12 "u32 compare with wrapped sum"
+STRING string_id13 "s8 signed compare"
+STRING string_id14 "s8 sum"
+STRING string_id15 "s32 signed compares"
+STRING string_id16 "narrow return value"
+STRING string_id17 "u32 loop counter"
+STRING string_id18 "read-modify-write"
+STRING string_id19 "register arguments"
+STRING string_id20 "nested argument expressions"
+STRING string_id21 "static u64 array read/write"
+STRING string_id22 "static f32 array read/write"
+STRING string_id23 "static scalar update"
+STRING string_id24 "static float update"
+STRING string_id25 "struct u64 field"
+STRING string_id26 "struct u32 field wraps"
+STRING string_id27 "struct u8 field wraps"
+STRING string_id28 "struct f32 field"
+GLOBAL ga 40
+GLOBAL ga.0 8 1
+GLOBAL ga.1 8 2
+GLOBAL ga.2 8 3
+GLOBAL ga.3 8 4
+GLOBAL ga.4 8 5
+GLOBAL gf 16
+GLOBAL gf.0 4 1.5
+GLOBAL gf.1 4 2.5
+GLOBAL gf.2 4 3.5
+GLOBAL gf.3 4 4.5
+GLOBAL gs 8 0
+GLOBAL gg 4 0.5
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN sqrtf mut_f32 mut_f32
+STRUCT_PADDING 7
+FUNC_START check
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-9
+PUSH 1 ARG1
+ASSIGN 1 1 1
+PUSH 1 $-9
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_1:
+RET 0
+FUNC_END
+FUNC_START fmul
+ALLOC 16
+ADDR 4 $-4
+PUSH 4 FARG0
+ASSIGN 4 4 4
+ADDR 4 $-8
+PUSH 4 FARG1
+ASSIGN 4 4 4
+R_FBIN MUL 4 %t0 $-4 $-8
+R_FBIN ADD 4 %t0 %t0 #1056964608
+R_RETF %t0
+FUNC_END
+FUNC_START fsel
+ALLOC 16
+ADDR 4 $-4
+PUSH 4 FARG0
+ASSIGN 4 4 4
+ADDR 4 $-8
+PUSH 4 FARG1
+ASSIGN 4 4 4
+R_BRC LT F4 $-4 $-8 @end_of_if_3
+R_FBIN SUB 4 %t0 $-8 $-4
+R_RETF %t0
+@end_of_if_3:
+R_FBIN SUB 4 %t0 $-4 $-8
+R_RETF %t0
+FUNC_END
+FUNC_START addu
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-8 #100
+R_BIN MUL 8 %t1 $-16 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_BIN ADD 8 %t0 %t0 $-24
+R_RET %t0
+FUNC_END
+FUNC_START bump
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 %t1 $-8
+R_LDD 8 %t1 %t1 8
+R_BIN ADD 8 %t1 %t1 #5
+R_STD 8 %t0 8 %t1
+R_MOV 8 %t0 $-8
+R_MOV 8 %t1 $-8
+R_LDD 4 %t1 %t1 16
+R_BIN ADD 4 %t1 %t1 #7
+R_STD 4 %t0 16 %t1
+R_MOV 8 %t0 $-8
+R_MOV 8 %t1 $-8
+R_LDD 1 %t1 %t1 24
+R_BIN ADD 1 %t1 %t1 #1
+R_STD 1 %t0 24 %t1
+R_MOV 8 %t0 $-8
+R_MOV 8 %t1 $-8
+R_LDD 4 %t1 %t1 20
+R_FBIN MUL 4 %t1 %t1 #1073741824
+R_FBIN ADD 4 %t1 %t1 #1065353216
+R_STD 4 %t0 20 %t1
+RET 0
+FUNC_END
+FUNC_START retNarrow
+ALLOC 16
+ADDR 1 $-1
+PUSH 1 ARG0
+ASSIGN 1 1 1
+ADDR 1 $-2
+PUSH 1 ARG1
+ASSIGN 1 1 1
+R_LD 1 %t0 $-1
+R_LD 1 %t1 $-2
+R_BIN ADD 1 %t0 %t0 %t1
+R_RET %t0
+FUNC_END
+FUNC_START main
+ALLOC 256
+R_SETV 4 %v2 #1069547520
+R_ST 4 $-8 #1074790400
+R_ST 4 $-12 #0
+R_MOV 8 %v1 #0
+R_FBIN ADD 4 %t0 %v2 $-8
+R_FBIN MUL 4 %t0 %t0 %v2
+R_FBIN DIV 4 %t1 $-8 %v2
+R_FBIN SUB 4 %t0 %t0 %t1
+R_ST 4 $-12 %t0
+R_BRC LT F4 %v2 $-8 @end_of_if_4
+R_RMW ADD 8 %v1 #1
+@end_of_if_4:
+R_BRC GT F4 %v2 $-8 @end_of_if_5
+R_RMW ADD 8 %v1 #2
+@end_of_if_5:
+R_BRC LT_EQ F4 %v2 $-8 @end_of_if_6
+R_RMW ADD 8 %v1 #4
+@end_of_if_6:
+R_BRC GT_EQ F4 %v2 $-8 @end_of_if_7
+R_RMW ADD 8 %v1 #8
+@end_of_if_7:
+R_BRC EQ F4 %v2 #1069547520 @end_of_if_8
+R_RMW ADD 8 %v1 #16
+@end_of_if_8:
+R_BRC NEQ F4 %v2 $-8 @end_of_if_9
+R_RMW ADD 8 %v1 #32
+@end_of_if_9:
+R_SETV 1 %v0 #0
+R_FCMP EQ 4 %t0 $-12 #1082392576
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_BIN EQ 8 %t0 %v1 #53
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_ST 4 $-32 #0
+R_ST 4 $-36 #0
+R_ST 4 $-40 #0
+ADDR 4 $-32
+CC_START sysv_x64
+R_FBIN ADD 4 %t0 %v2 #1056964608
+R_FARG 0 8 %t0
+R_FARG 1 4 $-8
+CALL fmul
+CC_END sysv_x64
+PUSH_RET_FLOAT 4
+ASSIGN 4 4 4
+ADDR 4 $-36
+CC_START sysv_x64
+R_FARG 0 4 %v2
+R_FARG 1 4 $-8
+CALL fsel
+CC_END sysv_x64
+PUSH_RET_FLOAT 4
+CC_START sysv_x64
+R_FARG 0 4 $-8
+R_FARG 1 4 %v2
+CALL fsel
+CC_END sysv_x64
+PUSH_RET_FLOAT 4
+ADD_FLOAT 4
+ASSIGN 4 4 4
+ADDR 4 $-40
+CC_START sysv_x64
+R_FBIN MUL 4 %t0 %v2 #1086324736
+R_FBIN ADD 4 %t0 %t0 #1088421888
+R_FARG 0 8 %t0
+CALL sqrtf 1
+CC_END sysv_x64
+PUSH_RET_FLOAT 4
+ASSIGN 4 4 4
+R_FCMP EQ 4 %t0 $-32 #1084227584
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+R_FCMP EQ 4 %t0 $-36 #1069547520
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+R_FCMP EQ 4 %t0 $-40 #1082130432
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+R_ST 1 $-41 #200
+R_ST 1 $-42 #100
+R_ST 1 $-43 #0
+R_LD 1 %t0 $-41
+R_LD 1 %t1 $-42
+R_BIN ADD 1 %t0 %t0 %t1
+R_ST 1 $-43 %t0
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+R_LD 1 %t0 $-43
+R_BIN EQ 1 %t0 %t0 #44
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_LD 1 %t0 $-41
+R_LD 1 %t1 $-42
+R_BIN GT 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_ST 2 $-46 #65000
+R_ST 2 $-48 #1000
+R_ST 2 $-50 #0
+R_LD 2 %t0 $-46
+R_LD 2 %t1 $-48
+R_BIN ADD 2 %t0 %t0 %t1
+R_ST 2 $-50 %t0
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+R_LD 2 %t0 $-50
+R_BIN EQ 2 %t0 %t0 #464
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_ST 4 $-56 #4000000000
+R_ST 4 $-60 #500000000
+R_ST 4 $-64 #0
+R_LD 4 %t0 $-56
+R_LD 4 %t1 $-60
+R_BIN ADD 4 %t0 %t0 %t1
+R_ST 4 $-64 %t0
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+R_LD 4 %t0 $-64
+R_BIN EQ 4 %t0 %t0 #205032704
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id12
+POP ARG0 8
+R_LD 4 %t0 $-56
+R_LD 4 %t1 $-60
+R_BIN ADD 4 %t0 %t0 %t1
+R_BIN EQ 4 %t0 %t0 #205032704
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_ST 1 $-65 #-100
+R_ST 1 $-66 #50
+R_ST 1 $-67 #0
+R_LD 1 %t0 $-65
+R_LD 1 %t1 $-66
+R_BIN ADD 1 %t0 %t0 %t1
+R_ST 1 $-67 %t0
+CC_START sysv_x64
+PUSH 8 string_id13
+POP ARG0 8
+R_LD 1 %t0 $-65
+R_LD 1 %t1 $-66
+R_BIN SLT 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id14
+POP ARG0 8
+R_LD 1 %t0 $-67
+R_BIN EQ 1 %t0 %t0 #-50
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_ST 4 $-72 #-5
+R_ST 4 $-76 #3
+CC_START sysv_x64
+PUSH 8 string_id15
+POP ARG0 8
+R_LD 4 %t0 $-72
+R_LD 4 %t1 $-76
+R_BIN SLT 4 %t0 %t0 %t1
+R_LD 4 %t1 $-76
+R_LD 4 %t2 $-72
+R_BIN SGT 4 %t1 %t1 %t2
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id16
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #200
+R_ARG 1 8 #100
+CALL retNarrow
+CC_END sysv_x64
+PUSH_RET_INT 1
+PUSH 1 44
+EQ_INT 1
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+R_SETV 4 %v1 #0
+R_SETV 4 %v0 #0
+@loop_10:
+R_MOV 8 %t0 %v0
+R_BIN ADD 4 %t0 %t0 #1
+R_SETV 4 %v0 %t0
+R_MOV 8 %t0 %v0
+R_BRC LT_EQ 4 %t0 #10 @loop_end_11
+@end_of_if_12:
+R_MOV 8 %t0 %v1
+R_MOV 8 %t1 %v0
+R_BIN ADD 4 %t0 %t0 %t1
+R_SETV 4 %v1 %t0
+JMP @loop_10
+@loop_end_11:
+CC_START sysv_x64
+PUSH 8 string_id17
+POP ARG0 8
+R_MOV 8 %t0 %v1
+R_BIN EQ 4 %t0 %t0 #55
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_MOV 8 %v0 #10
+R_MOV 8 $-104 #3
+R_RMW ADD 8 %v0 #5
+R_RMW SUB 8 %v0 $-104
+R_BIN MUL 8 %t0 $-104 #2
+R_RMW ADD 8 %v0 %t0
+R_RMW INC 8 %v0
+R_RMW DEC 8 %v0
+R_RMW INC 8 %v0
+CC_START sysv_x64
+PUSH 8 string_id18
+POP ARG0 8
+R_BIN EQ 8 %t0 %v0 #19
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id19
+POP ARG0 8
+CC_START sysv_x64
+R_BIN SUB 8 %t0 %v0 #18
+R_ARG 0 8 %t0
+R_BIN ADD 8 %t0 $-104 #1
+R_ARG 1 8 %t0
+R_BIN SUB 8 %t0 %v0 #14
+R_ARG 2 8 %t0
+CALL addu
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 145
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id20
+POP ARG0 8
+CC_START sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_ARG 1 8 #0
+R_ARG 2 8 #1
+CALL addu
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_ARG 1 8 #1
+R_ARG 2 8 #0
+CALL addu
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+R_ARG 1 8 #0
+R_ARG 2 8 #0
+CALL addu
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG2 8
+CALL addu
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_BIN MUL 8 %t0 #1 #100
+R_BIN MUL 8 %t1 #10 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_BIN ADD 8 %t0 %t0 #100
+R_PUSH 8 %t0
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+R_MOV 8 %v2 #0
+R_SETV 4 %v1 #0
+R_MOV 8 $-136 #0
+R_MOV 8 $-128 #5
+R_MOV 8 %v0 $-136
+@for_13:
+R_BRC LT 8 %v0 $-128 @for_end_14
+R_LDI 8 %t1 &ga %v0 8
+R_BIN MUL 8 %t1 %t1 #2
+R_BIN ADD 8 %t1 %t1 %v0
+R_STI 8 &ga %v0 8 %t1
+R_RMW INC 8 %v0
+JMP @for_13
+@for_end_14:
+R_MOV 8 $-160 #0
+R_MOV 8 $-152 #5
+R_MOV 8 %v0 $-160
+@for_15:
+R_BRC LT 8 %v0 $-152 @for_end_16
+R_LDI 8 %t0 &ga %v0 8
+R_RMW ADD 8 %v2 %t0
+R_RMW INC 8 %v0
+JMP @for_15
+@for_end_16:
+R_MOV 8 $-184 #0
+R_MOV 8 $-176 #4
+R_MOV 8 %v0 $-184
+@for_17:
+R_BRC LT 8 %v0 $-176 @for_end_18
+R_LDI 4 %t1 &gf %v0 4
+R_LDI 4 %t2 &gf %v0 4
+R_FBIN MUL 4 %t2 %t2 #1056964608
+R_FBIN ADD 4 %t1 %t1 %t2
+R_STI 4 &gf %v0 4 %t1
+R_RMW INC 8 %v0
+JMP @for_17
+@for_end_18:
+R_MOV 8 $-208 #0
+R_MOV 8 $-200 #4
+R_MOV 8 %v0 $-208
+@for_19:
+R_BRC LT 8 %v0 $-200 @for_end_20
+R_LDI 4 %t0 &gf %v0 4
+R_FBIN ADD 4 %t0 %v1 %t0
+R_SETV 4 %v1 %t0
+R_RMW INC 8 %v0
+JMP @for_19
+@for_end_20:
+R_LD 8 %t0 &gs
+R_BIN ADD 8 %t0 %t0 #7
+R_ST 8 &gs %t0
+R_LD 8 %t0 &gs
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &gs %t0
+R_LD 4 %t0 &gg
+R_FBIN MUL 4 %t0 %t0 #1082130432
+R_ST 4 &gg %t0
+CC_START sysv_x64
+PUSH 8 string_id21
+POP ARG0 8
+R_BIN EQ 8 %t0 %v2 #40
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_FCMP EQ 4 %t0 %v1 #1099956224
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id22
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+R_LD 8 %t0 &gs
+R_BIN EQ 8 %t0 %t0 #8
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id23
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+R_LD 4 %t0 &gg
+R_FCMP EQ 4 %t0 %t0 #1073741824
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id24
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+ADDR 32 $-248
+PUSH 8 0
+PUSH 8 100
+PUSH 4 4000000000
+PUSH 4 1.5
+PUSH 1 255
+STACK_LOCK 7
+ASSIGN 32 32 32 m8 m8 m4 m4 m1 p7
+CC_START sysv_x64
+PUSH 32 $-248
+ADDR_OF AUTO $-248
+POP ARG0 8
+CALL bump
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 32 $-248
+ADDR_OF AUTO $-248
+POP ARG0 8
+CALL bump
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id25
+POP ARG0 8
+R_BIN EQ 8 %t0 $-240 #110
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id26
+POP ARG0 8
+R_LD 4 %t0 $-232
+R_BIN EQ 4 %t0 %t0 #4000000014
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id27
+POP ARG0 8
+R_LD 1 %t0 $-224
+R_BIN EQ 1 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_FCMP EQ 4 %t0 $-228 #1091567616
+R_SETV 1 %v0 %t0
+CC_START sysv_x64
+PUSH 8 string_id28
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+RET 0
+FUNC_END

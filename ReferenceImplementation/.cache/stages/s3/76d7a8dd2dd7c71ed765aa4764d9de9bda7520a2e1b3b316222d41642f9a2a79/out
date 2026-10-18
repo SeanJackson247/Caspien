@@ -1,0 +1,471 @@
+STRING string_id1 "done"
+STRING string_id2 "PASS doc_comment_test\n"
+STRING string_id3 "FAIL doc_comment_test %llu %llu %llu %llu %llu %llu %llu %llu\n"
+GLOBAL box 24
+GLOBAL box.___type 8 0
+GLOBAL box.gate 8 0
+GLOBAL box.n 8 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START inc
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BIN ADD 8 %t0 $-24 #1
+R_RET %t0
+FUNC_END
+FUNC_START k_lock_retry
+ALLOC 48
+R_MOV 8 %v0 #0
+R_MOV 8 $-32 #0
+R_MOV 8 $-40 #1000000
+@loop_1:
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_4
+R_MOV 8 %v0 #1
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_2
+@if_branch_4:
+R_RMW INC 8 $-32
+R_BRC LT_EQ 8 $-32 $-40 @loop_end_2
+@end_of_if_5:
+JMP @loop_1
+@end_of_if_3:
+JMP @loop_1
+@loop_end_2:
+R_RET %v0
+FUNC_END
+FUNC_START k_lock_try
+ALLOC 32
+R_MOV 8 %v0 #0
+@loop_6:
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_9
+R_MOV 8 %v0 #1
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_7
+@if_branch_9:
+JMP @loop_end_7
+@end_of_if_8:
+JMP @loop_6
+@loop_end_7:
+R_RET %v0
+FUNC_END
+FUNC_START k_bounded
+ALLOC 48
+R_MOV 8 %v1 #0
+R_MOV 8 $-40 #0
+R_MOV 8 %v2 #4
+R_MOV 8 %v0 $-40
+@for_10:
+R_BRC LT 8 %v0 %v2 @for_end_11
+R_RMW ADD 8 %v1 %v0
+R_RMW INC 8 %v0
+JMP @for_10
+@for_end_11:
+R_RET %v1
+FUNC_END
+FUNC_START k_finite
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %v1 #0
+R_MOV 8 $-48 #0
+R_MOV 8 %v2 $-24
+R_MOV 8 %v0 $-48
+@for_12:
+R_BRC LT 8 %v0 %v2 @for_end_13
+R_RMW ADD 8 %v1 %v0
+R_RMW INC 8 %v0
+JMP @for_12
+@for_end_13:
+R_RET %v1
+FUNC_END
+FUNC_START k_unbounded
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %v0 #0
+@loop_14:
+R_RMW ADD 8 %v0 #1
+R_BRC LT_EQ 8 %v0 $-24 @loop_end_15
+@end_of_if_16:
+JMP @loop_14
+@loop_end_15:
+R_RET %v0
+FUNC_END
+FUNC_START k_unbounded_throw
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %v0 #0
+@loop_17:
+R_RMW ADD 8 %v0 #1
+R_BRC GT 8 %v0 $-24 @end_of_if_19
+THROW string_id1
+ADDR 8 $-16
+PUSH 8 string_id1
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_19:
+JMP @loop_17
+@loop_end_18:
+FUNC_END
+FUNC_START k_unbounded_return
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %v0 #0
+@loop_20:
+R_RMW ADD 8 %v0 #1
+R_BRC GT 8 %v0 $-24 @end_of_if_22
+R_RET %v0
+@end_of_if_22:
+JMP @loop_20
+@loop_end_21:
+FUNC_END
+FUNC_START k_forever
+ALLOC 32
+R_MOV 8 %v0 #0
+@loop_23:
+R_RMW ADD 8 %v0 #1
+JMP @loop_23
+@loop_end_24:
+FUNC_END
+FUNC_START k_maybe_forever
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-24 #0 @end_of_if_25
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__k_maybe_forever_26 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_forever
+CC_END sysv_x64
+@end_of_if_25:
+R_RET $-24
+JMP @end_of_gt_callsites__k_maybe_forever_27
+@gt_callsite__k_maybe_forever_26:
+GT_UNWIND MSG
+@end_of_gt_callsites__k_maybe_forever_27:
+FUNC_END
+FUNC_START k_calls_forever
+ALLOC 16
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__k_calls_forever_28 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_forever
+CC_END sysv_x64
+JMP @end_of_gt_callsites__k_calls_forever_29
+@gt_callsite__k_calls_forever_28:
+GT_UNWIND MSG
+@end_of_gt_callsites__k_calls_forever_29:
+FUNC_END
+FUNC_START k_calls_finite
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__k_calls_finite_30 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL k_finite
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-32
+JMP @end_of_gt_callsites__k_calls_finite_31
+@gt_callsite__k_calls_finite_30:
+GT_UNWIND MSG
+@end_of_gt_callsites__k_calls_finite_31:
+FUNC_END
+FUNC_START k_calls_bounded
+ALLOC 32
+ADDR 8 $-24
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__k_calls_bounded_32 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #3
+CALL k_finite
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-24
+JMP @end_of_gt_callsites__k_calls_bounded_33
+@gt_callsite__k_calls_bounded_32:
+GT_UNWIND MSG
+@end_of_gt_callsites__k_calls_bounded_33:
+FUNC_END
+FUNC_START k_indirect
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 inc
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 $-24
+PUSH 8 5
+POP ARG0 8
+INVOKE 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-32
+FUNC_END
+FUNC_START k_try
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__k_try_35
+@catch_34:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+R_RET #0
+@end_of_catches__k_try_35:
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @catch_34 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL k_unbounded_throw
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-32
+FUNC_END
+FUNC_START main
+ALLOC 96
+ADDR 8 $-24
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_36 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_bounded
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_37 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #3
+CALL k_finite
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_38 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #2
+CALL k_unbounded
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_39 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #2
+CALL k_unbounded_return
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-56
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_40 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #2
+CALL k_calls_finite
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_41 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_calls_bounded
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-72
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_42 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_indirect
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-80
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_43 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_lock_retry
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_44 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_lock_try
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-24 #12345 @end_of_if_45
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_46 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL k_calls_forever
+CC_END sysv_x64
+ADDR 8 $-88
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_47 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+CALL k_maybe_forever
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-96
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_48 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL k_try
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BIN ADD 8 %t0 $-88 $-96
+R_RMW ADD 8 $-24 %t0
+@end_of_if_45:
+R_BIN EQ 8 %t0 $-24 #6
+R_BIN EQ 8 %t1 $-32 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 $-40 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 $-48 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 $-56 #1
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 $-64 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 $-72 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 $-80 #2
+R_BIN AND 1 %t0 %t0 %t1
+R_BRF %t0 @if_branch_50
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+JMP @end_of_if_49
+@if_branch_50:
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_ARG 1 8 $-24
+R_ARG 2 8 $-32
+R_ARG 3 8 $-40
+R_ARG 4 8 $-48
+R_ARG 5 8 $-56
+PUSH 8 $-64
+PUSH 8 $-72
+PUSH 8 $-80
+VARARGS_XMM_COUNT 0
+CALL printf 9
+CC_END sysv_x64
+@end_of_if_49:
+JMP @end_of_gt_callsites__main_51
+@gt_callsite__main_36:
+EXIT
+@gt_callsite__main_37:
+EXIT
+@gt_callsite__main_38:
+EXIT
+@gt_callsite__main_39:
+EXIT
+@gt_callsite__main_40:
+EXIT
+@gt_callsite__main_41:
+EXIT
+@gt_callsite__main_42:
+EXIT
+@gt_callsite__main_43:
+EXIT
+@gt_callsite__main_44:
+EXIT
+@gt_callsite__main_46:
+EXIT
+@gt_callsite__main_47:
+EXIT
+@gt_callsite__main_48:
+EXIT
+@end_of_gt_callsites__main_51:
+FUNC_END

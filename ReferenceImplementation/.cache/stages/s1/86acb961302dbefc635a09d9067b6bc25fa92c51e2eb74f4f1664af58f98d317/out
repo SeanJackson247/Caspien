@@ -1,0 +1,450 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "P: member of element 1 sits at sizeof(P)+8"
+STRING string_id4 "P: member of element 2 sits at 2*sizeof(P)+8"
+STRING string_id5 "P: static initialiser equals the runtime sizeof"
+STRING string_id6 "Q: stride is sizeof(Q) (z of element 0 and 1)"
+STRING string_id7 "Q: static initialiser equals the runtime sizeof"
+STRING string_id8 "Box<u64>: static initialiser equals the runtime sizeof"
+STRING string_id9 "raw P ++ steps sizeof(P) bytes (writes t.b)"
+STRING string_id10 "Two: sizeof is the sum of its two Ps plus ___type"
+STRING string_id11 "ALL SIZEOF STRIDE TESTS PASSED\n"
+STRUCT_PIN Q
+GLOBAL szq mut_u64 32
+STRUCT_PIN P
+GLOBAL szp mut_u64 16
+STRUCT_PIN Box_u64
+GLOBAL szb mut_u64 24
+STRUCT_PIN Two
+GLOBAL szt mut_u64 40
+GLOBAL fails mut_u64 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+STRUCT_START P
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER a mut_u8
+STRUCT_PADDING 7
+STRUCT_END
+STRUCT_START Q
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER x mut_u64
+STRUCT_MEMBER y mut_u64
+STRUCT_MEMBER z mut_u8
+STRUCT_PADDING 7
+STRUCT_END
+STRUCT_START Two
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER a mut_P
+STRUCT_MEMBER b mut_P
+STRUCT_END
+FUNC_START check
+RETURNS imut_void
+ARG name static_imut_string
+ARG ok mut_bool
+PUSH ok mut_bool
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+ADDR fails mut_u64
+PUSH fails mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+JMP @end_of_if_1
+@end_of_if_1:
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC pa mut_P[3]
+ALLOC pb mut_u8[48]
+ALLOC pstride mut_u64
+ALLOC lp mut_u64
+ALLOC lq mut_u64
+ALLOC lb mut_u64
+ALLOC lt mut_u64
+ALLOC qa mut_Q[2]
+ALLOC qb mut_u8[80]
+ALLOC qstride mut_u64
+ALLOC t mut_Two
+ALLOC src mut_P
+ALLOC p raw_mut_P
+ADDR pa mut_P[3]
+PUSH 0 imut_u64
+PUSH 11 indeterminate_u8
+STACK_LOCK 7
+PUSH 0 imut_u64
+PUSH 22 indeterminate_u8
+STACK_LOCK 7
+PUSH 0 imut_u64
+PUSH 33 indeterminate_u8
+STACK_LOCK 7
+ASSIGN mut_P[3] mut_P[3] mut_P[3]
+ADDR pb mut_u8[48]
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+ASSIGN mut_u8[48] mut_u8[48] mut_u8[48]
+PUSH pb mut_u8[48]
+ADDR_OF RAW mut_u8[48] raw_indeterminate_u8[48]
+PUSH 48 indeterminate_u64
+PUSH pa mut_P[3]
+ADDR_OF RAW mut_P[3] raw_indeterminate_P[3]
+MEMCOPY raw_indeterminate_u8[48] mut_u64 raw_indeterminate_P[3] raw_indeterminate_u8[48]
+ADDR pstride mut_u64
+SIZEOF P indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lp mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lq mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lb mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lt mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lp mut_u64
+PUSH szp mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lq mut_u64
+PUSH szq mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lb mut_u64
+PUSH szb mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR lt mut_u64
+PUSH szt mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+ADDR pb mut_u8[48]
+PUSH 24 indeterminate_u64
+LOOKUP_LHS mut_u8[48] indeterminate_u64 mut_u8
+DEREF mut_u8
+PUSH 22 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH pstride mut_u64
+PUSH 16 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id4 static_some_imut_string
+POP ARG0 static_some_imut_string
+ADDR pb mut_u8[48]
+PUSH 40 indeterminate_u64
+LOOKUP_LHS mut_u8[48] indeterminate_u64 mut_u8
+DEREF mut_u8
+PUSH 33 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id5 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH lp mut_u64
+PUSH pstride mut_u64
+EQ mut_u64 mut_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR qa mut_Q[2]
+PUSH 1 imut_u64
+PUSH 1 indeterminate_u64
+PUSH 2 indeterminate_u64
+PUSH 3 indeterminate_u8
+STACK_LOCK 7
+PUSH 1 imut_u64
+PUSH 4 indeterminate_u64
+PUSH 5 indeterminate_u64
+PUSH 6 indeterminate_u8
+STACK_LOCK 7
+ASSIGN mut_Q[2] mut_Q[2] mut_Q[2]
+ADDR qb mut_u8[80]
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+PUSH 0 indeterminate_u8
+ASSIGN mut_u8[80] mut_u8[80] mut_u8[80]
+PUSH qb mut_u8[80]
+ADDR_OF RAW mut_u8[80] raw_indeterminate_u8[80]
+PUSH 80 indeterminate_u64
+PUSH qa mut_Q[2]
+ADDR_OF RAW mut_Q[2] raw_indeterminate_Q[2]
+MEMCOPY raw_indeterminate_u8[80] mut_u64 raw_indeterminate_Q[2] raw_indeterminate_u8[80]
+ADDR qstride mut_u64
+SIZEOF Q indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+CC_START sysv_x64
+PUSH string_id6 static_some_imut_string
+POP ARG0 static_some_imut_string
+ADDR qb mut_u8[80]
+PUSH 24 indeterminate_u64
+LOOKUP_LHS mut_u8[80] indeterminate_u64 mut_u8
+DEREF mut_u8
+PUSH 3 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+ADDR qb mut_u8[80]
+PUSH 56 indeterminate_u64
+LOOKUP_LHS mut_u8[80] indeterminate_u64 mut_u8
+DEREF mut_u8
+PUSH 6 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH qstride mut_u64
+PUSH 32 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id7 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH lq mut_u64
+PUSH qstride mut_u64
+EQ mut_u64 mut_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id8 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH lb mut_u64
+SIZEOF Box_u64 indeterminate_u64
+EQ mut_u64 mut_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR t mut_Two
+PUSH 2 imut_u64
+PUSH 0 imut_u64
+PUSH 1 indeterminate_u8
+STACK_LOCK 7
+PUSH 0 imut_u64
+PUSH 2 indeterminate_u8
+STACK_LOCK 7
+ASSIGN mut_Two mut_Two mut_Two
+ADDR src mut_P
+PUSH 0 imut_u64
+PUSH 77 indeterminate_u8
+STACK_LOCK 7
+ASSIGN mut_P mut_P mut_P
+ADDR p raw_mut_P
+PUSH t.a mut_P
+ADDR_OF RAW mut_P raw_indeterminate_P
+ASSIGN raw_mut_P raw_mut_P raw_mut_P
+ADDR p raw_mut_P
+PUSH p raw_mut_P
+SIZEOF P indeterminate_u64
+ADD raw_mut_P indeterminate_u64 raw_mut_P
+ASSIGN raw_mut_P raw_mut_P raw_mut_P
+PUSH p raw_mut_P
+SIZEOF P indeterminate_u64
+PUSH src mut_P
+ADDR_OF RAW mut_P raw_indeterminate_P
+MEMCOPY raw_mut_P mut_u64 raw_indeterminate_P raw_mut_P
+CC_START sysv_x64
+PUSH string_id9 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH t.b.a mut_u8
+PUSH 77 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH t.a.a mut_u8
+PUSH 1 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id10 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH lt mut_u64
+SIZEOF Two indeterminate_u64
+EQ mut_u64 mut_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+PUSH fails mut_u64
+PUSH 0 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+CMP
+JMP @end_of_if_3
+CC_START sysv_x64
+PUSH string_id11 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+JMP @end_of_if_3
+@end_of_if_3:
+FUNC_END
+STRUCT_START Box_u64
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER v mut_u64
+STRUCT_MEMBER w mut_u8
+STRUCT_PADDING 7
+STRUCT_END
+ENUM Class P 0 Q 1 Two 2 Box_u64 3

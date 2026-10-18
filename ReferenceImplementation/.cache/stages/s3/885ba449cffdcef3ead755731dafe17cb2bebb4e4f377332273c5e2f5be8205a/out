@@ -1,0 +1,166 @@
+STRING string_id1 "span=%lld sum=%llu third=%llu bytes=%llu\n"
+STRING string_id2 "hello, world"
+STRING string_id3 "123"
+STRING string_id4 "abs=%lld strlen=%llu atoi=%lld sum=%lld\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN labs mut_s64 mut_s64
+EXTERN atoi mut_s64 static_imut_string
+FUNC_START main
+ALLOC 144
+ADDR 8 $-8
+CC_START sysv_x64
+R_ARG 0 8 #40
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 $-16 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-24 %t0
+R_MOV 8 $-40 #0
+R_MOV 8 $-32 #5
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+R_MOV 8 $-56 #1
+PUSH 8 $-16
+PUSH 8 8
+PUSH 8 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+R_RMW ADD 8 $-16 #8
+R_MOV 8 $-56 #11
+PUSH 8 $-16
+PUSH 8 8
+PUSH 8 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+R_RMW ADD 8 $-16 #8
+R_MOV 8 $-56 #21
+PUSH 8 $-16
+PUSH 8 8
+PUSH 8 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+R_RMW ADD 8 $-16 #8
+R_MOV 8 $-56 #31
+PUSH 8 $-16
+PUSH 8 8
+PUSH 8 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+R_RMW ADD 8 $-16 #8
+R_MOV 8 $-56 #41
+PUSH 8 $-16
+PUSH 8 8
+PUSH 8 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+R_RMW ADD 8 $-16 #8
+@for_end_2:
+R_BIN SUB 8 %t0 $-16 $-24
+R_PUSHA 8 $-64
+R_PUSH 8 %t0
+PUSH 8 8
+SDIV_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-72 %t0
+R_MOV 8 %v0 #0
+R_MOV 8 $-96 #0
+R_MOV 8 $-88 #5
+R_MOV 8 %t0 $-96
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_RMW ADD 8 %v0 %t0
+R_RMW ADD 8 $-72 #8
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_RMW ADD 8 %v0 %t0
+R_RMW ADD 8 $-72 #8
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_RMW ADD 8 %v0 %t0
+R_RMW ADD 8 $-72 #8
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_RMW ADD 8 %v0 %t0
+R_RMW ADD 8 $-72 #8
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_RMW ADD 8 %v0 %t0
+R_RMW ADD 8 $-72 #8
+@for_end_4:
+R_BIN ADD 8 %t0 $-24 #16
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 $-104
+R_LD 8 %t0 %t0
+R_MOV 8 $-112 %t0
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-64
+R_ARG 2 8 %v0
+R_ARG 3 8 $-112
+R_ARG 4 8 #40
+VARARGS_XMM_COUNT 0
+CALL printf 5
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+ADDR 8 $-120
+CC_START sysv_x64
+R_ARG 0 8 #-42
+CALL labs 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-128
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+CALL strlen 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-56
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+CALL atoi 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BIN ADD 8 %t0 $-120 $-56
+R_MOV 8 $-136 %t0
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_ARG 1 8 $-120
+R_ARG 2 8 $-128
+R_ARG 3 8 $-56
+R_ARG 4 8 $-136
+VARARGS_XMM_COUNT 0
+CALL printf 5
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #79
+CALL putchar 1
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #75
+CALL putchar 1
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #10
+CALL putchar 1
+CC_END sysv_x64
+FUNC_END

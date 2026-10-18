@@ -1,0 +1,2 @@
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_u64_get inlined at 6 call sites
+N	[note] /home/claude/caspien/stdlib/string.caspien:264 - @inline: String_charAt inlined at 1 call site

@@ -1,0 +1,139 @@
+STRING string_id1 "PASS %s %llu\n"
+STRING string_id2 "u8 instance"
+STRING string_id3 "u64 instance"
+STRING string_id4 "assumed, not tested"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START report
+RETURNS imut_void
+ARG name static_imut_string
+ARG got mut_u64
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+PUSH got mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+CC_START sysv_x64
+PUSH 1 indeterminate_u8
+POP ARG0 indeterminate_u8
+PUSH 5 indeterminate_u64
+POP ARG1 indeterminate_u64
+CALL pick_u8
+CC_END sysv_x64
+PUSH_RET mut_u64
+POP ARG1 mut_u64
+CALL report
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+CC_START sysv_x64
+PUSH 1 indeterminate_u64
+POP ARG0 indeterminate_u64
+PUSH 300 indeterminate_u64
+POP ARG1 indeterminate_u64
+CALL pick_u64
+CC_END sysv_x64
+PUSH_RET mut_u64
+POP ARG1 mut_u64
+CALL report
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id4 static_some_imut_string
+POP ARG0 static_some_imut_string
+CC_START sysv_x64
+PUSH 1 indeterminate_u8
+POP ARG0 indeterminate_u8
+PUSH 0 indeterminate_u64
+POP ARG1 indeterminate_u64
+CALL pick_u8
+CC_END sysv_x64
+PUSH_RET mut_u64
+POP ARG1 mut_u64
+CALL report
+CC_END sysv_x64
+FUNC_END
+FUNC_START pick_u8
+RETURNS mut_u64
+ARG x mut_u8
+ARG n mut_u64
+ALLOC q mut_u64
+ADDR q mut_u64
+PUSH 1 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR q mut_u64
+PUSH n mut_u64
+PUSH 100 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH n mut_u64
+PUSH 255 indeterminate_u64
+LT_EQ indeterminate_u64 indeterminate_u64 imut_bool
+CMP
+JMP @end_of_match_1
+ADDR q mut_u64
+PUSH q mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+JMP @end_of_match_1
+@end_of_match_1:
+PUSH q mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START pick_u64
+RETURNS mut_u64
+ARG x mut_u64
+ARG n mut_u64
+ALLOC q mut_u64
+ADDR q mut_u64
+PUSH 1 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR q mut_u64
+PUSH n mut_u64
+PUSH 100 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH n mut_u64
+PUSH 255 indeterminate_u64
+LT_EQ indeterminate_u64 indeterminate_u64 imut_bool
+CMP
+JMP @end_of_match_2
+ADDR q mut_u64
+PUSH q mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+JMP @end_of_match_2
+@end_of_match_2:
+PUSH q mut_u64
+RET mut_u64
+FUNC_END

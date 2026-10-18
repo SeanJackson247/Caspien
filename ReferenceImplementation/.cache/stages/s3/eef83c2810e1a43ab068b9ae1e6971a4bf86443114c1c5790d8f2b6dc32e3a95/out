@@ -1,0 +1,492 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "P: member of element 1 sits at sizeof(P)+8"
+STRING string_id4 "P: member of element 2 sits at 2*sizeof(P)+8"
+STRING string_id5 "P: static initialiser equals the runtime sizeof"
+STRING string_id6 "Q: stride is sizeof(Q) (z of element 0 and 1)"
+STRING string_id7 "Q: static initialiser equals the runtime sizeof"
+STRING string_id8 "Box<u64>: static initialiser equals the runtime sizeof"
+STRING string_id9 "raw P ++ steps sizeof(P) bytes (writes t.b)"
+STRING string_id10 "Two: sizeof is the sum of its two Ps plus ___type"
+STRING string_id11 "ALL SIZEOF STRIDE TESTS PASSED\n"
+GLOBAL szq 8 32
+GLOBAL szp 8 16
+GLOBAL szb 8 24
+GLOBAL szt 8 40
+GLOBAL fails 8 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+STRUCT_PADDING 7
+STRUCT_PADDING 7
+FUNC_START main
+ALLOC 464
+ADDR 48 $-48
+PUSH 8 0
+PUSH 1 11
+STACK_LOCK 7
+PUSH 8 0
+PUSH 1 22
+STACK_LOCK 7
+PUSH 8 0
+PUSH 1 33
+STACK_LOCK 7
+ASSIGN 48 48 48
+ADDR 48 $-96
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+ASSIGN 48 48 48
+PUSH 48 $-96
+ADDR_OF RAW $-96
+PUSH 8 48
+PUSH 48 $-48
+ADDR_OF RAW $-48
+MEMCOPY
+R_MOV 8 $-104 #0
+R_MOV 8 $-112 #0
+R_MOV 8 $-120 #0
+R_MOV 8 $-128 #0
+R_LD 8 %t0 &szp
+R_MOV 8 $-104 %t0
+R_LD 8 %t0 &szq
+R_MOV 8 $-112 %t0
+R_LD 8 %t0 &szb
+R_MOV 8 $-120 %t0
+R_LD 8 %t0 &szt
+R_MOV 8 $-128 %t0
+ADDR 8 $-344
+PUSH 8 string_id3
+ASSIGN 8 8 8
+ADDR 1 $-345
+ADDR 48 $-96
+PUSH 8 24
+LOOKUP_ARRAY_LHS 1
+DEREF 1
+PUSH 1 22
+EQ_INT 1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+PUSH 1 $-345
+CMP
+JMP @if_branch_5
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-344
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_6
+@if_branch_5:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-344
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_6:
+ADDR 8 $-360
+PUSH 8 string_id4
+ASSIGN 8 8 8
+R_LEA %t0 $-96 #40 1
+R_LD 1 %t0 %t0
+R_BIN EQ 1 %t0 %t0 #33
+R_ST 1 $-361 %t0
+PUSH 1 $-361
+CMP
+JMP @if_branch_9
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-360
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_10
+@if_branch_9:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-360
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_10:
+ADDR 8 $-376
+PUSH 8 string_id5
+ASSIGN 8 8 8
+R_BIN EQ 8 %t0 $-104 #16
+R_ST 1 $-377 %t0
+PUSH 1 $-377
+CMP
+JMP @if_branch_13
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-376
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_14
+@if_branch_13:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-376
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_14:
+ADDR 64 $-192
+PUSH 8 1
+PUSH 8 1
+PUSH 8 2
+PUSH 1 3
+STACK_LOCK 7
+PUSH 8 1
+PUSH 8 4
+PUSH 8 5
+PUSH 1 6
+STACK_LOCK 7
+ASSIGN 64 64 64
+ADDR 80 $-272
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+PUSH 1 0
+ASSIGN 80 80 80
+PUSH 80 $-272
+ADDR_OF RAW $-272
+PUSH 8 80
+PUSH 64 $-192
+ADDR_OF RAW $-192
+MEMCOPY
+ADDR 8 $-392
+PUSH 8 string_id6
+ASSIGN 8 8 8
+ADDR 1 $-393
+ADDR 80 $-272
+PUSH 8 24
+LOOKUP_ARRAY_LHS 1
+DEREF 1
+PUSH 1 3
+EQ_INT 1
+ADDR 80 $-272
+PUSH 8 56
+LOOKUP_ARRAY_LHS 1
+DEREF 1
+PUSH 1 6
+EQ_INT 1
+AND 1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+PUSH 1 $-393
+CMP
+JMP @if_branch_17
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-392
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_18
+@if_branch_17:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-392
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_18:
+ADDR 8 $-408
+PUSH 8 string_id7
+ASSIGN 8 8 8
+R_BIN EQ 8 %t0 $-112 #32
+R_ST 1 $-409 %t0
+PUSH 1 $-409
+CMP
+JMP @if_branch_21
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-408
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_22
+@if_branch_21:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-408
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_22:
+ADDR 8 $-424
+PUSH 8 string_id8
+ASSIGN 8 8 8
+R_BIN EQ 8 %t0 $-120 #24
+R_ST 1 $-425 %t0
+PUSH 1 $-425
+CMP
+JMP @if_branch_25
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-424
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_26
+@if_branch_25:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-424
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_26:
+ADDR 40 $-312
+PUSH 8 2
+PUSH 8 0
+PUSH 1 1
+STACK_LOCK 7
+PUSH 8 0
+PUSH 1 2
+STACK_LOCK 7
+ASSIGN 40 40 40 m8 m8 m1 p7 m8 m1 p7
+ADDR 16 $-328
+PUSH 8 0
+PUSH 1 77
+STACK_LOCK 7
+ASSIGN 16 16 16 m8 m1 p7
+ADDR 8 $-336
+PUSH 16 $-304
+ADDR_OF RAW $-304
+ASSIGN 8 8 8
+R_RMW ADD 8 $-336 #16
+PUSH 8 $-336
+PUSH 8 16
+PUSH 16 $-328
+ADDR_OF RAW $-328
+MEMCOPY
+ADDR 8 $-440
+PUSH 8 string_id9
+ASSIGN 8 8 8
+R_LD 1 %t0 $-280
+R_BIN EQ 1 %t0 %t0 #77
+R_LD 1 %t1 $-296
+R_BIN EQ 1 %t1 %t1 #1
+R_BIN AND 1 %t0 %t0 %t1
+R_ST 1 $-441 %t0
+PUSH 1 $-441
+CMP
+JMP @if_branch_29
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-440
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_30
+@if_branch_29:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-440
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_30:
+ADDR 8 $-456
+PUSH 8 string_id10
+ASSIGN 8 8 8
+R_BIN EQ 8 %t0 $-128 #40
+R_ST 1 $-457 %t0
+PUSH 1 $-457
+CMP
+JMP @if_branch_33
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-456
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_34
+@if_branch_33:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-456
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_LD 8 %t0 &fails
+R_BIN ADD 8 %t0 %t0 #1
+R_ST 8 &fails %t0
+@end_of_if_34:
+R_LD 8 %t0 &fails
+R_BRC EQ 8 %t0 #0 @end_of_if_3
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+@end_of_if_3:
+FUNC_END
+STRUCT_PADDING 7

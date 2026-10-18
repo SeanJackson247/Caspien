@@ -1,0 +1,393 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "copy start"
+STRING string_id4 "copy end"
+STRING string_id5 "passed"
+STRING string_id6 "rebuilt start"
+STRING string_id7 "rebuilt end"
+STRING string_id8 "old range untouched"
+STRING string_id9 "loop over copy"
+STRING string_id10 "weighted"
+STRING string_id11 "weighted empty"
+STRING string_id12 "weighted single"
+STRING string_id13 "steps 0..10"
+STRING string_id14 "steps 0..9"
+STRING string_id15 "steps 3..4"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START check
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-9
+PUSH 1 ARG1
+ASSIGN 1 1 1
+PUSH 1 $-9
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_1:
+RET 0
+FUNC_END
+FUNC_START fold
+ALLOC 16
+ADDR 8 $-16
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-16 #100
+R_BIN ADD 8 %t0 %t0 $-8
+R_RET %t0
+FUNC_END
+FUNC_START weighted
+ALLOC 144
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+PUSH 8 ARG1
+R_POPV 8 %v0
+PUSH 8 ARG2
+R_POPV 8 %v1
+R_MOV 8 %t0 $-8
+R_MOV 8 $-8 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-32 %t0
+R_MOV 8 %t0 %v1
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_3:
+R_BRC LT 8 $-80 $-64 @for_end_4
+R_BRC GT_EQ 8 %v0 %v1 @end_of_match_5
+R_RET $-8
+@end_of_match_5:
+R_BIN ADD 8 %v5 %v0 #1
+R_MOV 8 %v2 %v1
+R_MOV 8 %v5 %v5
+R_MOV 8 %v2 %v2
+R_BIN GT_EQ 8 %t0 %v5 %v0
+R_BIN LT_EQ 8 %t1 %v2 %v1
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 %v5 %v0
+R_BIN EQ 8 %t2 %v2 %v1
+R_BIN AND 1 %t1 %t1 %t2
+R_UN NOT 1 %t1 %t1
+R_BIN AND 1 %t0 %t0 %t1
+R_BRF %t0 @match_branch_7
+R_BIN MUL 8 %t0 $-8 #31
+R_BIN BXOR 8 %t0 %t0 %v0
+R_MOV 8 $-120 %t0
+R_MOV 8 %v5 %v5
+R_MOV 8 %v1 %v2
+R_MOV 8 %t0 $-120
+R_MOV 8 $-8 %t0
+R_MOV 8 %v0 %v5
+R_MOV 8 %v1 %v1
+JMP @end_of_match_6
+@match_branch_7:
+R_RET $-8
+@end_of_match_6:
+R_RMW INC 8 $-80
+JMP @for_3
+@for_end_4:
+R_BRC GT_EQ 8 %v0 %v1 @end_of_match_8
+R_RET $-8
+@end_of_match_8:
+FUNC_END
+FUNC_START steps
+ALLOC 144
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+PUSH 8 ARG1
+R_POPV 8 %v0
+PUSH 8 ARG2
+R_POPV 8 %v1
+R_MOV 8 %t0 $-8
+R_MOV 8 $-8 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-32 %t0
+R_MOV 8 %t0 %v1
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_9:
+R_BRC LT 8 $-80 $-64 @for_end_10
+R_BRC GT_EQ 8 %v0 %v1 @end_of_match_11
+R_RET $-8
+@end_of_match_11:
+R_BIN ADD 8 %v5 %v0 #2
+R_BIN SUB 8 %v2 %v1 #1
+R_MOV 8 %v5 %v5
+R_MOV 8 %v2 %v2
+R_BIN GT_EQ 8 %t0 %v5 %v0
+R_BIN LT_EQ 8 %t1 %v2 %v1
+R_BIN AND 1 %t0 %t0 %t1
+R_BIN EQ 8 %t1 %v5 %v0
+R_BIN EQ 8 %t2 %v2 %v1
+R_BIN AND 1 %t1 %t1 %t2
+R_UN NOT 1 %t1 %t1
+R_BIN AND 1 %t0 %t0 %t1
+R_BRF %t0 @match_branch_13
+R_BIN ADD 8 %t0 $-8 #1
+R_MOV 8 $-120 %t0
+R_MOV 8 %v5 %v5
+R_MOV 8 %v1 %v2
+R_MOV 8 %t0 $-120
+R_MOV 8 $-8 %t0
+R_MOV 8 %v0 %v5
+R_MOV 8 %v1 %v1
+JMP @end_of_match_12
+@match_branch_13:
+R_RET $-8
+@end_of_match_12:
+R_RMW INC 8 $-80
+JMP @for_9
+@for_end_10:
+R_BRC GT_EQ 8 %v0 %v1 @end_of_match_14
+R_RET $-8
+@end_of_match_14:
+FUNC_END
+FUNC_START main
+ALLOC 128
+R_MOV 8 $-8 #3
+R_MOV 8 $-16 #9
+R_MOV 8 %t0 $-8
+R_MOV 8 $-32 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-24 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_BIN EQ 8 %t0 $-48 #3
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_BIN EQ 8 %t0 $-40 #9
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 $-40
+CALL fold
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 309
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+R_MOV 8 $-8 #10
+R_MOV 8 $-16 #14
+R_MOV 8 %t0 $-8
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+R_BIN EQ 8 %t0 $-64 #10
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+R_BIN EQ 8 %t0 $-56 #14
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+R_BIN EQ 8 %t0 $-32 #3
+R_BIN EQ 8 %t1 $-24 #9
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_MOV 8 %v0 #0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-88 %t0
+R_MOV 8 %v4 $-56
+R_MOV 8 %v3 $-88
+@for_15:
+R_BRC LT 8 %v3 %v4 @for_end_16
+R_RMW ADD 8 %v0 %v3
+R_RMW INC 8 %v3
+JMP @for_15
+@for_end_16:
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_BIN EQ 8 %t0 %v0 #46
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_MOV 8 $-104 #5
+R_MOV 8 $-120 #2
+R_MOV 8 %v4 #9
+R_MOV 8 %v3 $-120
+@for_17:
+R_BRC LT 8 %v3 %v4 @for_end_18
+R_BIN MUL 8 %t0 $-104 #31
+R_BIN BXOR 8 %t0 %t0 %v3
+R_MOV 8 $-104 %t0
+R_RMW INC 8 %v3
+JMP @for_17
+@for_end_18:
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #5
+R_ARG 1 8 #2
+R_ARG 2 8 #9
+CALL weighted
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-104
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #7
+R_ARG 1 8 #4
+R_ARG 2 8 #4
+CALL weighted
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 7
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id12
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #7
+R_ARG 1 8 #4
+R_ARG 2 8 #5
+CALL weighted
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_BIN MUL 8 %t0 #7 #31
+R_BIN BXOR 8 %t0 %t0 #4
+R_PUSH 8 %t0
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id13
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_ARG 1 8 #0
+R_ARG 2 8 #10
+CALL steps
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 4
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id14
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_ARG 1 8 #0
+R_ARG 2 8 #9
+CALL steps
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 3
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id15
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_ARG 1 8 #3
+R_ARG 2 8 #4
+CALL steps
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 1
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+FUNC_END

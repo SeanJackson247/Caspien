@@ -79,6 +79,9 @@ public final class TypeCheckerStatements {
                 if ("ref".equals(paramType.storage) && paramType.isSome) {
                     ProofKills.implicit(func.paramNames.get(i), hub.declarations.pointeeOf(paramType));   // the caller guarantees it is alive at entry
                 }
+                if (hub.lifetimes.isScoped(paramType)) {
+                    hub.lifetimes.implicitAll(func.paramNames.get(i), paramType);   // a scoped parameter arrives with its borrows alive
+                }
                 scope.vars.put(func.paramNames.get(i), func.paramTypes.get(i));
                 // An owns parameter is owed a destruct unless moved; registered on the root scope (the obligation spans the whole function).
                 if ("owns".equals(func.paramTypes.get(i).storage)) {

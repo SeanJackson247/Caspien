@@ -412,11 +412,11 @@ public class Compiler {
         // ---- Stage 2: Optimizer (bytecode -> bytecode, shallow passes) ----
         buildDir = ensureBuildDir(buildDir, output);
         Path optOut = buildDir.resolve("2_optimizer.hob.txt");
-        String sharedBytecode = cache.bytecodeClassesHash(astGenDir);   // stages 1-3 run with this one copy of the program classes
+        String sharedBytecode = cache.bytecodeClassesHash(astGenDir);   // all four stages run with this one copy of the program classes
         String key2 = CompilerCache.sha("S2\n" + cache.classesHash(optimizerDir) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(hobOut));
-        // Every stage runs inside this JVM as a library (see runProgramStage / runLibraryStage / runFrontend); only the assembler and linker are separate programs.
-        // Stages 1-3 hand the BytecodeProgram itself on; its text (files, cache) is parsed back only when a stage has to run on a cache hit's output.
+        // Every stage runs inside this JVM as a library (see runProgramStage / runFrontend); only the assembler and linker are separate programs.
+        // All four stages hand the BytecodeProgram itself on; its text (files, cache) is parsed back only when a stage has to run on a cache hit's output.
         CompilerOut opt = runProgramStage(cache, "s2", key2, optimizerDir, "caspien.optimizer.Optimizer", "optimize", "hob", "compiler.config",
                 hobProgram, hobOut, optOut, diag, "Optimizer");
         if (diag.hasFatalError()) return diag.exitCode();
@@ -435,9 +435,9 @@ public class Compiler {
 
         // ---- Stage 4: Codegen (low-order bytecode -> assembly) ----
         Path asmOut = stopAsm ? output : buildDir.resolve("4_codegen.s");
-        String key4 = CompilerCache.sha("S4\n" + cache.classesHash(codegenDir) + "\n" + codegenCfg + "\n--in--\n" + CompilerCache.fileHash(lobOut));
-        runLibraryStage(cache, "s4", key4, codegenDir, "caspien.codegen.Codegen", "generate", "asm", "codegen.config",
-                lob.text, lobOut.toString(), asmOut, diag, "Codegen");   // the one text handover left: LOB in, assembly out
+        String key4 = CompilerCache.sha("S4\n" + cache.classesHash(codegenDir) + "\n" + sharedBytecode + "\n" + codegenCfg + "\n--in--\n" + CompilerCache.fileHash(lobOut));
+        runProgramStage(cache, "s4", key4, codegenDir, "caspien.codegen.Codegen", "generate", "asm", "codegen.config",
+                lob.program, lobOut, asmOut, diag, "Codegen");   // the LOB program goes straight in; the assembly comes out as text
         if (diag.hasFatalError()) return diag.exitCode();
         scanCodegenTodos(asmOut, diag);
         if (stopAsm) {
@@ -501,8 +501,8 @@ public class Compiler {
 
     /**
      * Calls `className.method(paramTypes...)` of a stage's library entry class in this JVM. The stage's classes are loaded from its own
-     * `out/` by a private class loader (one per call, so any static state of the stage dies with the call). Stages 1-3 get the shared
-     * caspien.bytecode classes from {@link #sharedLoader} (so the BytecodeProgram one hands on is the class the next one expects); Codegen keeps its own copy. `resultField` names the public String field of the Result holding the output text.
+     * `out/` by a private class loader (one per call, so any static state of the stage dies with the call). All four stages get the shared
+     * caspien.bytecode classes from {@link #sharedLoader} (so the BytecodeProgram one hands on is the class the next one expects) too. `resultField` names the public String field of the Result holding the output text.
      * A stage that throws is reported like a stand-alone stage that crashed (stack trace as the error text, failed).
      */
     private static CompilerOut callLibrary(ClassLoader parent, Path componentDir, String className, String method, String resultField, Class<?>[] paramTypes, Object... args)
@@ -565,7 +565,7 @@ public class Compiler {
         return (env != null && !env.isEmpty() ? Paths.get(env) : root.resolve("..").resolve("stdlib")).toAbsolutePath().normalize();
     }
 
-    /** Serves the one copy of the caspien.bytecode classes that stages 1-3 share (taken from the ASTGenerator's out/); set at the start of a run. */
+    /** Serves the one copy of the caspien.bytecode classes that all four stages share (taken from the ASTGenerator's out/); set at the start of a run. */
     private static CompilerSharedLoader sharedLoader;
 
     /** Parses stage-output text into a BytecodeProgram of the shared loader (for a stage that has to run on a cache hit's output). */
@@ -639,35 +639,6 @@ public class Compiler {
             return o.program;
         }
         return null;
-    }
-
-    /**
-     * Runs a stage whose library entry is `className.method(inputText, origin, configText)` and returns its output text. A hit in the
-     * cache restores the stored output and replays its notes/warnings; a miss reads `componentDir/configName`, calls the stage, writes
-     * the result to `outputFile` and stores it.
-     *
-     * @param resultField the public String field of the stage's result class holding the output text
-     * @return the output text, or null when the stage failed
-     */
-    private static String runLibraryStage(CompilerCache cache, String stage, String key, Path componentDir, String className, String method,
-                                          String resultField, String configName, String inputText, String origin, Path outputFile,
-                                          CompilerDiagnostics diag, String stageName) throws IOException {
-        CompilerStageLog log = new CompilerStageLog();
-        if (cache.restore(stage, key, outputFile, false, log)) {
-            replayCached(cache, stage, log, diag);
-            return Files.readString(outputFile, StandardCharsets.UTF_8);
-        }
-        String config = Files.readString(componentDir.resolve(configName), StandardCharsets.UTF_8);
-        CompilerOut o = callLibrary(ClassLoader.getPlatformClassLoader(), componentDir, className, method, resultField, new Class<?>[]{String.class, String.class, String.class},
-                inputText, origin, config);
-        reportStageOutput(o.messages, o.failed ? 1 : 0, diag, stageName, log);
-        cache.note(stage, false);
-        if (o.failed) {
-            return null;
-        }
-        Files.writeString(outputFile, o.text, StandardCharsets.UTF_8);
-        cache.store(stage, key, outputFile, log, null);
-        return o.text;
     }
 
     private static Path ensureBuildDir(Path existing, Path output) throws IOException {

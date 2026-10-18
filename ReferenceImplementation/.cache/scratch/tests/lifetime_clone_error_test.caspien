@@ -1,0 +1,11 @@
+// A scoped type cannot be cloned.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new A{v= 1}
+	let b = mut ?new B{a= ref a}
+	let c = mut ?clone(b)
+}

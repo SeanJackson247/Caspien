@@ -1,0 +1,110 @@
+STRING string_id1 "F64=%.17e %.17e %.17e %.17e %.17e\n"
+STRING string_id2 "F32=%.9e %.9e %.9e %.9e %.9e\n"
+GLOBAL gd 8 0.3
+GLOBAL gf 4 0.3
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START main
+ALLOC 80
+R_MOV 8 $-8 #4608308318706860032
+PUSH 8 3.5
+NEG_FLOAT 8
+R_POPV 8 %v0
+R_MOV 8 %v2 #0
+R_ST 4 $-28 #1067450368
+ADDR 4 $-32
+PUSH 4 3.5
+NEG_FLOAT 4
+ASSIGN 4 4 4
+R_ST 4 $-36 #0
+R_MOV 8 %v1 #0
+R_ST 4 $-52 #0
+R_MOV 8 $-72 #0
+R_MOV 8 %v4 #100
+R_MOV 8 %v3 $-72
+@for_1:
+R_BRC LT 8 %v3 %v4 @for_end_2
+R_FBIN MUL 8 %t0 #4611686018427387904 $-8
+R_MOV 8 %v2 %t0
+R_FBIN MUL 8 %t0 %v0 #4611686018427387904
+R_MOV 8 $-8 %t0
+R_FBIN MUL 8 %t0 %v2 #4611686018427387904
+R_FBIN MUL 8 %t0 %t0 #4600427019358961664
+R_FBIN SUB 8 %t0 %t0 #4607182418800017408
+R_MOV 8 %v0 %t0
+R_LD 8 %t0 &gd
+R_FBIN MUL 8 %t0 %t0 #4611686018427387904
+R_FBIN ADD 8 %t0 %t0 %v1
+R_MOV 8 %v1 %t0
+R_FBIN MUL 8 %t0 %v0 #4602678819172646912
+R_FBIN ADD 8 %t0 %t0 #4591870180066957722
+R_ST 8 &gd %t0
+R_FBIN MUL 4 %t0 #1073741824 $-28
+R_ST 4 $-36 %t0
+R_FBIN MUL 4 %t0 $-32 #1073741824
+R_ST 4 $-28 %t0
+R_FBIN MUL 4 %t0 $-36 #1073741824
+R_FBIN MUL 4 %t0 %t0 #1052770304
+R_FBIN SUB 4 %t0 %t0 #1065353216
+R_ST 4 $-32 %t0
+R_LD 4 %t0 &gf
+R_FBIN MUL 4 %t0 %t0 #1073741824
+R_FBIN ADD 4 %t0 %t0 $-52
+R_ST 4 $-52 %t0
+R_FBIN MUL 4 %t0 $-32 #1056964608
+R_FBIN ADD 4 %t0 %t0 #1036831949
+R_ST 4 &gf %t0
+R_RMW INC 8 %v3
+JMP @for_1
+@for_end_2:
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_FARG 0 8 $-8
+R_FARG 1 8 %v0
+R_FARG 2 8 %v2
+R_FARG 3 8 %v1
+R_LD 8 %t0 &gd
+R_FARG 4 8 %t0
+VARARGS_XMM_COUNT 5
+CALL printf 6
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+PUSH 4 $-28
+PROMOTE_F32_TO_F64
+POP FARG0 4
+PUSH 4 $-32
+PROMOTE_F32_TO_F64
+POP FARG1 4
+PUSH 4 $-36
+PROMOTE_F32_TO_F64
+POP FARG2 4
+PUSH 4 $-52
+PROMOTE_F32_TO_F64
+POP FARG3 4
+PUSH 4 gf
+PROMOTE_F32_TO_F64
+POP FARG4 4
+VARARGS_XMM_COUNT 5
+CALL printf 6
+CC_END sysv_x64
+FUNC_END

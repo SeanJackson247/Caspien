@@ -1,0 +1,2653 @@
+STRING string_id1 "out of memory: cannot create the ghost table\n"
+STRING string_id2 "PASS %s\n"
+STRING string_id3 "FAIL %s\n"
+STRING string_id4 "policy retry stopped at its limit (last attempt 7)"
+STRING string_id5 "policy gave up without the lock"
+STRING string_id6 "built-in default(5) gave up without the lock"
+STRING string_id7 "built-in default(5) takes an open lock"
+STRING string_id8 "try-lock form gives up at once"
+STRING string_id9 "open lock is taken"
+GLOBAL ghost_table 96
+GLOBAL ghost_table.___type 8 0
+GLOBAL ghost_table.lockState 8 0
+GLOBAL ghost_table.base 8 null
+GLOBAL ghost_table.len 8 0
+GLOBAL ghost_table.capacity 8 0
+GLOBAL ghost_table.refBase 8 null
+GLOBAL ghost_table.refCap 8 0
+GLOBAL ghost_table.refLen 8 0
+GLOBAL ghost_table.idBase 8 null
+GLOBAL ghost_table.idCap 8 0
+GLOBAL ghost_table.idLen 8 0
+GLOBAL ghost_table.nextId 8 0
+GLOBAL box 24
+GLOBAL box.___type 8 1
+GLOBAL box.gate 8 0
+GLOBAL box.n 8 0
+GLOBAL plain 24
+GLOBAL plain.___type 8 2
+GLOBAL plain.gate 8 0
+GLOBAL plain.n 8 0
+GLOBAL last 8 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START gtSlotAt
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 $-24 %t0
+R_BIN MUL 8 %t0 $-16 #8
+R_BIN ADD 8 %t0 $-24 %t0
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START __gtSlotAt
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 $-24 %t0
+R_BIN MUL 8 %t0 $-16 #8
+R_BIN ADD 8 %t0 $-24 %t0
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START gtLoad
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #0
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 8
+PUSH 8 $-32
+MEMCOPY
+R_RET $-24
+FUNC_END
+FUNC_START __gtLoad
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #0
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL __gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 8
+PUSH 8 $-32
+MEMCOPY
+R_RET $-24
+FUNC_END
+FUNC_START gtStore
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+PUSH 8 8
+PUSH 8 $-32
+ADDR_OF RAW $-32
+MEMCOPY
+FUNC_END
+FUNC_START __gtStore
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL __gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+PUSH 8 8
+PUSH 8 $-32
+ADDR_OF RAW $-32
+MEMCOPY
+FUNC_END
+FUNC_START gtAddrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN SUB 8 %t0 $-8 $-16
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START __gtAddrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN SUB 8 %t0 $-8 $-16
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START gtPtrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN ADD 8 %t0 $-16 $-8
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START __gtPtrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN ADD 8 %t0 $-16 $-8
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START gtHashAddr
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN SHR 8 %t0 $-8 #4
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #11
+R_BIN BXOR 8 %t0 $-24 %t0
+R_MOV 8 $-24 %t0
+R_BIN BAND 8 %t0 $-24 $-16
+R_RET %t0
+FUNC_END
+FUNC_START __gtHashAddr
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN SHR 8 %t0 $-8 #4
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #11
+R_BIN BXOR 8 %t0 $-24 %t0
+R_MOV 8 $-24 %t0
+R_BIN BAND 8 %t0 $-24 $-16
+R_RET %t0
+FUNC_END
+FUNC_START gtHashId
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-8 #11400714819323198485
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #32
+R_BIN BAND 8 %t0 %t0 $-16
+R_RET %t0
+FUNC_END
+FUNC_START __gtHashId
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-8 #11400714819323198485
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #32
+R_BIN BAND 8 %t0 %t0 $-16
+R_RET %t0
+FUNC_END
+FUNC_START gtHashFor
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_1
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+@end_of_if_1:
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL gtHashId
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+FUNC_END
+FUNC_START __gtHashFor
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_2
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL __gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+@end_of_if_2:
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL __gtHashId
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+FUNC_END
+FUNC_START gtClear
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_MOV 8 %v1 $-16
+R_MOV 8 %v0 $-32
+@for_3:
+R_BRC LT 8 %v0 %v1 @for_end_4
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+R_RMW INC 8 %v0
+JMP @for_3
+@for_end_4:
+FUNC_END
+FUNC_START __gtClear
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_MOV 8 %v1 $-16
+R_MOV 8 %v0 $-32
+@for_5:
+R_BRC LT 8 %v0 %v1 @for_end_6
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+R_RMW INC 8 %v0
+JMP @for_5
+@for_end_6:
+FUNC_END
+FUNC_START gtT1Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_BIN SHR 8 %t0 $-24 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_7:
+R_BRC LT 8 %v1 $-64 @for_end_8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_8
+@end_of_if_9:
+R_BIN SHR 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 $-48 @end_of_if_10
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_8
+@end_of_if_10:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_7
+@for_end_8:
+R_RET $-56
+FUNC_END
+FUNC_START __gtT1Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_BIN SHR 8 %t0 $-24 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_11:
+R_BRC LT 8 %v1 $-64 @for_end_12
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_12
+@end_of_if_13:
+R_BIN SHR 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 $-48 @end_of_if_14
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_12
+@end_of_if_14:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_11
+@for_end_12:
+R_RET $-56
+FUNC_END
+FUNC_START gtT1Insert
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v1 $-56
+@for_15:
+R_BRC LT 8 %v1 $-48 @for_end_16
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_17
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 $-24
+CALL gtStore
+CC_END sysv_x64
+JMP @for_end_16
+@end_of_if_17:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_15
+@for_end_16:
+FUNC_END
+FUNC_START __gtT1Insert
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v1 $-56
+@for_18:
+R_BRC LT 8 %v1 $-48 @for_end_19
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_20
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 $-24
+CALL __gtStore
+CC_END sysv_x64
+JMP @for_end_19
+@end_of_if_20:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_18
+@for_end_19:
+FUNC_END
+FUNC_START gtT1Rehash
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 %v2 $-16
+R_MOV 8 %v0 $-48
+@for_21:
+R_BRC LT 8 %v0 %v2 @for_end_22
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_23
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+CALL gtT1Insert
+CC_END sysv_x64
+@end_of_if_23:
+R_RMW INC 8 %v0
+JMP @for_21
+@for_end_22:
+FUNC_END
+FUNC_START __gtT1Rehash
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 %v2 $-16
+R_MOV 8 %v0 $-48
+@for_24:
+R_BRC LT 8 %v0 %v2 @for_end_25
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_26
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+CALL __gtT1Insert
+CC_END sysv_x64
+@end_of_if_26:
+R_RMW INC 8 %v0
+JMP @for_24
+@for_end_25:
+FUNC_END
+FUNC_START gtT1RemoveAt
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-64 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@for_27:
+R_BRC LT 8 $-72 $-56 @for_end_28
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+ADDR 8 $-80
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-80 #0 @for_end_28
+@end_of_if_29:
+CC_START sysv_x64
+R_ARG 0 8 $-80
+R_ARG 1 8 $-32
+CALL gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-89 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_31
+R_BRC LT 8 %v1 %v2 @end_of_if_32
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_32
+R_ST 1 $-89 #1
+@end_of_if_32:
+JMP @end_of_if_30
+@if_branch_31:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_33
+R_ST 1 $-89 #1
+@end_of_if_33:
+@end_of_if_30:
+PUSH 1 $-89
+NOT 1
+CMP
+JMP @end_of_if_34
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 $-80
+CALL gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_34:
+R_RMW INC 8 $-72
+JMP @for_27
+@for_end_28:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START __gtT1RemoveAt
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-64 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@for_35:
+R_BRC LT 8 $-72 $-56 @for_end_36
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+ADDR 8 $-80
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-80 #0 @for_end_36
+@end_of_if_37:
+CC_START sysv_x64
+R_ARG 0 8 $-80
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-89 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_39
+R_BRC LT 8 %v1 %v2 @end_of_if_40
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_40
+R_ST 1 $-89 #1
+@end_of_if_40:
+JMP @end_of_if_38
+@if_branch_39:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_41
+R_ST 1 $-89 #1
+@end_of_if_41:
+@end_of_if_38:
+PUSH 1 $-89
+NOT 1
+CMP
+JMP @end_of_if_42
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 $-80
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_42:
+R_RMW INC 8 $-72
+JMP @for_35
+@for_end_36:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START gtT16Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-24
+R_ARG 2 8 $-40
+CALL gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_43:
+R_BRC LT 8 %v1 $-64 @for_end_44
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_44
+@end_of_if_45:
+R_BRC EQ 8 %v2 $-24 @end_of_if_46
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_44
+@end_of_if_46:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+R_RMW INC 8 %v1
+JMP @for_43
+@for_end_44:
+R_RET $-56
+FUNC_END
+FUNC_START __gtT16Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-24
+R_ARG 2 8 $-40
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_47:
+R_BRC LT 8 %v1 $-64 @for_end_48
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_48
+@end_of_if_49:
+R_BRC EQ 8 %v2 $-24 @end_of_if_50
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_48
+@end_of_if_50:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+R_RMW INC 8 %v1
+JMP @for_47
+@for_end_48:
+R_RET $-56
+FUNC_END
+FUNC_START gtT16Insert
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-48 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-24
+R_ARG 2 8 $-48
+CALL gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_51:
+R_BRC LT 8 %v1 $-64 @for_end_52
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_53
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-24
+CALL gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 $-32
+CALL gtStore
+CC_END sysv_x64
+JMP @for_end_52
+@end_of_if_53:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_51
+@for_end_52:
+FUNC_END
+FUNC_START __gtT16Insert
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-48 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-24
+R_ARG 2 8 $-48
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_54:
+R_BRC LT 8 %v1 $-64 @for_end_55
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_56
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-24
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 $-32
+CALL __gtStore
+CC_END sysv_x64
+JMP @for_end_55
+@end_of_if_56:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_54
+@for_end_55:
+FUNC_END
+FUNC_START gtT16Rehash
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v0 $-56
+@for_57:
+R_BRC LT 8 %v0 $-48 @for_end_58
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_59
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+R_ARG 3 8 %v2
+R_ARG 4 8 $-40
+CALL gtT16Insert
+CC_END sysv_x64
+@end_of_if_59:
+R_RMW INC 8 %v0
+JMP @for_57
+@for_end_58:
+FUNC_END
+FUNC_START __gtT16Rehash
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v0 $-56
+@for_60:
+R_BRC LT 8 %v0 $-48 @for_end_61
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_62
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+R_ARG 3 8 %v2
+R_ARG 4 8 $-40
+CALL __gtT16Insert
+CC_END sysv_x64
+@end_of_if_62:
+R_RMW INC 8 %v0
+JMP @for_60
+@for_end_61:
+FUNC_END
+FUNC_START gtT16RemoveAt
+ALLOC 112
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_63:
+R_BRC LT 8 $-80 $-64 @for_end_64
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+ADDR 8 $-88
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-88 #0 @for_end_64
+@end_of_if_65:
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-88
+R_ARG 2 8 $-40
+CALL gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-97 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_67
+R_BRC LT 8 %v1 %v2 @end_of_if_68
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_68
+R_ST 1 $-97 #1
+@end_of_if_68:
+JMP @end_of_if_66
+@if_branch_67:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_69
+R_ST 1 $-97 #1
+@end_of_if_69:
+@end_of_if_66:
+PUSH 1 $-97
+NOT 1
+CMP
+JMP @end_of_if_70
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-88
+CALL gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 %v2
+CALL gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_70:
+R_RMW INC 8 $-80
+JMP @for_63
+@for_end_64:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START __gtT16RemoveAt
+ALLOC 112
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_71:
+R_BRC LT 8 $-80 $-64 @for_end_72
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+ADDR 8 $-88
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-88 #0 @for_end_72
+@end_of_if_73:
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-88
+R_ARG 2 8 $-40
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-97 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_75
+R_BRC LT 8 %v1 %v2 @end_of_if_76
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_76
+R_ST 1 $-97 #1
+@end_of_if_76:
+JMP @end_of_if_74
+@if_branch_75:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_77
+R_ST 1 $-97 #1
+@end_of_if_77:
+@end_of_if_74:
+PUSH 1 $-97
+NOT 1
+CMP
+JMP @end_of_if_78
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-88
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 %v2
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_78:
+R_RMW INC 8 $-80
+JMP @for_71
+@for_end_72:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START gtNewCap16
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_79
+R_RET #8
+@end_of_if_79:
+R_BIN MUL 8 %t0 $-8 #2
+R_RET %t0
+FUNC_END
+FUNC_START __gtNewCap16
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_80
+R_RET #8
+@end_of_if_80:
+R_BIN MUL 8 %t0 $-8 #2
+R_RET %t0
+FUNC_END
+FUNC_START gtGrown16
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-16
+CALL gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 $-32 #16
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-40 #0 @end_of_if_81
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_BIN MUL 8 %t0 $-32 #2
+R_ARG 1 8 %t0
+CALL gtClear
+CC_END sysv_x64
+R_BRC NEQ 8 $-16 #0 @end_of_if_82
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 $-32
+R_ARG 4 8 $-24
+CALL gtT16Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_82:
+@end_of_if_81:
+R_RET $-40
+FUNC_END
+FUNC_START __gtGrown16
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-16
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 $-32 #16
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-40 #0 @end_of_if_83
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_BIN MUL 8 %t0 $-32 #2
+R_ARG 1 8 %t0
+CALL __gtClear
+CC_END sysv_x64
+R_BRC NEQ 8 $-16 #0 @end_of_if_84
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 $-32
+R_ARG 4 8 $-24
+CALL __gtT16Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_84:
+@end_of_if_83:
+R_RET $-40
+FUNC_END
+FUNC_START gtUnlinkId
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 #0
+CALL gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 $-16 @end_of_if_85
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-48
+R_ARG 3 8 #0
+CALL gtT16RemoveAt
+CC_END sysv_x64
+ADDR 8 $-64
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 #1
+CALL gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-64 $-32 @end_of_if_86
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-64
+R_ARG 3 8 #1
+CALL gtT16RemoveAt
+CC_END sysv_x64
+@end_of_if_86:
+@end_of_if_85:
+FUNC_END
+FUNC_START __gtUnlinkId
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 #0
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 $-16 @end_of_if_87
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-48
+R_ARG 3 8 #0
+CALL __gtT16RemoveAt
+CC_END sysv_x64
+ADDR 8 $-64
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 #1
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-64 $-32 @end_of_if_88
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-64
+R_ARG 3 8 #1
+CALL __gtT16RemoveAt
+CC_END sysv_x64
+@end_of_if_88:
+@end_of_if_87:
+FUNC_END
+FUNC_START gt_ref_id
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_89
+R_RET #0
+@end_of_if_89:
+R_MOV 8 %v0 #0
+@loop_90:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_93
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_94
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-32
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BIN BAND 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 #1 @if_branch_96
+ADDR 8 $-48
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 %v1
+R_ARG 3 8 #0
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-48
+PUSH 8 ghost_table.refCap
+NEQ_INT 8
+CMP
+JMP @end_of_if_97
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v0
+@end_of_if_97:
+JMP @end_of_if_95
+@if_branch_96:
+R_ST 1 $-49 #1
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.refCap
+GT_INT 8
+CMP
+JMP @end_of_if_98
+ADDR 8 $-64
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 #0
+CALL __gtGrown16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-64 #0 @if_branch_100
+R_ST 1 $-49 #0
+JMP @end_of_if_99
+@if_branch_100:
+R_MOV 8 %t1 $-64
+R_ST 8 &ghost_table+40 %t1
+R_LEA %t0 &ghost_table #48 1
+R_PUSH 8 %t0
+CC_START sysv_x64
+PUSH 8 ghost_table.refCap
+POP ARG0 8
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_99:
+@end_of_if_98:
+PUSH 1 $-49
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.idCap
+GT_INT 8
+AND 1
+CMP
+JMP @end_of_if_101
+ADDR 8 $-72
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 #1
+CALL __gtGrown16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-72 #0 @if_branch_103
+R_ST 1 $-49 #0
+JMP @end_of_if_102
+@if_branch_103:
+R_MOV 8 %t1 $-72
+R_ST 8 &ghost_table+64 %t1
+R_LEA %t0 &ghost_table #72 1
+R_PUSH 8 %t0
+CC_START sysv_x64
+PUSH 8 ghost_table.idCap
+POP ARG0 8
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_102:
+@end_of_if_101:
+PUSH 1 $-49
+CMP
+JMP @end_of_if_104
+PUSH 8 ghost_table.nextId
+PUSH 8 1
+ADD_INT 8
+R_POPV 8 %v0
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+88 %t1
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 %v1
+R_ARG 3 8 %v0
+R_ARG 4 8 #0
+CALL __gtT16Insert
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 %v0
+R_ARG 3 8 %v1
+R_ARG 4 8 #1
+CALL __gtT16Insert
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-32
+R_BIN BOR 8 %t0 %v2 #1
+R_ARG 2 8 %t0
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v0 %v0
+@end_of_if_104:
+@end_of_if_95:
+@end_of_if_94:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_91
+@if_branch_93:
+JMP @loop_90
+@end_of_if_92:
+JMP @loop_90
+@loop_end_91:
+R_RET %v0
+FUNC_END
+FUNC_START gt_ref_resolve
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BRC NEQ 8 $-8 #0 @end_of_if_105
+@loop_106:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_109
+PUSH 8 ghost_table.idCap
+PUSH 8 0
+NEQ_INT 8
+CMP
+JMP @end_of_if_110
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 $-8
+R_ARG 3 8 #1
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.idCap
+NEQ_INT 8
+CMP
+JMP @end_of_if_111
+ADDR 8 $-16
+CC_START sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+R_BIN MUL 8 %t0 $-24 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG0 8
+CALL __gtPtrOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_111:
+@end_of_if_110:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_107
+@if_branch_109:
+JMP @loop_106
+@end_of_if_108:
+JMP @loop_106
+@loop_end_107:
+@end_of_if_105:
+R_RET $-16
+FUNC_END
+FUNC_START gt_alive_check
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_112
+R_RET #0
+@end_of_if_112:
+R_SETV 1 %v0 #0
+@loop_113:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_116
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG2 8
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_117
+R_SETV 1 %v0 #1
+@end_of_if_117:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_114
+@if_branch_116:
+JMP @loop_113
+@end_of_if_115:
+JMP @loop_113
+@loop_end_114:
+R_MOV 8 %s %v0
+R_RET %s
+FUNC_END
+FUNC_START gt_destruct
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-8 #0 @end_of_if_118
+@loop_119:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_122
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_123
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BIN BAND 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 #1 @end_of_if_124
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+PUSH 8 ghost_table.idBase
+POP ARG2 8
+PUSH 8 ghost_table.idCap
+POP ARG3 8
+R_ARG 4 8 %v1
+CALL __gtUnlinkId
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_124:
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-24
+CALL __gtT1RemoveAt
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+PUSH 8 ghost_table.capacity
+PUSH 8 8
+GT_INT 8
+PUSH 8 ghost_table.len
+PUSH 8 8
+MUL_INT 8
+PUSH 8 ghost_table.capacity
+LT_INT 8
+AND 1
+CMP
+JMP @end_of_if_125
+PUSH 8 ghost_table.capacity
+PUSH 8 1
+SHR 8
+R_POPV 8 %v0
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 %v0 #8
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 #0 @end_of_if_126
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 %v0
+CALL __gtClear
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-48
+R_ARG 3 8 %v0
+CALL __gtT1Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+CALL free 1
+CC_END sysv_x64
+R_MOV 8 %t1 $-48
+R_ST 8 &ghost_table+16 %t1
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+32 %t1
+@end_of_if_126:
+@end_of_if_125:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_123:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_120
+@if_branch_122:
+JMP @loop_119
+@end_of_if_121:
+JMP @loop_119
+@loop_end_120:
+@end_of_if_118:
+FUNC_END
+EXTERN exit imut_void imut_u32
+FUNC_START gt_init
+ALLOC 16
+@loop_127:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_130
+R_MOV 8 $-8 #0
+ADDR 8 $-8
+CC_START sysv_x64
+R_ARG 0 8 #64
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_131
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL exit 1
+CC_END sysv_x64
+@end_of_if_131:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 #8
+CALL __gtClear
+CC_END sysv_x64
+R_MOV 8 %t1 $-8
+R_ST 8 &ghost_table+16 %t1
+R_ST 8 &ghost_table+24 #0
+R_ST 8 &ghost_table+32 #8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_128
+@if_branch_130:
+JMP @loop_127
+@end_of_if_129:
+JMP @loop_127
+@loop_end_128:
+FUNC_END
+FUNC_START gt_moved
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-8 #0 @end_of_if_132
+@loop_133:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_136
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v0
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v0
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_137
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BIN BAND 8 %t0 %v1 #1
+R_BRC EQ 8 %t0 #1 @end_of_if_138
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+PUSH 8 ghost_table.idBase
+POP ARG2 8
+PUSH 8 ghost_table.idCap
+POP ARG3 8
+R_ARG 4 8 %v0
+CALL __gtUnlinkId
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_138:
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-24
+CALL __gtT1RemoveAt
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_137:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_134
+@if_branch_136:
+JMP @loop_133
+@end_of_if_135:
+JMP @loop_133
+@loop_end_134:
+@end_of_if_132:
+FUNC_END
+FUNC_START gt_register
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_139
+R_RET #1
+@end_of_if_139:
+R_ST 1 $-9 #1
+@loop_140:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_143
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 ghost_table.capacity
+EQ_INT 8
+CMP
+JMP @end_of_if_144
+PUSH 8 ghost_table.len
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.capacity
+GT_INT 8
+CMP
+JMP @end_of_if_145
+PUSH 8 ghost_table.capacity
+PUSH 8 2
+MUL_INT 8
+R_POPV 8 %v0
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 %v0 #8
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-48 #0 @if_branch_147
+R_ST 1 $-9 #0
+JMP @end_of_if_146
+@if_branch_147:
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 %v0
+CALL __gtClear
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-48
+R_ARG 3 8 %v0
+CALL __gtT1Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+CALL free 1
+CC_END sysv_x64
+R_MOV 8 %t1 $-48
+R_ST 8 &ghost_table+16 %t1
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+32 %t1
+@end_of_if_146:
+@end_of_if_145:
+PUSH 1 $-9
+CMP
+JMP @end_of_if_148
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Insert
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+@end_of_if_148:
+@end_of_if_144:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_141
+@if_branch_143:
+JMP @loop_140
+@end_of_if_142:
+JMP @loop_140
+@loop_end_141:
+R_LD 1 %s $-9
+R_RET %s
+FUNC_END
+FUNC_START check
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-9
+PUSH 1 ARG1
+ASSIGN 1 1 1
+PUSH 1 $-9
+CMP
+JMP @if_branch_150
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_149
+@if_branch_150:
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_149:
+FUNC_END
+FUNC_START main
+ALLOC 80
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_ASSIGN 8 8 8
+R_SETV 1 %v1 #0
+R_MOV 8 $-16 #0
+R_MOV 8 %v0 #7
+@loop_151:
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_154
+R_SETV 1 %v1 #1
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_152
+@if_branch_154:
+R_RMW INC 8 $-16
+R_MOV 8 %v3 $-16
+R_BRC LT_EQ 8 $-16 %v0 @loop_end_152
+@end_of_if_155:
+R_BIN ADD 8 %t0 %v3 #0
+R_MOV 8 $-40 %t0
+ADDR 8 last
+PUSH 8 $-40
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_151
+@end_of_if_153:
+JMP @loop_151
+@loop_end_152:
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+ATOMIC_PUSH 8 last
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_BIN EQ 8 %t0 $-48 #7
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+R_MOV 8 %t0 %v1
+R_BIN EQ 1 %t0 %t0 #0
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 24 plain
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_ASSIGN 8 8 8
+R_SETV 1 %v0 #0
+R_MOV 8 $-16 #0
+R_MOV 8 $-64 #5
+@loop_156:
+ADDR 24 plain
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_159
+R_SETV 1 %v0 #1
+ADDR 24 plain
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_157
+@if_branch_159:
+R_RMW INC 8 $-16
+R_BRC LT_EQ 8 $-16 $-64 @loop_end_157
+@end_of_if_160:
+JMP @loop_156
+@end_of_if_158:
+JMP @loop_156
+@loop_end_157:
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+R_MOV 8 %t0 %v0
+R_BIN EQ 1 %t0 %t0 #0
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 24 plain
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_MOV 8 $-64 #5
+@loop_161:
+ADDR 24 plain
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_164
+R_SETV 1 %v0 #1
+ADDR 24 plain
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_162
+@if_branch_164:
+R_RMW INC 8 $-16
+R_BRC LT_EQ 8 $-16 $-64 @loop_end_162
+@end_of_if_165:
+JMP @loop_161
+@end_of_if_163:
+JMP @loop_161
+@loop_end_162:
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+R_ARG 1 1 %v0
+CALL check
+CC_END sysv_x64
+R_SETV 1 %v0 #0
+@loop_166:
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_169
+R_SETV 1 %v0 #1
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_167
+@if_branch_169:
+JMP @loop_end_167
+@end_of_if_168:
+JMP @loop_166
+@loop_end_167:
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+R_MOV 8 %t0 %v0
+R_BIN EQ 1 %t0 %t0 #0
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+R_SETV 1 %v1 #0
+R_MOV 8 $-16 #0
+R_MOV 8 %v0 #7
+@loop_170:
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_173
+ADDR 24 box
+PUSH_FIELDNAME 16 8
+DOT_LHS 8
+PUSH 8 box.n
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+R_SETV 1 %v1 #1
+ADDR 24 box
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_171
+@if_branch_173:
+R_RMW INC 8 $-16
+R_MOV 8 %v3 $-16
+R_BRC LT_EQ 8 $-16 %v0 @loop_end_171
+@end_of_if_174:
+R_BIN ADD 8 %t0 %v3 #0
+R_MOV 8 $-40 %t0
+ADDR 8 last
+PUSH 8 $-40
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_170
+@end_of_if_172:
+JMP @loop_170
+@loop_end_171:
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_ARG 1 1 %v1
+CALL check
+CC_END sysv_x64
+FUNC_END

@@ -1,0 +1,26 @@
+// A `ref some` struct member (v1 lifetime contracts, ASTGenerator/docs/LifetimeContracts.md): two locals of one scope, the struct borrows the first.
+// Expected output:
+// PASS read through member 7
+// PASS write through member 9
+// PASS second borrower sees it 9
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new A{v= 7}
+	let b = mut B{a= ref a}
+	let c = mut B{a= ref a}
+	// report() contains an unsafe block, which ends every alive proof: read everything first
+	let r1 = mut b.a.v
+	b.a.v = 9
+	let r2 = mut a.v
+	let r3 = mut c.a.v
+	report("read through member", r1)
+	report("write through member", r2)
+	report("second borrower sees it", r3)
+}

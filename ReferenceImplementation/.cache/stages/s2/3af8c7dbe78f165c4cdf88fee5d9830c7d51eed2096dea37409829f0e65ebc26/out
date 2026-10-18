@@ -1,0 +1,97 @@
+STRING string_id1 "PASS %s %llu\n"
+STRING string_id2 "u8 instance"
+STRING string_id3 "u64 instance"
+STRING string_id4 "assumed, not tested"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+FUNC_START main
+RETURNS imut_void
+ALLOC name__i3 static_imut_string
+ALLOC got__i3 mut_u64
+ALLOC name__i5 static_imut_string
+ALLOC name__i7 static_imut_string
+ALLOC got__i7 mut_u64
+ALLOC q__i9 mut_u64
+ALLOC __ret_i9 mut_u64
+ALLOC q__i15 mut_u64
+ALLOC __ret_i15 mut_u64
+ADDR name__i3 static_imut_string
+PUSH string_id2 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR q__i9 mut_u64
+PUSH 1 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR q__i9 mut_u64
+PUSH 105 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR q__i9 mut_u64
+PUSH q__i9 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+@end_of_match_10:
+ADDR __ret_i9 mut_u64
+PUSH q__i9 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR got__i3 mut_u64
+PUSH __ret_i9 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i3 static_imut_string
+POP ARG1 static_imut_string
+PUSH got__i3 mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+ADDR name__i5 static_imut_string
+PUSH string_id3 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+@end_of_match_13:
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i5 static_imut_string
+POP ARG1 static_imut_string
+PUSH 400 mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+ADDR name__i7 static_imut_string
+PUSH string_id4 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR q__i15 mut_u64
+PUSH 1 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR q__i15 mut_u64
+PUSH 100 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR q__i15 mut_u64
+PUSH q__i15 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+@end_of_match_16:
+ADDR __ret_i15 mut_u64
+PUSH q__i15 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR got__i7 mut_u64
+PUSH __ret_i15 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i7 static_imut_string
+POP ARG1 static_imut_string
+PUSH got__i7 mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+FUNC_END

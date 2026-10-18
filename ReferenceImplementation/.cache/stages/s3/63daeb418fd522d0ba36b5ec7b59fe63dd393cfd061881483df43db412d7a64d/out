@@ -1,0 +1,29 @@
+STRING string_id1 "argc=%llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+FUNC_START main
+ALLOC 32
+ADDR 4 $-4
+PUSH 4 ARG0
+ASSIGN 4 4 4
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 4
+PUSH 4 $-4
+ADDR_OF RAW $-4
+MEMCOPY
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-24
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+FUNC_END

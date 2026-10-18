@@ -1,0 +1,110 @@
+STRING string_id1 "zero"
+STRING string_id2 "a=%llu\n"
+STRING string_id3 "caught\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START f
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-24 #0 @end_of_if_1
+THROW string_id1
+ADDR 8 $-16
+PUSH 8 string_id1
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_1:
+R_RET $-24
+FUNC_END
+FUNC_START g
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__g_3
+@catch_2:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+THROW e
+R_MOV 8 %t0 $-32
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__g_3:
+ADDR 8 $-8
+PUSH_LABEL @catch_2 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL f
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+FUNC_END
+FUNC_START show
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-24
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+FUNC_END
+FUNC_START main
+ALLOC 32
+JMP @end_of_catches__main_6
+@catch_5:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+RET 0
+@end_of_catches__main_6:
+ADDR 8 $-24
+ADDR 8 $-8
+PUSH_LABEL @catch_5 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+CALL g
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_7 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL show
+CC_END sysv_x64
+@after_try_block_4:
+JMP @end_of_gt_callsites__main_8
+@gt_callsite__main_7:
+EXIT
+@end_of_gt_callsites__main_8:
+FUNC_END

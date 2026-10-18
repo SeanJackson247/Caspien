@@ -1,0 +1,2 @@
+N	[note] /home/claude/caspien/stdlib/tree_map.caspien:64 - @inline: TreeMap_u64_u64_valueAt inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/tree_map.caspien:57 - @inline: TreeMap_u64_u64_keyAt inlined at 1 call site

@@ -1,0 +1,139 @@
+STRING string_id1 "boom"
+STRING string_id2 "PASS: lock was released by the throw\n"
+STRING string_id3 "FAIL: lock still held after the throw\n"
+GLOBAL m 24
+GLOBAL m.___type 8 0
+GLOBAL m.lockState 8 0
+GLOBAL m.n 8 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START holdAndThrow
+ALLOC 32
+R_MOV 8 $-24 #0
+R_MOV 8 $-32 #1000000000
+@loop_1:
+ADDR 24 m
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_4
+THROW string_id1
+ADDR 8 $-16
+PUSH 8 string_id1
+ASSIGN 8 8 8
+ADDR 24 m
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+GT_UNWIND MSG
+ADDR 24 m
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_2
+@if_branch_4:
+R_RMW INC 8 $-24
+R_BRC LT_EQ 8 $-24 $-32 @loop_end_2
+@end_of_if_5:
+JMP @loop_1
+@end_of_if_3:
+JMP @loop_1
+@loop_end_2:
+FUNC_END
+FUNC_START reacquire
+ALLOC 48
+R_ST 1 $-17 #0
+R_MOV 8 $-32 #0
+R_MOV 8 $-40 #1000
+@loop_6:
+ADDR 24 m
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_9
+R_ST 1 $-17 #1
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+ADDR 24 m
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_7
+@if_branch_9:
+R_RMW INC 8 $-32
+R_BRC LT_EQ 8 $-32 $-40 @loop_end_7
+@end_of_if_10:
+JMP @loop_6
+@end_of_if_8:
+JMP @loop_6
+@loop_end_7:
+PUSH 1 $-17
+NOT 1
+CMP
+JMP @end_of_if_11
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+@end_of_if_11:
+FUNC_END
+FUNC_START main
+ALLOC 32
+JMP @end_of_catches__main_14
+@catch_13:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-24 %t0
+JMP @after_try_block_12
+@end_of_catches__main_14:
+ADDR 8 $-8
+PUSH_LABEL @catch_13 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL holdAndThrow
+CC_END sysv_x64
+@after_try_block_12:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_15 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL reacquire
+CC_END sysv_x64
+JMP @end_of_gt_callsites__main_16
+@gt_callsite__main_15:
+EXIT
+@end_of_gt_callsites__main_16:
+FUNC_END

@@ -1,0 +1,674 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "u16[3][2] row 0"
+STRING string_id4 "u16[3][2] row 1"
+STRING string_id5 "u8[3][2] row 0"
+STRING string_id6 "u8[3][2] row 1"
+STRING string_id7 "u8[3] row copied out"
+STRING string_id8 "u16[3] row copied out"
+STRING string_id9 "u8[5][3] rows"
+STRING string_id10 "u8[7][2] rows"
+STRING string_id11 "u16[3][3] rows"
+STRING string_id12 "struct member row array [1][1]"
+STRING string_id13 "struct member row array [0][2]"
+STRING string_id14 "struct member neighbour tag"
+STRING string_id15 "struct member neighbour tail"
+STRING string_id16 "write inside a row"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+STRUCT_START Holder
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER tag mut_u8
+STRUCT_PADDING 1
+STRUCT_MEMBER w mut_u16[3][2]
+STRUCT_PADDING 2
+STRUCT_MEMBER tail mut_u64
+STRUCT_END
+FUNC_START check
+RETURNS imut_void
+ARG name static_imut_string
+ARG ok mut_bool
+PUSH ok mut_bool
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@end_of_if_1:
+RET imut_void
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC a0 mut_u16[3]
+ALLOC a1 mut_u16[3]
+ALLOC w mut_u16[3][2]
+ALLOC w00 mut_u16
+ALLOC w01 mut_u16
+ALLOC w02 mut_u16
+ALLOC w10 mut_u16
+ALLOC w11 mut_u16
+ALLOC w12 mut_u16
+ALLOC b0 mut_u8[3]
+ALLOC b1 mut_u8[3]
+ALLOC v mut_u8[3][2]
+ALLOC v00 mut_u8
+ALLOC v02 mut_u8
+ALLOC v10 mut_u8
+ALLOC v12 mut_u8
+ALLOC rv mut_u8[3]
+ALLOC rv0 mut_u8
+ALLOC rv1 mut_u8
+ALLOC rv2 mut_u8
+ALLOC rw mut_u16[3]
+ALLOC rw1 mut_u16
+ALLOC rw2 mut_u16
+ALLOC c0 mut_u8[5]
+ALLOC c1 mut_u8[5]
+ALLOC c2 mut_u8[5]
+ALLOC c mut_u8[5][3]
+ALLOC c04 mut_u8
+ALLOC c10 mut_u8
+ALLOC c14 mut_u8
+ALLOC c20 mut_u8
+ALLOC c24 mut_u8
+ALLOC d0 mut_u8[7]
+ALLOC d1 mut_u8[7]
+ALLOC d mut_u8[7][2]
+ALLOC d06 mut_u8
+ALLOC d10 mut_u8
+ALLOC d16 mut_u8
+ALLOC e0 mut_u16[3]
+ALLOC e1 mut_u16[3]
+ALLOC e2 mut_u16[3]
+ALLOC e mut_u16[3][3]
+ALLOC e12 mut_u16
+ALLOC e20 mut_u16
+ALLOC e22 mut_u16
+ALLOC h mut_Holder
+ALLOC h11 mut_u16
+ALLOC h02 mut_u16
+ALLOC nw10 mut_u16
+ALLOC nw11 mut_u16
+ALLOC nw12 mut_u16
+ALLOC nw02 mut_u16
+ADDR a0 mut_u16[3]
+PUSH 1 indeterminate_u16
+PUSH 2 indeterminate_u16
+PUSH 3 indeterminate_u16
+ASSIGN mut_u16[3] mut_u16[3] mut_u16[3]
+ADDR a1 mut_u16[3]
+PUSH 4 indeterminate_u16
+PUSH 5 indeterminate_u16
+PUSH 6 indeterminate_u16
+ASSIGN mut_u16[3] mut_u16[3] mut_u16[3]
+ADDR w mut_u16[3][2]
+PUSH a0 mut_u16[3]
+PUSH a1 mut_u16[3]
+ASSIGN mut_u16[3][2] mut_u16[3][2] mut_u16[3][2]
+ADDR w00 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR w01 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR w02 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR w10 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR w11 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR w12 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH w00 mut_u16
+PUSH 1 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+PUSH w01 mut_u16
+PUSH 2 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH w02 mut_u16
+PUSH 3 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id4 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH w10 mut_u16
+PUSH 4 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+PUSH w11 mut_u16
+PUSH 5 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH w12 mut_u16
+PUSH 6 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR b0 mut_u8[3]
+PUSH 1 indeterminate_u8
+PUSH 2 indeterminate_u8
+PUSH 3 indeterminate_u8
+ASSIGN mut_u8[3] mut_u8[3] mut_u8[3]
+ADDR b1 mut_u8[3]
+PUSH 4 indeterminate_u8
+PUSH 5 indeterminate_u8
+PUSH 6 indeterminate_u8
+ASSIGN mut_u8[3] mut_u8[3] mut_u8[3]
+ADDR v mut_u8[3][2]
+PUSH b0 mut_u8[3]
+PUSH b1 mut_u8[3]
+ASSIGN mut_u8[3][2] mut_u8[3][2] mut_u8[3][2]
+ADDR v00 mut_u8
+PUSH v mut_u8[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[3][2] indeterminate_u64 mut_u8[3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[3] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR v02 mut_u8
+PUSH v mut_u8[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[3][2] indeterminate_u64 mut_u8[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u8[3] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR v10 mut_u8
+PUSH v mut_u8[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[3][2] indeterminate_u64 mut_u8[3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[3] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR v12 mut_u8
+PUSH v mut_u8[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[3][2] indeterminate_u64 mut_u8[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u8[3] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+CC_START sysv_x64
+PUSH string_id5 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH v00 mut_u8
+PUSH 1 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH v02 mut_u8
+PUSH 3 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id6 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH v10 mut_u8
+PUSH 4 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH v12 mut_u8
+PUSH 6 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR rv mut_u8[3]
+PUSH v mut_u8[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[3][2] indeterminate_u64 mut_u8[3]
+ASSIGN mut_u8[3] mut_u8[3] mut_u8[3]
+ADDR rv0 mut_u8
+ADDR rv mut_u8[3]
+PUSH 0 indeterminate_u64
+LOOKUP_LHS mut_u8[3] indeterminate_u64 mut_u8
+DEREF mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR rv1 mut_u8
+ADDR rv mut_u8[3]
+PUSH 1 indeterminate_u64
+LOOKUP_LHS mut_u8[3] indeterminate_u64 mut_u8
+DEREF mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR rv2 mut_u8
+ADDR rv mut_u8[3]
+PUSH 2 indeterminate_u64
+LOOKUP_LHS mut_u8[3] indeterminate_u64 mut_u8
+DEREF mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+CC_START sysv_x64
+PUSH string_id7 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH rv0 mut_u8
+PUSH 4 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH rv1 mut_u8
+PUSH 5 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH rv2 mut_u8
+PUSH 6 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR rw mut_u16[3]
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+ASSIGN mut_u16[3] mut_u16[3] mut_u16[3]
+ADDR rw1 mut_u16
+ADDR rw mut_u16[3]
+PUSH 1 indeterminate_u64
+LOOKUP_LHS mut_u16[3] indeterminate_u64 mut_u16
+DEREF mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR rw2 mut_u16
+ADDR rw mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP_LHS mut_u16[3] indeterminate_u64 mut_u16
+DEREF mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+CC_START sysv_x64
+PUSH string_id8 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH rw1 mut_u16
+PUSH 5 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+PUSH rw2 mut_u16
+PUSH 6 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR c0 mut_u8[5]
+PUSH 1 indeterminate_u8
+PUSH 2 indeterminate_u8
+PUSH 3 indeterminate_u8
+PUSH 4 indeterminate_u8
+PUSH 5 indeterminate_u8
+ASSIGN mut_u8[5] mut_u8[5] mut_u8[5]
+ADDR c1 mut_u8[5]
+PUSH 6 indeterminate_u8
+PUSH 7 indeterminate_u8
+PUSH 8 indeterminate_u8
+PUSH 9 indeterminate_u8
+PUSH 10 indeterminate_u8
+ASSIGN mut_u8[5] mut_u8[5] mut_u8[5]
+ADDR c2 mut_u8[5]
+PUSH 11 indeterminate_u8
+PUSH 12 indeterminate_u8
+PUSH 13 indeterminate_u8
+PUSH 14 indeterminate_u8
+PUSH 15 indeterminate_u8
+ASSIGN mut_u8[5] mut_u8[5] mut_u8[5]
+ADDR c mut_u8[5][3]
+PUSH c0 mut_u8[5]
+PUSH c1 mut_u8[5]
+PUSH c2 mut_u8[5]
+ASSIGN mut_u8[5][3] mut_u8[5][3] mut_u8[5][3]
+ADDR c04 mut_u8
+PUSH c mut_u8[5][3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[5][3] indeterminate_u64 mut_u8[5]
+PUSH 4 indeterminate_u64
+LOOKUP mut_u8[5] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR c10 mut_u8
+PUSH c mut_u8[5][3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[5][3] indeterminate_u64 mut_u8[5]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[5] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR c14 mut_u8
+PUSH c mut_u8[5][3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[5][3] indeterminate_u64 mut_u8[5]
+PUSH 4 indeterminate_u64
+LOOKUP mut_u8[5] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR c20 mut_u8
+PUSH c mut_u8[5][3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u8[5][3] indeterminate_u64 mut_u8[5]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[5] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR c24 mut_u8
+PUSH c mut_u8[5][3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u8[5][3] indeterminate_u64 mut_u8[5]
+PUSH 4 indeterminate_u64
+LOOKUP mut_u8[5] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+CC_START sysv_x64
+PUSH string_id9 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH c04 mut_u8
+PUSH 5 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH c10 mut_u8
+PUSH 6 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH c14 mut_u8
+PUSH 10 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH c20 mut_u8
+PUSH 11 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH c24 mut_u8
+PUSH 15 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR d0 mut_u8[7]
+PUSH 1 indeterminate_u8
+PUSH 2 indeterminate_u8
+PUSH 3 indeterminate_u8
+PUSH 4 indeterminate_u8
+PUSH 5 indeterminate_u8
+PUSH 6 indeterminate_u8
+PUSH 7 indeterminate_u8
+ASSIGN mut_u8[7] mut_u8[7] mut_u8[7]
+ADDR d1 mut_u8[7]
+PUSH 8 indeterminate_u8
+PUSH 9 indeterminate_u8
+PUSH 10 indeterminate_u8
+PUSH 11 indeterminate_u8
+PUSH 12 indeterminate_u8
+PUSH 13 indeterminate_u8
+PUSH 14 indeterminate_u8
+ASSIGN mut_u8[7] mut_u8[7] mut_u8[7]
+ADDR d mut_u8[7][2]
+PUSH d0 mut_u8[7]
+PUSH d1 mut_u8[7]
+ASSIGN mut_u8[7][2] mut_u8[7][2] mut_u8[7][2]
+ADDR d06 mut_u8
+PUSH d mut_u8[7][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[7][2] indeterminate_u64 mut_u8[7]
+PUSH 6 indeterminate_u64
+LOOKUP mut_u8[7] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR d10 mut_u8
+PUSH d mut_u8[7][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[7][2] indeterminate_u64 mut_u8[7]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u8[7] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR d16 mut_u8
+PUSH d mut_u8[7][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u8[7][2] indeterminate_u64 mut_u8[7]
+PUSH 6 indeterminate_u64
+LOOKUP mut_u8[7] indeterminate_u64 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+CC_START sysv_x64
+PUSH string_id10 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH d06 mut_u8
+PUSH 7 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+PUSH d10 mut_u8
+PUSH 8 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH d16 mut_u8
+PUSH 14 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR e0 mut_u16[3]
+PUSH 10 indeterminate_u16
+PUSH 20 indeterminate_u16
+PUSH 30 indeterminate_u16
+ASSIGN mut_u16[3] mut_u16[3] mut_u16[3]
+ADDR e1 mut_u16[3]
+PUSH 40 indeterminate_u16
+PUSH 50 indeterminate_u16
+PUSH 60 indeterminate_u16
+ASSIGN mut_u16[3] mut_u16[3] mut_u16[3]
+ADDR e2 mut_u16[3]
+PUSH 70 indeterminate_u16
+PUSH 80 indeterminate_u16
+PUSH 90 indeterminate_u16
+ASSIGN mut_u16[3] mut_u16[3] mut_u16[3]
+ADDR e mut_u16[3][3]
+PUSH e0 mut_u16[3]
+PUSH e1 mut_u16[3]
+PUSH e2 mut_u16[3]
+ASSIGN mut_u16[3][3] mut_u16[3][3] mut_u16[3][3]
+ADDR e12 mut_u16
+PUSH e mut_u16[3][3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][3] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR e20 mut_u16
+PUSH e mut_u16[3][3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3][3] indeterminate_u64 mut_u16[3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR e22 mut_u16
+PUSH e mut_u16[3][3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3][3] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+CC_START sysv_x64
+PUSH string_id11 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH e12 mut_u16
+PUSH 60 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+PUSH e20 mut_u16
+PUSH 70 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH e22 mut_u16
+PUSH 90 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR h mut_Holder
+PUSH 0 imut_u64
+PUSH 3 indeterminate_u8
+STACK_LOCK 1
+PUSH w mut_u16[3][2]
+STACK_LOCK 2
+PUSH 1007 indeterminate_u64
+ASSIGN mut_Holder mut_Holder mut_Holder
+ADDR h11 mut_u16
+PUSH h.w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR h02 mut_u16
+PUSH h.w mut_u16[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+CC_START sysv_x64
+PUSH string_id12 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH h11 mut_u16
+PUSH 5 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id13 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH h02 mut_u16
+PUSH 3 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id14 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH h.tag mut_u8
+PUSH 3 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id15 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH h.tail mut_u64
+PUSH 1007 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+ADDR w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP_LHS mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 1 indeterminate_u64
+LOOKUP_LHS mut_u16[3] indeterminate_u64 mut_u16
+PUSH 55 indeterminate_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR nw10 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR nw11 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR nw12 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 1 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR nw02 mut_u16
+PUSH w mut_u16[3][2]
+PUSH 0 indeterminate_u64
+LOOKUP mut_u16[3][2] indeterminate_u64 mut_u16[3]
+PUSH 2 indeterminate_u64
+LOOKUP mut_u16[3] indeterminate_u64 mut_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+CC_START sysv_x64
+PUSH string_id16 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH nw10 mut_u16
+PUSH 4 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+PUSH nw11 mut_u16
+PUSH 55 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH nw12 mut_u16
+PUSH 6 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+PUSH nw02 mut_u16
+PUSH 3 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+FUNC_END
+ENUM Class Holder 0

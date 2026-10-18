@@ -1,0 +1,110 @@
+STRING string_id1 "PASS %s %llu\n"
+STRING string_id2 "u8 instance"
+STRING string_id3 "u64 instance"
+STRING string_id4 "assumed, not tested"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START report
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+R_ARG 2 8 $-16
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+FUNC_END
+FUNC_START main
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+R_ARG 1 8 #5
+CALL pick_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+CALL report
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+R_ARG 1 8 #300
+CALL pick_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+CALL report
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+R_ARG 1 8 #0
+CALL pick_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+CALL report
+CC_END sysv_x64
+FUNC_END
+FUNC_START pick_u8
+ALLOC 32
+ADDR 1 $-1
+PUSH 1 ARG0
+ASSIGN 1 1 1
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #1
+R_BIN ADD 8 %t0 $-16 #100
+R_MOV 8 $-24 %t0
+R_BRC LT_EQ 8 $-16 #255 @end_of_match_1
+R_RMW ADD 8 $-24 #1
+@end_of_match_1:
+R_RET $-24
+FUNC_END
+FUNC_START pick_u64
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #1
+R_BIN ADD 8 %t0 $-16 #100
+R_MOV 8 $-24 %t0
+R_BRC LT_EQ 8 $-16 #255 @end_of_match_2
+R_RMW ADD 8 $-24 #1
+@end_of_match_2:
+R_RET $-24
+FUNC_END

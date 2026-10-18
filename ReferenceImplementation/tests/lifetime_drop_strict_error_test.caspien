@@ -1,0 +1,16 @@
+// B has a @drop hook that reads through the member, so the borrowed object must be declared strictly before the B (dropped after it).
+// `a2` is declared after `b`: it is dropped first, and b's @drop would read a destroyed object.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+@drop
+func bDrop(b: ref some mut B) void{
+}
+func main() void{
+	?catch(e){ return }
+	let a1 = mut ?new A{v= 1}
+	let b = mut B{a= ref a1}
+	let a2 = mut ?new A{v= 2}
+	b.a = ref a2
+}

@@ -888,6 +888,7 @@ public final class TypeCheckerExpressions {
                     op.left.chk.inlineOwnsStruct = leftType.baseType;
                 }
                 markMovedIfOwned(leftType, op.right, scope);
+                hub.lifetimes.onStore(op.left, null, op.right, leftType, false, scope, func);
                 if (hub.model.typeOwnsMemory(leftType, new HashSet<>()) && hub.signatures.assignsInsideSwapLockStruct(op.left, scope)) {
                     hub.signatures.requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(TypeCheckerModel.memberPathRoot(op.left)));
                 }
@@ -909,6 +910,7 @@ public final class TypeCheckerExpressions {
         if (rhsType.isAtomic && !hub.impls.isDirectAtomicDeclaration(op.right)) {
             rhsType = rhsType.withAtomic(false);
         }
+        hub.lifetimes.requireNotStaticScoped(rhsType, nameTok, "'" + nameTok.text + "'");
         scope.declare(nameTok.text, rhsType, nameTok);
         scope.declScope().staticNames.add(nameTok.text);
         if (op.left.isConst) {
@@ -942,6 +944,7 @@ public final class TypeCheckerExpressions {
         if ("ref".equals(rhsType.storage) && rhsType.isSome) {
             ProofKills.implicit(nameTok.text, hub.declarations.pointeeOf(rhsType));
         }
+        hub.lifetimes.onStore(op.left, nameTok, op.right, rhsType, true, scope, func);
         if (op.left.isConst) {
             scope.declScope().constNames.add(nameTok.text);
         }

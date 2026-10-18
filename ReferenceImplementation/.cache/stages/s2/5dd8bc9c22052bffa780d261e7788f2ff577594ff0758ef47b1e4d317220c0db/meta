@@ -1,0 +1,9 @@
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_u64_get inlined at 8 call sites
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_char_get inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:197 - @inline: DynamicArray_u64_setPtr inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_Mixed_get inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:197 - @inline: DynamicArray_Outer_setPtr inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_Outer_get inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:197 - @inline: DynamicArray_Edge_setPtr inlined at 1 call site
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_Edge_get inlined at 3 call sites
+N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:110 - @inline: DynamicArray_u64_set inlined at 1 call site

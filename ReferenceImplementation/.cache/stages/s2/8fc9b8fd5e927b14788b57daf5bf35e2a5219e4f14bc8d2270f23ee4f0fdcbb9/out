@@ -1,0 +1,249 @@
+STRING string_id1 "%llu -> ok %llu"
+STRING string_id2 "%llu -> fail"
+STRING string_id3 "halve: "
+STRING string_id4 " / "
+STRING string_id5 "\n"
+STRING string_id6 "readings: "
+STRING string_id7 "live=%llu "
+STRING string_id8 "live=none "
+STRING string_id9 "dead=%llu\n"
+STRING string_id10 "dead=none\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+ENUM ResultState OK FAIL
+ENUM Sensor LIVE DEAD
+STRUCT_START Reading
+STRUCT_DECORATE @lock
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER status imut_Sensor
+STRUCT_MEMBER value mut_u64
+STRUCT_END
+FUNC_START main
+RETURNS imut_void
+ALLOC live mut_Reading
+ALLOC dead mut_Reading
+ALLOC r__i15 mut_Result_u64
+ALLOC r__i19 mut_Result_u64
+ALLOC r__i23 mut_Result_u64
+ALLOC $ret_dest__i31 raw_mut_Result_u64
+ALLOC $ret_dest__i8__i31 raw_mut_Result_u64
+ALLOC $ret_dest__i10__i31 raw_mut_Result_u64
+ALLOC $ret_dest__i34 raw_mut_Result_u64
+ALLOC $ret_dest__i8__i34 raw_mut_Result_u64
+ALLOC $ret_dest__i10__i34 raw_mut_Result_u64
+ALLOC $ret_dest__i37 raw_mut_Result_u64
+ALLOC $ret_dest__i8__i37 raw_mut_Result_u64
+ALLOC $ret_dest__i10__i37 raw_mut_Result_u64
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+ADDR $ret_dest__i31 raw_mut_Result_u64
+PUSH r__i15 mut_Result_u64
+ADDR_OF RAW mut_Result_u64 raw_indeterminate_Result_u64
+ASSIGN raw_mut_Result_u64 raw_indeterminate_Result_u64 raw_mut_Result_u64
+ADDR $ret_dest__i8__i31 raw_mut_Result_u64
+PUSH $ret_dest__i31 raw_mut_Result_u64
+ASSIGN raw_mut_Result_u64 raw_mut_Result_u64 raw_mut_Result_u64
+PUSH $ret_dest__i8__i31 raw_mut_Result_u64
+PUSH 1 imut_u64
+PUSH ResultState.OK imut_ResultState
+PUSH 5 mut_u64
+ASSIGN mut_Result_u64 indeterminate_Result_u64 mut_Result_u64
+@inl_end_33:
+PUSH r__i15.state imut_ResultState
+PUSH ResultState.OK imut_ResultState
+EQ imut_ResultState imut_ResultState indeterminate_bool
+CMP
+JMP @if_branch_16
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH 10 mut_u64
+POP ARG1 mut_u64
+PUSH r__i15.payload mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+JMP @end_of_if_17
+@if_branch_16:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH 10 mut_u64
+POP ARG1 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_17:
+CC_START sysv_x64
+PUSH string_id4 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+ADDR $ret_dest__i34 raw_mut_Result_u64
+PUSH r__i19 mut_Result_u64
+ADDR_OF RAW mut_Result_u64 raw_indeterminate_Result_u64
+ASSIGN raw_mut_Result_u64 raw_indeterminate_Result_u64 raw_mut_Result_u64
+@end_of_if_35:
+ADDR $ret_dest__i10__i34 raw_mut_Result_u64
+PUSH $ret_dest__i34 raw_mut_Result_u64
+ASSIGN raw_mut_Result_u64 raw_mut_Result_u64 raw_mut_Result_u64
+PUSH $ret_dest__i10__i34 raw_mut_Result_u64
+PUSH 1 imut_u64
+PUSH ResultState.FAIL imut_ResultState
+STACK_LOCK Result_u64
+ASSIGN mut_Result_u64 indeterminate_Result_u64 mut_Result_u64
+@inl_end_36:
+PUSH r__i19.state imut_ResultState
+PUSH ResultState.OK imut_ResultState
+EQ imut_ResultState imut_ResultState indeterminate_bool
+CMP
+JMP @if_branch_20
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH 7 mut_u64
+POP ARG1 mut_u64
+PUSH r__i19.payload mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+JMP @end_of_if_21
+@if_branch_20:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH 7 mut_u64
+POP ARG1 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_21:
+CC_START sysv_x64
+PUSH string_id4 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+ADDR $ret_dest__i37 raw_mut_Result_u64
+PUSH r__i23 mut_Result_u64
+ADDR_OF RAW mut_Result_u64 raw_indeterminate_Result_u64
+ASSIGN raw_mut_Result_u64 raw_indeterminate_Result_u64 raw_mut_Result_u64
+ADDR $ret_dest__i8__i37 raw_mut_Result_u64
+PUSH $ret_dest__i37 raw_mut_Result_u64
+ASSIGN raw_mut_Result_u64 raw_mut_Result_u64 raw_mut_Result_u64
+PUSH $ret_dest__i8__i37 raw_mut_Result_u64
+PUSH 1 imut_u64
+PUSH ResultState.OK imut_ResultState
+PUSH 0 mut_u64
+ASSIGN mut_Result_u64 indeterminate_Result_u64 mut_Result_u64
+@inl_end_39:
+PUSH r__i23.state imut_ResultState
+PUSH ResultState.OK imut_ResultState
+EQ imut_ResultState imut_ResultState indeterminate_bool
+CMP
+JMP @if_branch_24
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH 0 mut_u64
+POP ARG1 mut_u64
+PUSH r__i23.payload mut_u64
+POP ARG2 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 3
+CC_END sysv_x64
+JMP @end_of_if_25
+@if_branch_24:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH 0 mut_u64
+POP ARG1 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_25:
+CC_START sysv_x64
+PUSH string_id5 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+ADDR live mut_Reading
+PUSH 0 imut_u64
+PUSH Sensor.LIVE imut_Sensor
+PUSH 7 indeterminate_u64
+ASSIGN mut_Reading mut_Reading mut_Reading
+ADDR dead mut_Reading
+PUSH 0 imut_u64
+PUSH Sensor.DEAD imut_Sensor
+STACK_LOCK Reading
+ASSIGN mut_Reading mut_Reading mut_Reading
+CC_START sysv_x64
+PUSH string_id6 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+PUSH live.status imut_Sensor
+PUSH Sensor.LIVE imut_Sensor
+EQ imut_Sensor imut_Sensor indeterminate_bool
+CMP
+JMP @if_branch_5
+CC_START sysv_x64
+PUSH string_id7 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH live.value mut_u64
+POP ARG1 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_4
+@if_branch_5:
+CC_START sysv_x64
+PUSH string_id8 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+@end_of_if_4:
+PUSH dead.status imut_Sensor
+PUSH Sensor.LIVE imut_Sensor
+EQ imut_Sensor imut_Sensor indeterminate_bool
+CMP
+JMP @if_branch_7
+CC_START sysv_x64
+PUSH string_id9 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH dead.value mut_u64
+POP ARG1 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_6
+@if_branch_7:
+CC_START sysv_x64
+PUSH string_id10 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+@end_of_if_6:
+FUNC_END
+STRUCT_START Result_u64
+STRUCT_DECORATE @lock
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER state imut_ResultState
+STRUCT_MEMBER payload mut_u64
+STRUCT_END
+ENUM Class Reading 0 Result_u64 1

@@ -193,6 +193,7 @@ public final class TypeCheckerCalls {
                 op.chk.resolvedCallTarget = candidate.mangledName;
                 op.chk.resolvedCallConvention = candidate.callConvention;
                 hub.controlFlow.requireThrowsWrapping(candidate, op);
+                hub.lifetimes.onCall(candidate, argNodes, scope, op);
                 for (int i = 0; i < argNodes.size(); i++) {
                     hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
@@ -888,6 +889,10 @@ public final class TypeCheckerCalls {
                             + "'auto', 'some'-tagged, inside 'match Some(...)', or vouched for with "
                             + "'assume match Some(...)' in an 'unsafe assume' block [needs: assume match Some(" + hub.expressions.exprHint(argExpr) + ")]");
         }
+        if (hub.lifetimes.isScoped(argType)) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'clone' of '" + argType.canonical() + "': a scoped type (it holds a 'ref some') cannot be cloned, the copy would need its own lifetime contract");
+        }
         if ("raw".equals(argType.storage) && !hub.declarations.unsafeBypass(scope, "clone")) {
             // Same as 'deref': a 'raw' pointer's pointee is only as good as the programmer's word, so cloning from
             // one is 'unsafe' on top of the alive proof.
@@ -1535,6 +1540,7 @@ public final class TypeCheckerCalls {
                 op.chk.resolvedCallTarget = candidate.mangledName;
                 op.chk.resolvedCallConvention = candidate.callConvention;
                 hub.controlFlow.requireThrowsWrapping(candidate, op);
+                hub.lifetimes.onCall(candidate, argNodes, scope, op);
                 for (int i = 0; i < argNodes.size(); i++) {
                     hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
@@ -1669,6 +1675,7 @@ public final class TypeCheckerCalls {
         op.chk.resolvedCallTarget = candidate.mangledName;
         op.chk.resolvedCallConvention = candidate.callConvention;
         hub.controlFlow.requireThrowsWrapping(candidate, op);
+        hub.lifetimes.onCall(candidate, argNodes, scope, op);
         for (int i = 0; i < argNodes.size(); i++) {
             hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
         }

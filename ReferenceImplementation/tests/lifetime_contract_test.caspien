@@ -1,0 +1,41 @@
+// Lifetime contracts (ASTGenerator/docs/LifetimeContracts.md): a function stores one parameter's address into another; the contract says which
+// one lives longer, and the caller proves it from its scopes. Chain contracts and a strict (>) contract are accepted too.
+// Expected output:
+// PASS wired 5
+// PASS rewired 6
+// PASS chain 8
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+struct C{@pub{ b: ref some mut B }}
+@lock match(lifetime(a) >= lifetime(b))
+func wire(a: ref some mut A, b: ref some mut B) void{
+	b.a = a
+}
+@lock match(lifetime(a) >= lifetime(b) >= lifetime(c))
+func wire3(a: ref some mut A, b: ref some mut B, c: ref some mut C) void{
+	b.a = a
+	c.b = b
+}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new A{v= 5}
+	let a2 = mut ?new A{v= 6}
+	let b = mut ?new B{a= ref a}
+	wire(a, b)
+	let r1 = mut b.a.v
+	wire(a2, b)
+	let r2 = mut b.a.v
+	let a3 = mut ?new A{v= 8}
+	let b3 = mut ?new B{a= ref a3}
+	let c3 = mut ?new C{b= ref b3}
+	wire3(a3, b3, c3)
+	let r3 = mut c3.b.a.v
+	report("wired", r1)
+	report("rewired", r2)
+	report("chain", r3)
+}

@@ -28,13 +28,13 @@ public final class LowerOrder {
         return generate(new BytecodeParser().parse(hobText.lines().toList(), origin), configText);
     }
 
-    /** The same stage on the Optimizer's in-memory program (the orchestrator's path; the program is consumed). The LOB comes out as text. */
+    /** The same stage on the Optimizer's in-memory program (the orchestrator's path; the program is consumed). The LOB comes out as text and as the program (the Codegen's input). */
     public static LowerOrderResult generate(BytecodeProgram program, String configText) {
         if (configText == null) {
             throw new IllegalStateException("required config 'compiler.config' was not supplied");
         }
         CompilerConfig config = CompilerConfig.parse(configText, "compiler.config");
         BytecodeProgram lowered = new LowerOrderGenerator(config).generate(program);
-        return new LowerOrderResult(new BytecodeSerializer().serialize(lowered), List.of());
+        return new LowerOrderResult(new BytecodeSerializer().serialize(lowered), lowered, List.of());
     }
 }

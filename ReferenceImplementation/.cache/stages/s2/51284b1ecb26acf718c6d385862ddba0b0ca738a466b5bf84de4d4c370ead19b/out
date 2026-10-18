@@ -1,0 +1,196 @@
+STRING string_id1 "boom"
+STRING string_id2 "PASS: lock was released by the throw\n"
+STRING string_id3 "FAIL: lock still held after the throw\n"
+GLOBAL m imut_Mtx
+GLOBAL m.___type imut_u64 0
+GLOBAL m.lockState mut_atomic_St St.OPEN
+GLOBAL m.n mut_u64 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+ENUM St OPEN CLOSED
+STRUCT_START Mtx
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER lockState mut_atomic_St
+STRUCT_MEMBER n mut_u64
+STRUCT_END
+FUNC_START holdAndThrow
+FUNC_DECORATE @throws
+RETURNS imut_void
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC $lm_tries mut_u64
+ALLOC $lm_limit imut_u64
+ADDR $lm_tries mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR $lm_limit imut_u64
+PUSH 1000000000 indeterminate_u64
+ASSIGN imut_u64 imut_u64 imut_u64
+@loop_1:
+ADDR m mut_Mtx
+PUSH_FIELDNAME lockState mut_atomic_St
+DOT_LHS mut_Mtx mut_atomic_St mut_atomic_St
+PUSH St.CLOSED imut_St
+ATOMIC_SWAP mut_atomic_St imut_St indeterminate_St
+PUSH St.OPEN imut_St
+EQ indeterminate_St imut_St indeterminate_bool
+CMP
+JMP @if_branch_4
+THROW string_id1
+ADDR gt_error_message static_imut_string
+PUSH string_id1 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR m mut_Mtx
+PUSH_FIELDNAME lockState mut_atomic_St
+DOT_LHS mut_Mtx mut_atomic_St mut_atomic_St
+PUSH St.OPEN imut_St
+ATOMIC_ASSIGN mut_atomic_St imut_St mut_atomic_St
+GT_UNWIND MSG
+ADDR m mut_Mtx
+PUSH_FIELDNAME lockState mut_atomic_St
+DOT_LHS mut_Mtx mut_atomic_St mut_atomic_St
+PUSH St.OPEN imut_St
+ATOMIC_ASSIGN mut_atomic_St imut_St mut_atomic_St
+JMP @loop_end_2
+JMP @end_of_if_3
+@if_branch_4:
+ADDR $lm_tries mut_u64
+PUSH $lm_tries mut_u64
+INC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+PUSH $lm_tries mut_u64
+PUSH $lm_limit imut_u64
+GT mut_u64 imut_u64 indeterminate_bool
+CMP
+JMP @end_of_if_5
+JMP @loop_end_2
+JMP @end_of_if_5
+@end_of_if_5:
+JMP @loop_1
+JMP @end_of_if_3
+@end_of_if_3:
+JMP @loop_1
+@loop_end_2:
+FUNC_END
+FUNC_START reacquire
+RETURNS imut_void
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC got mut_bool
+ALLOC $lm_tries mut_u64
+ALLOC $lm_limit imut_u64
+REGVAR got 66
+ADDR got mut_bool
+PUSH false indeterminate_bool
+ASSIGN mut_bool mut_bool mut_bool
+ADDR $lm_tries mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR $lm_limit imut_u64
+PUSH 1000 indeterminate_u64
+ASSIGN imut_u64 imut_u64 imut_u64
+@loop_6:
+ADDR m mut_Mtx
+PUSH_FIELDNAME lockState mut_atomic_St
+DOT_LHS mut_Mtx mut_atomic_St mut_atomic_St
+PUSH St.CLOSED imut_St
+ATOMIC_SWAP mut_atomic_St imut_St indeterminate_St
+PUSH St.OPEN imut_St
+EQ indeterminate_St imut_St indeterminate_bool
+CMP
+JMP @if_branch_9
+ADDR got mut_bool
+PUSH true indeterminate_bool
+ASSIGN mut_bool mut_bool mut_bool
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+ADDR m mut_Mtx
+PUSH_FIELDNAME lockState mut_atomic_St
+DOT_LHS mut_Mtx mut_atomic_St mut_atomic_St
+PUSH St.OPEN imut_St
+ATOMIC_ASSIGN mut_atomic_St imut_St mut_atomic_St
+JMP @loop_end_7
+JMP @end_of_if_8
+@if_branch_9:
+ADDR $lm_tries mut_u64
+PUSH $lm_tries mut_u64
+INC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+PUSH $lm_tries mut_u64
+PUSH $lm_limit imut_u64
+GT mut_u64 imut_u64 indeterminate_bool
+CMP
+JMP @end_of_if_10
+JMP @loop_end_7
+JMP @end_of_if_10
+@end_of_if_10:
+JMP @loop_6
+JMP @end_of_if_8
+@end_of_if_8:
+JMP @loop_6
+@loop_end_7:
+PUSH got mut_bool
+NOT mut_bool indeterminate_bool
+CMP
+JMP @end_of_if_11
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+JMP @end_of_if_11
+@end_of_if_11:
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC e static_imut_string
+JMP @end_of_catches__main_14
+@catch_13:
+ADDR e static_imut_string
+PUSH gt_error_message static_imut_string
+ASSIGN static_imut_string static_imut_string static_imut_string
+JMP @after_try_block_12
+@end_of_catches__main_14:
+ADDR gt_routine_address code_addr
+PUSH_LABEL @catch_13 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+CALL holdAndThrow
+CC_END sysv_x64
+@after_try_block_12:
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_15 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+CALL reacquire
+CC_END sysv_x64
+JMP @end_of_gt_callsites__main_16
+@gt_callsite__main_15:
+EXIT
+@end_of_gt_callsites__main_16:
+FUNC_END
+ENUM Class Mtx 0

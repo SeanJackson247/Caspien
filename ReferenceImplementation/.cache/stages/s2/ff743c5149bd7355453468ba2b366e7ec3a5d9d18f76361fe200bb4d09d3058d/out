@@ -1,0 +1,921 @@
+STRING string_id1 "PASS chain sum\n"
+STRING string_id2 "FAIL chain sum %llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+FUNC_START f7
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC a mut_u64
+ALLOC x__i15 mut_u64
+ALLOC a__i15 mut_u64
+ALLOC x__i17 mut_u64
+ALLOC a__i17 mut_u64
+ALLOC x__i19 mut_u64
+ALLOC a__i19 mut_u64
+ALLOC x__i83 mut_u64
+ALLOC a__i83 mut_u64
+ALLOC x__i3__i83 mut_u64
+ALLOC x__i5__i83 mut_u64
+ALLOC x__i7__i83 mut_u64
+ALLOC x__i85 mut_u64
+ALLOC a__i85 mut_u64
+ALLOC x__i3__i85 mut_u64
+ALLOC x__i5__i85 mut_u64
+ALLOC x__i7__i85 mut_u64
+ALLOC x__i87 mut_u64
+ALLOC a__i87 mut_u64
+ALLOC x__i3__i87 mut_u64
+ALLOC x__i5__i87 mut_u64
+ALLOC x__i7__i87 mut_u64
+ALLOC x__i89 mut_u64
+ALLOC a__i89 mut_u64
+ALLOC x__i3__i89 mut_u64
+ALLOC x__i5__i89 mut_u64
+ALLOC x__i7__i89 mut_u64
+ALLOC x__i91 mut_u64
+ALLOC a__i91 mut_u64
+ALLOC x__i3__i91 mut_u64
+ALLOC x__i5__i91 mut_u64
+ALLOC x__i7__i91 mut_u64
+ALLOC x__i93 mut_u64
+ALLOC a__i93 mut_u64
+ALLOC x__i3__i93 mut_u64
+ALLOC x__i5__i93 mut_u64
+ALLOC x__i7__i93 mut_u64
+ALLOC x__i95 mut_u64
+ALLOC a__i95 mut_u64
+ALLOC x__i3__i95 mut_u64
+ALLOC x__i5__i95 mut_u64
+ALLOC x__i7__i95 mut_u64
+ALLOC x__i97 mut_u64
+ALLOC a__i97 mut_u64
+ALLOC x__i3__i97 mut_u64
+ALLOC x__i5__i97 mut_u64
+ALLOC x__i7__i97 mut_u64
+ALLOC x__i99 mut_u64
+ALLOC a__i99 mut_u64
+ALLOC x__i3__i99 mut_u64
+ALLOC x__i5__i99 mut_u64
+ALLOC x__i7__i99 mut_u64
+ADDR a mut_u64
+ADDR x__i15 mut_u64
+PUSH x mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i15 mut_u64
+ADDR x__i83 mut_u64
+PUSH x__i15 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i83 mut_u64
+ADDR x__i3__i83 mut_u64
+PUSH x__i83 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i83 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i83 mut_u64
+PUSH a__i83 mut_u64
+ADDR x__i5__i83 mut_u64
+PUSH x__i83 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i83 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i83 mut_u64
+PUSH a__i83 mut_u64
+ADDR x__i7__i83 mut_u64
+PUSH x__i83 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i83 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i83 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i15 mut_u64
+PUSH a__i15 mut_u64
+ADDR x__i85 mut_u64
+PUSH x__i15 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i85 mut_u64
+ADDR x__i3__i85 mut_u64
+PUSH x__i85 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i85 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i85 mut_u64
+PUSH a__i85 mut_u64
+ADDR x__i5__i85 mut_u64
+PUSH x__i85 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i85 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i85 mut_u64
+PUSH a__i85 mut_u64
+ADDR x__i7__i85 mut_u64
+PUSH x__i85 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i85 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i85 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i15 mut_u64
+PUSH a__i15 mut_u64
+ADDR x__i87 mut_u64
+PUSH x__i15 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i87 mut_u64
+ADDR x__i3__i87 mut_u64
+PUSH x__i87 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i87 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i87 mut_u64
+PUSH a__i87 mut_u64
+ADDR x__i5__i87 mut_u64
+PUSH x__i87 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i87 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i87 mut_u64
+PUSH a__i87 mut_u64
+ADDR x__i7__i87 mut_u64
+PUSH x__i87 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i87 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i87 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i15 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i17 mut_u64
+PUSH x mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i17 mut_u64
+ADDR x__i89 mut_u64
+PUSH x__i17 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i89 mut_u64
+ADDR x__i3__i89 mut_u64
+PUSH x__i89 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i89 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i89 mut_u64
+PUSH a__i89 mut_u64
+ADDR x__i5__i89 mut_u64
+PUSH x__i89 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i89 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i89 mut_u64
+PUSH a__i89 mut_u64
+ADDR x__i7__i89 mut_u64
+PUSH x__i89 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i89 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i89 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i17 mut_u64
+PUSH a__i17 mut_u64
+ADDR x__i91 mut_u64
+PUSH x__i17 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i91 mut_u64
+ADDR x__i3__i91 mut_u64
+PUSH x__i91 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i91 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i91 mut_u64
+PUSH a__i91 mut_u64
+ADDR x__i5__i91 mut_u64
+PUSH x__i91 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i91 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i91 mut_u64
+PUSH a__i91 mut_u64
+ADDR x__i7__i91 mut_u64
+PUSH x__i91 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i91 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i91 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i17 mut_u64
+PUSH a__i17 mut_u64
+ADDR x__i93 mut_u64
+PUSH x__i17 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i93 mut_u64
+ADDR x__i3__i93 mut_u64
+PUSH x__i93 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i93 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i93 mut_u64
+PUSH a__i93 mut_u64
+ADDR x__i5__i93 mut_u64
+PUSH x__i93 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i93 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i93 mut_u64
+PUSH a__i93 mut_u64
+ADDR x__i7__i93 mut_u64
+PUSH x__i93 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i93 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i93 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i17 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i19 mut_u64
+PUSH x mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i19 mut_u64
+ADDR x__i95 mut_u64
+PUSH x__i19 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i95 mut_u64
+ADDR x__i3__i95 mut_u64
+PUSH x__i95 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i95 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i95 mut_u64
+PUSH a__i95 mut_u64
+ADDR x__i5__i95 mut_u64
+PUSH x__i95 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i95 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i95 mut_u64
+PUSH a__i95 mut_u64
+ADDR x__i7__i95 mut_u64
+PUSH x__i95 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i95 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i95 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i19 mut_u64
+PUSH a__i19 mut_u64
+ADDR x__i97 mut_u64
+PUSH x__i19 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i97 mut_u64
+ADDR x__i3__i97 mut_u64
+PUSH x__i97 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i97 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i97 mut_u64
+PUSH a__i97 mut_u64
+ADDR x__i5__i97 mut_u64
+PUSH x__i97 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i97 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i97 mut_u64
+PUSH a__i97 mut_u64
+ADDR x__i7__i97 mut_u64
+PUSH x__i97 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i97 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i97 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i19 mut_u64
+PUSH a__i19 mut_u64
+ADDR x__i99 mut_u64
+PUSH x__i19 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i99 mut_u64
+ADDR x__i3__i99 mut_u64
+PUSH x__i99 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH x__i3__i99 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i99 mut_u64
+PUSH a__i99 mut_u64
+ADDR x__i5__i99 mut_u64
+PUSH x__i99 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i5__i99 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i99 mut_u64
+PUSH a__i99 mut_u64
+ADDR x__i7__i99 mut_u64
+PUSH x__i99 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH x__i7__i99 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i99 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i19 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START f5
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC a mut_u64
+ALLOC x__i27 mut_u64
+ALLOC a__i27 mut_u64
+ALLOC x__i29 mut_u64
+ALLOC a__i29 mut_u64
+ALLOC x__i31 mut_u64
+ALLOC a__i31 mut_u64
+ADDR a mut_u64
+ADDR x__i27 mut_u64
+PUSH x mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i27 mut_u64
+CC_START sysv_x64
+PUSH x__i27 mut_u64
+POP ARG0 mut_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i27 mut_u64
+PUSH a__i27 mut_u64
+CC_START sysv_x64
+PUSH x__i27 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i27 mut_u64
+PUSH a__i27 mut_u64
+CC_START sysv_x64
+PUSH x__i27 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i27 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i29 mut_u64
+PUSH x mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i29 mut_u64
+CC_START sysv_x64
+PUSH x__i29 mut_u64
+POP ARG0 mut_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i29 mut_u64
+PUSH a__i29 mut_u64
+CC_START sysv_x64
+PUSH x__i29 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i29 mut_u64
+PUSH a__i29 mut_u64
+CC_START sysv_x64
+PUSH x__i29 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i29 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i31 mut_u64
+PUSH x mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i31 mut_u64
+CC_START sysv_x64
+PUSH x__i31 mut_u64
+POP ARG0 mut_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i31 mut_u64
+PUSH a__i31 mut_u64
+CC_START sysv_x64
+PUSH x__i31 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i31 mut_u64
+PUSH a__i31 mut_u64
+CC_START sysv_x64
+PUSH x__i31 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f7
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i31 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START f3
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC a mut_u64
+ALLOC x__i39 mut_u64
+ALLOC a__i39 mut_u64
+ALLOC x__i41 mut_u64
+ALLOC a__i41 mut_u64
+ALLOC x__i43 mut_u64
+ALLOC a__i43 mut_u64
+ADDR a mut_u64
+ADDR x__i39 mut_u64
+PUSH x mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i39 mut_u64
+CC_START sysv_x64
+PUSH x__i39 mut_u64
+POP ARG0 mut_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i39 mut_u64
+PUSH a__i39 mut_u64
+CC_START sysv_x64
+PUSH x__i39 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i39 mut_u64
+PUSH a__i39 mut_u64
+CC_START sysv_x64
+PUSH x__i39 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i39 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i41 mut_u64
+PUSH x mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i41 mut_u64
+CC_START sysv_x64
+PUSH x__i41 mut_u64
+POP ARG0 mut_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i41 mut_u64
+PUSH a__i41 mut_u64
+CC_START sysv_x64
+PUSH x__i41 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i41 mut_u64
+PUSH a__i41 mut_u64
+CC_START sysv_x64
+PUSH x__i41 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i41 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i43 mut_u64
+PUSH x mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i43 mut_u64
+CC_START sysv_x64
+PUSH x__i43 mut_u64
+POP ARG0 mut_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i43 mut_u64
+PUSH a__i43 mut_u64
+CC_START sysv_x64
+PUSH x__i43 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i43 mut_u64
+PUSH a__i43 mut_u64
+CC_START sysv_x64
+PUSH x__i43 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f5
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i43 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START f1
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC a mut_u64
+ALLOC x__i51 mut_u64
+ALLOC a__i51 mut_u64
+ALLOC x__i53 mut_u64
+ALLOC a__i53 mut_u64
+ALLOC x__i55 mut_u64
+ALLOC a__i55 mut_u64
+ADDR a mut_u64
+ADDR x__i51 mut_u64
+PUSH x mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i51 mut_u64
+CC_START sysv_x64
+PUSH x__i51 mut_u64
+POP ARG0 mut_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i51 mut_u64
+PUSH a__i51 mut_u64
+CC_START sysv_x64
+PUSH x__i51 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i51 mut_u64
+PUSH a__i51 mut_u64
+CC_START sysv_x64
+PUSH x__i51 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i51 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i53 mut_u64
+PUSH x mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i53 mut_u64
+CC_START sysv_x64
+PUSH x__i53 mut_u64
+POP ARG0 mut_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i53 mut_u64
+PUSH a__i53 mut_u64
+CC_START sysv_x64
+PUSH x__i53 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i53 mut_u64
+PUSH a__i53 mut_u64
+CC_START sysv_x64
+PUSH x__i53 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i53 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a mut_u64
+PUSH a mut_u64
+ADDR x__i55 mut_u64
+PUSH x mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR a__i55 mut_u64
+CC_START sysv_x64
+PUSH x__i55 mut_u64
+POP ARG0 mut_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i55 mut_u64
+PUSH a__i55 mut_u64
+CC_START sysv_x64
+PUSH x__i55 mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i55 mut_u64
+PUSH a__i55 mut_u64
+CC_START sysv_x64
+PUSH x__i55 mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f3
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i55 mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC r mut_u64
+ALLOC a__i63 mut_u64
+ADDR r mut_u64
+ADDR a__i63 mut_u64
+CC_START sysv_x64
+PUSH 1 mut_u64
+POP ARG0 mut_u64
+CALL f1
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i63 mut_u64
+PUSH a__i63 mut_u64
+CC_START sysv_x64
+PUSH 2 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f1
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR a__i63 mut_u64
+PUSH a__i63 mut_u64
+CC_START sysv_x64
+PUSH 3 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL f1
+CC_END sysv_x64
+PUSH_RET mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a__i63 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH r mut_u64
+PUSH 708588 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 1
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH r mut_u64
+POP ARG1 mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@end_of_if_1:
+FUNC_END

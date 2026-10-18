@@ -1,0 +1,35 @@
+STRING string_id1 "v=%llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+FUNC_START rd
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_LD 8 %t0 %t0
+R_RET %t0
+FUNC_END
+FUNC_START main
+ALLOC 16
+R_MOV 8 $-8 #7
+ADDR 8 $-16
+PUSH 8 $-8
+ADDR_OF RAW $-8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 $-16
+CALL rd
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+FUNC_END

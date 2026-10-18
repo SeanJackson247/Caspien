@@ -1,0 +1,561 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "u16[3][2] row 0"
+STRING string_id4 "u16[3][2] row 1"
+STRING string_id5 "u8[3][2] row 0"
+STRING string_id6 "u8[3][2] row 1"
+STRING string_id7 "u8[3] row copied out"
+STRING string_id8 "u16[3] row copied out"
+STRING string_id9 "u8[5][3] rows"
+STRING string_id10 "u8[7][2] rows"
+STRING string_id11 "u16[3][3] rows"
+STRING string_id12 "struct member row array [1][1]"
+STRING string_id13 "struct member row array [0][2]"
+STRING string_id14 "struct member neighbour tag"
+STRING string_id15 "struct member neighbour tail"
+STRING string_id16 "write inside a row"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+STRUCT_PADDING 1
+STRUCT_PADDING 2
+FUNC_START check
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-9
+PUSH 1 ARG1
+ASSIGN 1 1 1
+PUSH 1 $-9
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_1:
+RET 0
+FUNC_END
+FUNC_START main
+ALLOC 224
+ADDR 6 $-6
+PUSH 2 1
+PUSH 2 2
+PUSH 2 3
+ASSIGN 6 6 6
+ADDR 6 $-12
+PUSH 2 4
+PUSH 2 5
+PUSH 2 6
+ASSIGN 6 6 6
+ADDR 12 $-24
+PUSH 6 $-6
+PUSH 6 $-12
+ASSIGN 12 12 12
+ADDR 2 $-26
+PUSH 12 $-24
+PUSH 8 0
+LOOKUP_ARRAY 6 ra
+PUSH 8 0
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-28
+PUSH 12 $-24
+PUSH 8 0
+LOOKUP_ARRAY 6 ra
+PUSH 8 1
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-30
+PUSH 12 $-24
+PUSH 8 0
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-32
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 0
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-34
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 1
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-36
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_LD 2 %t0 $-26
+R_BIN EQ 2 %t0 %t0 #1
+R_LD 2 %t1 $-28
+R_BIN EQ 2 %t1 %t1 #2
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 2 %t1 $-30
+R_BIN EQ 2 %t1 %t1 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_LD 2 %t0 $-32
+R_BIN EQ 2 %t0 %t0 #4
+R_LD 2 %t1 $-34
+R_BIN EQ 2 %t1 %t1 #5
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 2 %t1 $-36
+R_BIN EQ 2 %t1 %t1 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 3 $-39
+PUSH 1 1
+PUSH 1 2
+PUSH 1 3
+ASSIGN 3 3 3
+ADDR 3 $-42
+PUSH 1 4
+PUSH 1 5
+PUSH 1 6
+ASSIGN 3 3 3
+ADDR 6 $-48
+PUSH 3 $-39
+PUSH 3 $-42
+ASSIGN 6 6 6
+ADDR 1 $-49
+PUSH 6 $-48
+PUSH 8 0
+LOOKUP_ARRAY 3 ra
+PUSH 8 0
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-50
+PUSH 6 $-48
+PUSH 8 0
+LOOKUP_ARRAY 3 ra
+PUSH 8 2
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-51
+PUSH 6 $-48
+PUSH 8 1
+LOOKUP_ARRAY 3 ra
+PUSH 8 0
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-52
+PUSH 6 $-48
+PUSH 8 1
+LOOKUP_ARRAY 3 ra
+PUSH 8 2
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+R_LD 1 %t0 $-49
+R_BIN EQ 1 %t0 %t0 #1
+R_LD 1 %t1 $-50
+R_BIN EQ 1 %t1 %t1 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+R_LD 1 %t0 $-51
+R_BIN EQ 1 %t0 %t0 #4
+R_LD 1 %t1 $-52
+R_BIN EQ 1 %t1 %t1 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 3 $-55
+PUSH 6 $-48
+PUSH 8 1
+LOOKUP_ARRAY 3 ra
+ASSIGN 3 3 3
+R_LEA %t0 $-55 #0 1
+R_LD 1 %t0 %t0
+R_ST 1 $-56 %t0
+R_LEA %t0 $-55 #1 1
+R_LD 1 %t0 %t0
+R_ST 1 $-57 %t0
+R_LEA %t0 $-55 #2 1
+R_LD 1 %t0 %t0
+R_ST 1 $-58 %t0
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+R_LD 1 %t0 $-56
+R_BIN EQ 1 %t0 %t0 #4
+R_LD 1 %t1 $-57
+R_BIN EQ 1 %t1 %t1 #5
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 1 %t1 $-58
+R_BIN EQ 1 %t1 %t1 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 6 $-64
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+ASSIGN 6 6 6
+R_LEA %t0 $-64 #1 2
+R_LD 2 %t0 %t0
+R_ST 2 $-66 %t0
+R_LEA %t0 $-64 #2 2
+R_LD 2 %t0 %t0
+R_ST 2 $-68 %t0
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+R_LD 2 %t0 $-66
+R_BIN EQ 2 %t0 %t0 #5
+R_LD 2 %t1 $-68
+R_BIN EQ 2 %t1 %t1 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 5 $-73
+PUSH 1 1
+PUSH 1 2
+PUSH 1 3
+PUSH 1 4
+PUSH 1 5
+ASSIGN 5 5 5
+ADDR 5 $-78
+PUSH 1 6
+PUSH 1 7
+PUSH 1 8
+PUSH 1 9
+PUSH 1 10
+ASSIGN 5 5 5
+ADDR 5 $-83
+PUSH 1 11
+PUSH 1 12
+PUSH 1 13
+PUSH 1 14
+PUSH 1 15
+ASSIGN 5 5 5
+ADDR 15 $-98
+PUSH 5 $-73
+PUSH 5 $-78
+PUSH 5 $-83
+ASSIGN 15 15 15
+ADDR 1 $-99
+PUSH 15 $-98
+PUSH 8 0
+LOOKUP_ARRAY 5 ra
+PUSH 8 4
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-100
+PUSH 15 $-98
+PUSH 8 1
+LOOKUP_ARRAY 5 ra
+PUSH 8 0
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-101
+PUSH 15 $-98
+PUSH 8 1
+LOOKUP_ARRAY 5 ra
+PUSH 8 4
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-102
+PUSH 15 $-98
+PUSH 8 2
+LOOKUP_ARRAY 5 ra
+PUSH 8 0
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-103
+PUSH 15 $-98
+PUSH 8 2
+LOOKUP_ARRAY 5 ra
+PUSH 8 4
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_LD 1 %t0 $-99
+R_BIN EQ 1 %t0 %t0 #5
+R_LD 1 %t1 $-100
+R_BIN EQ 1 %t1 %t1 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 1 %t1 $-101
+R_BIN EQ 1 %t1 %t1 #10
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 1 %t1 $-102
+R_BIN EQ 1 %t1 %t1 #11
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 1 %t1 $-103
+R_BIN EQ 1 %t1 %t1 #15
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 7 $-110
+PUSH 1 1
+PUSH 1 2
+PUSH 1 3
+PUSH 1 4
+PUSH 1 5
+PUSH 1 6
+PUSH 1 7
+ASSIGN 7 7 7
+ADDR 7 $-117
+PUSH 1 8
+PUSH 1 9
+PUSH 1 10
+PUSH 1 11
+PUSH 1 12
+PUSH 1 13
+PUSH 1 14
+ASSIGN 7 7 7
+ADDR 14 $-131
+PUSH 7 $-110
+PUSH 7 $-117
+ASSIGN 14 14 14
+ADDR 1 $-132
+PUSH 14 $-131
+PUSH 8 0
+LOOKUP_ARRAY 7 ra
+PUSH 8 6
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-133
+PUSH 14 $-131
+PUSH 8 1
+LOOKUP_ARRAY 7 ra
+PUSH 8 0
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+ADDR 1 $-134
+PUSH 14 $-131
+PUSH 8 1
+LOOKUP_ARRAY 7 ra
+PUSH 8 6
+LOOKUP_ARRAY 1
+ASSIGN 1 1 1
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+R_LD 1 %t0 $-132
+R_BIN EQ 1 %t0 %t0 #7
+R_LD 1 %t1 $-133
+R_BIN EQ 1 %t1 %t1 #8
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 1 %t1 $-134
+R_BIN EQ 1 %t1 %t1 #14
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 6 $-140
+PUSH 2 10
+PUSH 2 20
+PUSH 2 30
+ASSIGN 6 6 6
+ADDR 6 $-146
+PUSH 2 40
+PUSH 2 50
+PUSH 2 60
+ASSIGN 6 6 6
+ADDR 6 $-152
+PUSH 2 70
+PUSH 2 80
+PUSH 2 90
+ASSIGN 6 6 6
+ADDR 18 $-170
+PUSH 6 $-140
+PUSH 6 $-146
+PUSH 6 $-152
+ASSIGN 18 18 18
+ADDR 2 $-172
+PUSH 18 $-170
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-174
+PUSH 18 $-170
+PUSH 8 2
+LOOKUP_ARRAY 6 ra
+PUSH 8 0
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-176
+PUSH 18 $-170
+PUSH 8 2
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+R_LD 2 %t0 $-172
+R_BIN EQ 2 %t0 %t0 #60
+R_LD 2 %t1 $-174
+R_BIN EQ 2 %t1 %t1 #70
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 2 %t1 $-176
+R_BIN EQ 2 %t1 %t1 #90
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+ADDR 32 $-208
+PUSH 8 0
+PUSH 1 3
+STACK_LOCK 1
+PUSH 12 $-24
+STACK_LOCK 2
+PUSH 8 1007
+ASSIGN 32 32 32 m8 m1 p1 m12 p2 m8
+ADDR 2 $-210
+PUSH 12 $-198
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 1
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-212
+PUSH 12 $-198
+PUSH 8 0
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+CC_START sysv_x64
+PUSH 8 string_id12
+POP ARG0 8
+R_LD 2 %t0 $-210
+R_BIN EQ 2 %t0 %t0 #5
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id13
+POP ARG0 8
+R_LD 2 %t0 $-212
+R_BIN EQ 2 %t0 %t0 #3
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id14
+POP ARG0 8
+R_LD 1 %t0 $-200
+R_BIN EQ 1 %t0 %t0 #3
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id15
+POP ARG0 8
+R_BIN EQ 8 %t0 $-184 #1007
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+R_LEA %t0 $-24 #1 6
+R_STD 2 %t0 2 #55
+ADDR 2 $-214
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 0
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-216
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 1
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-218
+PUSH 12 $-24
+PUSH 8 1
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+ADDR 2 $-220
+PUSH 12 $-24
+PUSH 8 0
+LOOKUP_ARRAY 6 ra
+PUSH 8 2
+LOOKUP_ARRAY 2
+ASSIGN 2 2 2
+CC_START sysv_x64
+PUSH 8 string_id16
+POP ARG0 8
+R_LD 2 %t0 $-214
+R_BIN EQ 2 %t0 %t0 #4
+R_LD 2 %t1 $-216
+R_BIN EQ 2 %t1 %t1 #55
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 2 %t1 $-218
+R_BIN EQ 2 %t1 %t1 #6
+R_BIN AND 1 %t0 %t0 %t1
+R_LD 2 %t1 $-220
+R_BIN EQ 2 %t1 %t1 #3
+R_BIN AND 1 %t0 %t0 %t1
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+FUNC_END

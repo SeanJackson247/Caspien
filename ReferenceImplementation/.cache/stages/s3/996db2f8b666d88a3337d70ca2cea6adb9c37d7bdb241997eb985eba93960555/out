@@ -1,0 +1,334 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "break behind true"
+STRING string_id4 "dead break behind false"
+STRING string_id5 "for with constants and break"
+STRING string_id6 "early return, constant false then true"
+STRING string_id7 "else-if chain, k = 1"
+STRING string_id8 "else-if chain, k = 2 (false arm skipped)"
+STRING string_id9 "nested constants"
+STRING string_id10 "exit inside else of a false"
+STRING string_id11 "folded compares"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START check
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-9
+PUSH 1 ARG1
+ASSIGN 1 1 1
+PUSH 1 $-9
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_1:
+RET 0
+FUNC_END
+FUNC_START breakTrue
+ALLOC 16
+R_MOV 8 %v0 #0
+@loop_3:
+R_RMW ADD 8 %v0 #1
+PUSH 1 1
+CMP
+JMP @end_of_if_5
+JMP @loop_end_4
+@end_of_if_5:
+R_RMW ADD 8 %v0 #100
+JMP @loop_3
+@loop_end_4:
+R_RET %v0
+FUNC_END
+FUNC_START breakFalse
+ALLOC 16
+R_MOV 8 %v0 #0
+@loop_6:
+R_RMW ADD 8 %v0 #1
+PUSH 1 0
+CMP
+JMP @end_of_if_8
+JMP @loop_end_7
+@end_of_if_8:
+R_BRC NEQ 8 %v0 #5 @loop_end_7
+@end_of_if_9:
+JMP @loop_6
+@loop_end_7:
+R_RET %v0
+FUNC_END
+FUNC_START forConst
+ALLOC 32
+R_MOV 8 %v0 #0
+R_MOV 8 $-24 #0
+R_MOV 8 %v2 #10
+R_MOV 8 %v1 $-24
+@for_10:
+R_BRC LT 8 %v1 %v2 @for_end_11
+PUSH 1 1
+CMP
+JMP @if_branch_13
+R_RMW ADD 8 %v0 %v1
+JMP @end_of_if_12
+@if_branch_13:
+R_RMW ADD 8 %v0 #1000
+@end_of_if_12:
+PUSH 1 0
+CMP
+JMP @end_of_if_14
+R_RMW ADD 8 %v0 #5000
+@end_of_if_14:
+R_BRC NEQ 8 %v1 #6 @for_end_11
+@end_of_if_15:
+R_RMW INC 8 %v1
+JMP @for_10
+@for_end_11:
+R_RET %v0
+FUNC_END
+FUNC_START earlyRet
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+PUSH 1 0
+CMP
+JMP @end_of_if_16
+R_RET #1
+@end_of_if_16:
+PUSH 1 1
+CMP
+JMP @end_of_if_17
+R_BIN ADD 8 %t0 $-8 #7
+R_RET %t0
+@end_of_if_17:
+R_RET #2
+FUNC_END
+FUNC_START chain
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #1 @if_branch_19
+R_RET #10
+JMP @end_of_if_18
+@if_branch_19:
+PUSH 1 0
+CMP
+JMP @if_branch_20
+R_RET #20
+JMP @end_of_if_18
+@if_branch_20:
+PUSH 1 1
+CMP
+JMP @if_branch_21
+R_RET #30
+JMP @end_of_if_18
+@if_branch_21:
+R_RET #40
+@end_of_if_18:
+FUNC_END
+FUNC_START nested
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %v0 $-8
+PUSH 1 1
+CMP
+JMP @end_of_if_22
+PUSH 1 0
+CMP
+JMP @if_branch_24
+R_RMW ADD 8 %v0 #1000
+JMP @end_of_if_23
+@if_branch_24:
+R_RMW ADD 8 %v0 #1
+PUSH 1 1
+CMP
+JMP @end_of_if_25
+R_RMW ADD 8 %v0 #2
+@end_of_if_25:
+@end_of_if_23:
+@end_of_if_22:
+R_RET %v0
+FUNC_END
+FUNC_START exitInElse
+ALLOC 16
+R_MOV 8 %v0 #0
+@loop_26:
+R_RMW ADD 8 %v0 #2
+PUSH 1 0
+CMP
+JMP @if_branch_29
+R_RMW ADD 8 %v0 #1000
+JMP @end_of_if_28
+@if_branch_29:
+R_BRC LT 8 %v0 #8 @loop_end_27
+@end_of_if_30:
+@end_of_if_28:
+JMP @loop_26
+@loop_end_27:
+R_RET %v0
+FUNC_END
+FUNC_START folded
+ALLOC 32
+R_MOV 8 $-8 #3
+R_MOV 8 $-16 #4
+R_MOV 8 %v0 #0
+R_BRC LT 8 $-8 $-16 @if_branch_32
+R_RMW ADD 8 %v0 #1
+JMP @end_of_if_31
+@if_branch_32:
+R_RMW ADD 8 %v0 #100
+@end_of_if_31:
+R_BRC EQ 8 $-8 $-16 @end_of_if_33
+R_RMW ADD 8 %v0 #1000
+@end_of_if_33:
+R_RET %v0
+FUNC_END
+FUNC_START main
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+CC_START sysv_x64
+CALL breakTrue
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 1
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+CC_START sysv_x64
+CALL breakFalse
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 5
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+CC_START sysv_x64
+CALL forConst
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 21
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #5
+CALL earlyRet
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 12
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL chain
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 10
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #2
+CALL chain
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 30
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #10
+CALL nested
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 13
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+CC_START sysv_x64
+CALL exitInElse
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 8
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+CC_START sysv_x64
+CALL folded
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 1
+EQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+FUNC_END

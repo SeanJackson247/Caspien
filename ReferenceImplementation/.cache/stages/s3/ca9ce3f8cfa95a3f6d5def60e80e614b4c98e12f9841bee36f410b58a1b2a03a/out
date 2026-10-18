@@ -1,0 +1,62 @@
+STRING string_id1 "PASS %s %llu\n"
+STRING string_id2 "u8 instance"
+STRING string_id3 "u64 instance"
+STRING string_id4 "assumed, not tested"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+FUNC_START main
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 string_id2
+ASSIGN 8 8 8
+R_MOV 8 $-48 #1
+R_MOV 8 $-48 #105
+R_RMW ADD 8 $-48 #1
+@end_of_match_10:
+R_MOV 8 %t0 $-48
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+R_ARG 2 8 $-16
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+ADDR 8 $-24
+PUSH 8 string_id3
+ASSIGN 8 8 8
+@end_of_match_13:
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-24
+R_ARG 2 8 #400
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+ADDR 8 $-32
+PUSH 8 string_id4
+ASSIGN 8 8 8
+R_MOV 8 $-64 #1
+R_MOV 8 $-64 #100
+R_RMW ADD 8 $-64 #1
+@end_of_match_16:
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-32
+R_ARG 2 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+FUNC_END

@@ -673,6 +673,7 @@ final class BytecodeEmitterStatements {
                         return EmitFrame.script(stmt).block(stmt.childs, false).destruct(stmt.chk.destructOnExit, stmt)
                                 .line(hub.core.tryBlockLabels.get(stmt) + ":");
                     }
+                    hub.operations.unwrapParens(stmt.operand()).chk.resultDiscarded = true;
                     return hub.core.tryGuardedCallFrame(stmt);
                 case "break":
                     return breakFrame(stmt);
@@ -697,7 +698,8 @@ final class BytecodeEmitterStatements {
             hub.core.emitAsm(stmt.chk.resolvedAsmContent);
             return null;
         }
-        // plain expression statement: the result, if any, is left on the stack (no POP)
+        // plain expression statement: a call's unused result is not pushed (resultDiscarded)
+        hub.operations.unwrapParens(stmt).chk.resultDiscarded = true;
         return new EmitFrame(EmitFrame.EXPR, stmt);
     }
 

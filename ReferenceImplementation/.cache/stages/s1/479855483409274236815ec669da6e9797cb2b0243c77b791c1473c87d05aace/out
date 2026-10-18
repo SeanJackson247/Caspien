@@ -1,0 +1,102 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "unaudited block needing extern, raw, assume, deref"
+STRING string_id4 "unaudited block that needs nothing"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START check
+RETURNS imut_void
+ARG name static_imut_string
+ARG ok mut_bool
+PUSH ok mut_bool
+CMP
+JMP @if_branch_2
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@if_branch_2:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_1
+@end_of_if_1:
+RET imut_void
+FUNC_END
+FUNC_START rd
+RETURNS imut_u64
+ARG p raw_imut_u64
+PUSH p raw_imut_u64
+DEREF imut_u64
+RET imut_u64
+FUNC_END
+FUNC_START idle
+RETURNS mut_u64
+PUSH 5 indeterminate_u64
+RET mut_u64
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC v mut_u64
+ALLOC p raw_imut_u64
+ADDR v mut_u64
+PUSH 7 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR p raw_imut_u64
+PUSH v mut_u64
+ADDR_OF RAW mut_u64 raw_indeterminate_u64
+ASSIGN raw_imut_u64 raw_imut_u64 raw_imut_u64
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+CC_START sysv_x64
+PUSH p raw_imut_u64
+POP ARG0 raw_imut_u64
+CALL rd
+CC_END sysv_x64
+PUSH_RET imut_u64
+PUSH 7 indeterminate_u64
+EQ imut_u64 indeterminate_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH string_id4 static_some_imut_string
+POP ARG0 static_some_imut_string
+CC_START sysv_x64
+CALL idle
+CC_END sysv_x64
+PUSH_RET mut_u64
+PUSH 5 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+POP ARG1 indeterminate_bool
+CALL check
+CC_END sysv_x64
+FUNC_END

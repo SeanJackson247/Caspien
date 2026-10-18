@@ -449,6 +449,27 @@ final class ParserLines {
         while (next < tokens.size() && tokens.get(next).type == TokenType.WHITESPACE) {
             next++;
         }
+        if (nameTok.text.equals("lock") && next + 1 < tokens.size() && tokens.get(next).type == TokenType.KEYWORD
+                && tokens.get(next).text.equals("match")) {
+            // "@lock match(lifetime(a) >= lifetime(b))": a lifetime contract
+            int open = next + 1;
+            while (open < tokens.size() && tokens.get(open).type == TokenType.WHITESPACE) {
+                open++;
+            }
+            if (open < tokens.size() && tokens.get(open).type == TokenType.DELINEATOR && tokens.get(open).text.equals("(")) {
+                List<Token> inner = tokens.get(open).childs;
+                Decorator d = parseLifetimeContract(inner, skipWs(inner, 0), lineTok);
+                int after = open + 1;
+                while (after < tokens.size() && tokens.get(after).type == TokenType.WHITESPACE) {
+                    after++;
+                }
+                if (after < tokens.size()) {
+                    throw new CompilerException("parse", tokens.get(after).file, tokens.get(after).line,
+                            "unexpected token '" + tokens.get(after).text + "' after the lifetime contract");
+                }
+                return d;
+            }
+        }
         if (next < tokens.size() && tokens.get(next).type == TokenType.DELINEATOR && tokens.get(next).text.equals("(")) {
             List<Token> parenChilds = tokens.get(next).childs;
             int firstReal = 0;
@@ -504,6 +525,9 @@ final class ParserLines {
      */
     public Decorator parseLockMatchQualifier(List<Token> t, int i, Token nameTok, Token lineTok) {
         i = skipWs(t, i + 1); // past "match"
+        if (i < t.size() && t.get(i).type == TokenType.VARREF && t.get(i).text.equals("lifetime")) {
+            return parseLifetimeContract(t, i, lineTok);
+        }
         if (i >= t.size() || t.get(i).type != TokenType.VARREF && t.get(i).type != TokenType.KEYWORD) {
             throw new CompilerException("parse", lineTok.file, lineTok.line,
                     "'@lock(match ...)' expects 'self' or a parameter name after 'match'");
@@ -512,6 +536,51 @@ final class ParserLines {
             return parseLockEnumQualifier(t, i, lineTok);
         }
         return parseLockInQualifier(t, i, lineTok);
+    }
+
+    /** "lifetime(a) >= lifetime(b) [> lifetime(c) ...]": the longer-lived side is on the left; operators are only >=, > and ==. */
+    public Decorator parseLifetimeContract(List<Token> t, int i, Token lineTok) {
+        List<String> terms = new ArrayList<>();
+        List<String> ops = new ArrayList<>();
+        while (true) {
+            if (i >= t.size() || t.get(i).type != TokenType.VARREF || !t.get(i).text.equals("lifetime")) {
+                throw new CompilerException("parse", lineTok.file, lineTok.line,
+                        "a lifetime contract is written '@lock match(lifetime(a) >= lifetime(b))': expected 'lifetime(<parameter>)'");
+            }
+            int open = skipWs(t, i + 1);
+            if (open >= t.size() || t.get(open).type != TokenType.DELINEATOR || !t.get(open).text.equals("(")) {
+                throw new CompilerException("parse", lineTok.file, lineTok.line, "'lifetime' expects '(<parameter>)'");
+            }
+            List<Token> inner = t.get(open).childs;
+            int ii = skipWs(inner, 0);
+            if (ii >= inner.size() || inner.get(ii).type != TokenType.VARREF || skipWs(inner, ii + 1) < inner.size()) {
+                throw new CompilerException("parse", lineTok.file, lineTok.line,
+                        "'lifetime(...)' takes exactly one parameter or local name, no expressions");
+            }
+            terms.add(inner.get(ii).text);
+            i = skipWs(t, open + 1);
+            if (i >= t.size()) {
+                break;
+            }
+            String op = t.get(i).text;
+            if (t.get(i).type != TokenType.OPERATOR || !(op.equals(">=") || op.equals(">") || op.equals("=="))) {
+                if (op.equals("<=") || op.equals("<")) {
+                    throw new CompilerException("parse", lineTok.file, lineTok.line,
+                            "a lifetime contract always puts the longer-lived side on the left: write 'lifetime(a) >= lifetime(b)', not '" + op + "'");
+                }
+                throw new CompilerException("parse", lineTok.file, lineTok.line,
+                        "a lifetime contract compares with '>=', '>' or '==', found '" + op + "'");
+            }
+            ops.add(op);
+            i = skipWs(t, i + 1);
+        }
+        if (terms.size() < 2) {
+            throw new CompilerException("parse", lineTok.file, lineTok.line, "a lifetime contract needs at least two 'lifetime(...)' terms");
+        }
+        Decorator d = new Decorator("lifetime", new ArrayList<>(), new ArrayList<>(), lineTok.line, lineTok.file);
+        d.lifetimeTerms = terms;
+        d.lifetimeOps = ops;
+        return d;
     }
 
     public Decorator parseLockEnumQualifier(List<Token> t, int i, Token lineTok) {

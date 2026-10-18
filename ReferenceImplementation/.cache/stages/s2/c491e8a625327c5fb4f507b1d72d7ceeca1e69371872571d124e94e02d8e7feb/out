@@ -1,0 +1,364 @@
+STRING string_id1 "zero"
+STRING string_id2 "eight"
+STRING string_id3 "%llu %llu %llu %llu %llu %llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START h
+FUNC_DECORATE @throws
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+PUSH x mut_u64
+PUSH 0 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+CMP
+JMP @end_of_if_1
+THROW string_id1
+ADDR gt_error_message static_imut_string
+PUSH string_id1 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+GT_UNWIND MSG
+JMP @end_of_if_1
+@end_of_if_1:
+PUSH x mut_u64
+PUSH 3 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 1 indeterminate_u64
+ADD indeterminate_u64 indeterminate_u64 indeterminate_u64
+RET mut_u64
+FUNC_END
+FUNC_START g
+FUNC_DECORATE @throws
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC v mut_u64
+ALLOC e static_imut_string
+JMP @end_of_catches__g_3
+@catch_2:
+ADDR e static_imut_string
+PUSH gt_error_message static_imut_string
+ASSIGN static_imut_string static_imut_string static_imut_string
+THROW e
+ADDR gt_error_message static_imut_string
+PUSH e static_imut_string
+ASSIGN static_imut_string static_imut_string static_imut_string
+GT_UNWIND MSG
+@end_of_catches__g_3:
+ADDR v mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @catch_2 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH x mut_u64
+POP ARG0 mut_u64
+CALL h
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH v mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+RET mut_u64
+FUNC_END
+FUNC_START probeThrow
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC a mut_u64
+ALLOC e static_imut_string
+JMP @end_of_catches__probeThrow_6
+@catch_5:
+ADDR e static_imut_string
+PUSH gt_error_message static_imut_string
+ASSIGN static_imut_string static_imut_string static_imut_string
+PUSH 1000 indeterminate_u64
+RET mut_u64
+@end_of_catches__probeThrow_6:
+ADDR a mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @catch_5 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH x mut_u64
+POP ARG0 mut_u64
+CALL g
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH a mut_u64
+RET mut_u64
+@after_try_block_4:
+FUNC_END
+FUNC_START probePlain
+RETURNS mut_u64
+ARG x mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC y mut_u64
+ADDR y mut_u64
+PUSH x mut_u64
+PUSH x mut_u64
+MUL mut_u64 mut_u64 indeterminate_u64
+PUSH x mut_u64
+PUSH 3 indeterminate_u64
+DIV mut_u64 indeterminate_u64 indeterminate_u64
+ADD indeterminate_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH y mut_u64
+PUSH x mut_u64
+PUSH 5 indeterminate_u64
+MOD mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 7 indeterminate_u64
+MUL indeterminate_u64 indeterminate_u64 indeterminate_u64
+SUB mut_u64 indeterminate_u64 indeterminate_u64
+RET mut_u64
+FUNC_END
+FUNC_START probeLoop
+RETURNS mut_u64
+ARG n mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC s mut_u64
+ALLOC i mut_u64
+REGVAR i 33
+REGVAR s 18
+ADDR s mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR i mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@loop_7:
+PUSH i mut_u64
+PUSH n mut_u64
+EQ mut_u64 mut_u64 indeterminate_bool
+CMP
+JMP @end_of_if_9
+JMP @loop_end_8
+JMP @end_of_if_9
+@end_of_if_9:
+ADDR s mut_u64
+PUSH s mut_u64
+PUSH i mut_u64
+PUSH 2 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR i mut_u64
+PUSH i mut_u64
+INC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+JMP @loop_7
+@loop_end_8:
+PUSH s mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START hot
+FUNC_DECORATE @throws
+RETURNS mut_u64
+ARG n mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC z mut_u64
+ALLOC q mut_u64
+REGVAR q 25
+REGVAR z 26
+ADDR z mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR q mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@loop_10:
+PUSH q mut_u64
+PUSH n mut_u64
+EQ mut_u64 mut_u64 indeterminate_bool
+CMP
+JMP @end_of_if_12
+JMP @loop_end_11
+JMP @end_of_if_12
+@end_of_if_12:
+ADDR z mut_u64
+PUSH z mut_u64
+PUSH 2 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH z mut_u64
+PUSH 8 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+CMP
+JMP @end_of_if_13
+THROW string_id2
+ADDR gt_error_message static_imut_string
+PUSH string_id2 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+GT_UNWIND MSG
+JMP @end_of_if_13
+@end_of_if_13:
+ADDR q mut_u64
+PUSH q mut_u64
+INC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+JMP @loop_10
+@loop_end_11:
+PUSH z mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START probeLoopThrow
+RETURNS mut_u64
+ARG n mut_u64
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC r mut_u64
+ALLOC e static_imut_string
+JMP @end_of_catches__probeLoopThrow_15
+@catch_14:
+ADDR e static_imut_string
+PUSH gt_error_message static_imut_string
+ASSIGN static_imut_string static_imut_string static_imut_string
+PUSH 500 indeterminate_u64
+RET mut_u64
+@end_of_catches__probeLoopThrow_15:
+ADDR r mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @catch_14 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH n mut_u64
+POP ARG0 mut_u64
+CALL hot
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH r mut_u64
+RET mut_u64
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC gt_routine_address code_addr
+ALLOC gt_error_message static_imut_string
+ALLOC a mut_u64
+ALLOC b mut_u64
+ALLOC c mut_u64
+ALLOC d mut_u64
+ALLOC e mut_u64
+ALLOC f mut_u64
+ADDR a mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_16 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH 0 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL probeThrow
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR b mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_17 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH 5 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL probeThrow
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR c mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_18 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH 9 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL probePlain
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR d mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_19 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH 10 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL probeLoop
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR e mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_20 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH 3 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL probeLoopThrow
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR f mut_u64
+ADDR gt_routine_address code_addr
+PUSH_LABEL @gt_callsite__main_21 code_addr
+ASSIGN code_addr code_addr code_addr
+CC_START sysv_x64
+PUSH 6 indeterminate_u64
+POP ARG0 indeterminate_u64
+CALL probeLoopThrow
+CC_END sysv_x64
+PUSH_RET mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+CC_START sysv_x64
+PUSH string_id3 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH a mut_u64
+POP ARG1 mut_u64
+PUSH b mut_u64
+POP ARG2 mut_u64
+PUSH c mut_u64
+POP ARG3 mut_u64
+PUSH d mut_u64
+POP ARG4 mut_u64
+PUSH e mut_u64
+POP ARG5 mut_u64
+PUSH f mut_u64
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 7
+CC_END sysv_x64
+JMP @end_of_gt_callsites__main_22
+@gt_callsite__main_16:
+EXIT
+@gt_callsite__main_17:
+EXIT
+@gt_callsite__main_18:
+EXIT
+@gt_callsite__main_19:
+EXIT
+@gt_callsite__main_20:
+EXIT
+@gt_callsite__main_21:
+EXIT
+@end_of_gt_callsites__main_22:
+FUNC_END

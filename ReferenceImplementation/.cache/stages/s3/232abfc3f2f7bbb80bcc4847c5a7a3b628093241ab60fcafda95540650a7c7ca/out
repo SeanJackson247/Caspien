@@ -1,0 +1,4937 @@
+STRING string_id1 "out of memory: cannot create the ghost table\n"
+STRING string_id2 "PASS %s\n"
+STRING string_id3 "FAIL %s\n"
+STRING string_id4 "FAIL %s expected %llx got %llx\n"
+STRING string_id5 "insecure_fnv1a64Bytes: empty"
+STRING string_id6 "hashStr: ''"
+STRING string_id7 ""
+STRING string_id8 "hashStr: 'a'"
+STRING string_id9 "a"
+STRING string_id10 "hashStr: 'foobar'"
+STRING string_id11 "foobar"
+STRING string_id12 "hashStr: 'b'"
+STRING string_id13 "b"
+STRING string_id14 "hashStr: 'ab'"
+STRING string_id15 "ab"
+STRING string_id16 "hashStr: 'abc'"
+STRING string_id17 "abc"
+STRING string_id18 "hashStr: 'hello'"
+STRING string_id19 "hello"
+STRING string_id20 "hashStr: 'hello world'"
+STRING string_id21 "hello world"
+STRING string_id22 "hashStr: 'The quick brown fox jumps over the lazy dog'"
+STRING string_id23 "The quick brown fox jumps over the lazy dog"
+STRING string_id24 "hashStr: '0123456789abcdef'"
+STRING string_id25 "0123456789abcdef"
+STRING string_id26 "hashPattern 1 bytes"
+STRING string_id27 "hashPattern 2 bytes"
+STRING string_id28 "hashPattern 3 bytes"
+STRING string_id29 "hashPattern 7 bytes"
+STRING string_id30 "hashPattern 8 bytes"
+STRING string_id31 "hashPattern 9 bytes"
+STRING string_id32 "hashPattern 15 bytes"
+STRING string_id33 "hashPattern 16 bytes"
+STRING string_id34 "hashPattern 17 bytes"
+STRING string_id35 "hashPattern 31 bytes"
+STRING string_id36 "hashPattern 32 bytes"
+STRING string_id37 "hashPattern 33 bytes"
+STRING string_id38 "hashPattern 63 bytes"
+STRING string_id39 "hashPattern 64 bytes"
+STRING string_id40 "hashPattern 65 bytes"
+STRING string_id41 "hashPattern 100 bytes"
+STRING string_id42 "hashPattern 255 bytes"
+STRING string_id43 "hashPattern 256 bytes"
+STRING string_id44 "hashPattern 1000 bytes"
+STRING string_id45 "insecure_hashOf:<u8> 0"
+STRING string_id46 "insecure_hashOf:<u8> 1"
+STRING string_id47 "insecure_hashOf:<u8> 2"
+STRING string_id48 "insecure_hashOf:<u8> 7"
+STRING string_id49 "insecure_hashOf:<u8> 42"
+STRING string_id50 "insecure_hashOf:<u8> 127"
+STRING string_id51 "insecure_hashOf:<u8> 128"
+STRING string_id52 "insecure_hashOf:<u8> 255"
+STRING string_id53 "insecure_hashOf:<u16> 0"
+STRING string_id54 "insecure_hashOf:<u16> 1"
+STRING string_id55 "insecure_hashOf:<u16> 2"
+STRING string_id56 "insecure_hashOf:<u16> 7"
+STRING string_id57 "insecure_hashOf:<u16> 42"
+STRING string_id58 "insecure_hashOf:<u16> 127"
+STRING string_id59 "insecure_hashOf:<u16> 128"
+STRING string_id60 "insecure_hashOf:<u16> 255"
+STRING string_id61 "insecure_hashOf:<u16> 256"
+STRING string_id62 "insecure_hashOf:<u16> 257"
+STRING string_id63 "insecure_hashOf:<u16> 65535"
+STRING string_id64 "insecure_hashOf:<u32> 0"
+STRING string_id65 "insecure_hashOf:<u32> 1"
+STRING string_id66 "insecure_hashOf:<u32> 2"
+STRING string_id67 "insecure_hashOf:<u32> 7"
+STRING string_id68 "insecure_hashOf:<u32> 42"
+STRING string_id69 "insecure_hashOf:<u32> 127"
+STRING string_id70 "insecure_hashOf:<u32> 128"
+STRING string_id71 "insecure_hashOf:<u32> 255"
+STRING string_id72 "insecure_hashOf:<u32> 256"
+STRING string_id73 "insecure_hashOf:<u32> 257"
+STRING string_id74 "insecure_hashOf:<u32> 65535"
+STRING string_id75 "insecure_hashOf:<u32> 65536"
+STRING string_id76 "insecure_hashOf:<u32> 16909060"
+STRING string_id77 "insecure_hashOf:<u32> 2147483647"
+STRING string_id78 "insecure_hashOf:<u32> 2147483648"
+STRING string_id79 "insecure_hashOf:<u32> 3735928559"
+STRING string_id80 "insecure_hashOf:<u32> 4294967295"
+STRING string_id81 "insecure_hashOf:<u64> 0"
+STRING string_id82 "insecure_hashOf:<u64> 1"
+STRING string_id83 "insecure_hashOf:<u64> 2"
+STRING string_id84 "insecure_hashOf:<u64> 7"
+STRING string_id85 "insecure_hashOf:<u64> 42"
+STRING string_id86 "insecure_hashOf:<u64> 127"
+STRING string_id87 "insecure_hashOf:<u64> 128"
+STRING string_id88 "insecure_hashOf:<u64> 255"
+STRING string_id89 "insecure_hashOf:<u64> 256"
+STRING string_id90 "insecure_hashOf:<u64> 257"
+STRING string_id91 "insecure_hashOf:<u64> 65535"
+STRING string_id92 "insecure_hashOf:<u64> 65536"
+STRING string_id93 "insecure_hashOf:<u64> 16909060"
+STRING string_id94 "insecure_hashOf:<u64> 2147483647"
+STRING string_id95 "insecure_hashOf:<u64> 2147483648"
+STRING string_id96 "insecure_hashOf:<u64> 3735928559"
+STRING string_id97 "insecure_hashOf:<u64> 4294967295"
+STRING string_id98 "insecure_hashOf:<u64> 81985529216486895"
+STRING string_id99 "insecure_hashOf:<u64> 9223372036854775807"
+STRING string_id100 "insecure_hashOf:<u64> 9223372036854775808"
+STRING string_id101 "insecure_hashOf:<u64> 18364758544493064720"
+STRING string_id102 "insecure_hashOf:<u64> 18446744073709551615"
+STRING string_id103 "insecure_hashOf:<s32> -2147483648"
+STRING string_id104 "insecure_hashOf:<s32> -123456"
+STRING string_id105 "insecure_hashOf:<s32> -32768"
+STRING string_id106 "insecure_hashOf:<s32> -255"
+STRING string_id107 "insecure_hashOf:<s32> -129"
+STRING string_id108 "insecure_hashOf:<s32> -128"
+STRING string_id109 "insecure_hashOf:<s32> -2"
+STRING string_id110 "insecure_hashOf:<s32> -1"
+STRING string_id111 "insecure_hashOf:<s32> 0"
+STRING string_id112 "insecure_hashOf:<s32> 1"
+STRING string_id113 "insecure_hashOf:<s32> 2"
+STRING string_id114 "insecure_hashOf:<s32> 7"
+STRING string_id115 "insecure_hashOf:<s32> 42"
+STRING string_id116 "insecure_hashOf:<s32> 127"
+STRING string_id117 "insecure_hashOf:<s32> 128"
+STRING string_id118 "insecure_hashOf:<s32> 255"
+STRING string_id119 "insecure_hashOf:<s32> 256"
+STRING string_id120 "insecure_hashOf:<s32> 257"
+STRING string_id121 "insecure_hashOf:<s32> 65535"
+STRING string_id122 "insecure_hashOf:<s32> 65536"
+STRING string_id123 "insecure_hashOf:<s32> 16909060"
+STRING string_id124 "insecure_hashOf:<s32> 2147483647"
+STRING string_id125 "insecure_hashOf:<s64> -9223372036854775808"
+STRING string_id126 "insecure_hashOf:<s64> -123456"
+STRING string_id127 "insecure_hashOf:<s64> -32768"
+STRING string_id128 "insecure_hashOf:<s64> -255"
+STRING string_id129 "insecure_hashOf:<s64> -129"
+STRING string_id130 "insecure_hashOf:<s64> -128"
+STRING string_id131 "insecure_hashOf:<s64> -2"
+STRING string_id132 "insecure_hashOf:<s64> -1"
+STRING string_id133 "insecure_hashOf:<s64> 0"
+STRING string_id134 "insecure_hashOf:<s64> 1"
+STRING string_id135 "insecure_hashOf:<s64> 2"
+STRING string_id136 "insecure_hashOf:<s64> 7"
+STRING string_id137 "insecure_hashOf:<s64> 42"
+STRING string_id138 "insecure_hashOf:<s64> 127"
+STRING string_id139 "insecure_hashOf:<s64> 128"
+STRING string_id140 "insecure_hashOf:<s64> 255"
+STRING string_id141 "insecure_hashOf:<s64> 256"
+STRING string_id142 "insecure_hashOf:<s64> 257"
+STRING string_id143 "insecure_hashOf:<s64> 65535"
+STRING string_id144 "insecure_hashOf:<s64> 65536"
+STRING string_id145 "insecure_hashOf:<s64> 16909060"
+STRING string_id146 "insecure_hashOf:<s64> 2147483647"
+STRING string_id147 "insecure_hashOf:<s64> 2147483648"
+STRING string_id148 "insecure_hashOf:<s64> 3735928559"
+STRING string_id149 "insecure_hashOf:<s64> 4294967295"
+STRING string_id150 "insecure_hashOf:<s64> 81985529216486895"
+STRING string_id151 "insecure_hashOf:<s64> 9223372036854775807"
+STRING string_id152 "insecure_hashOf:<u64>(42) literal"
+STRING string_id153 "insecure_hashOf:<u32>(7) literal"
+STRING string_id154 "insecure_hashOf:<u8>(200) literal"
+STRING string_id155 "insecure_hashOf deterministic"
+STRING string_id156 "insecure_hashOf: different values differ"
+STRING string_id157 "insecure_hashOf: same value, different width differs"
+STRING string_id158 "sizeof(Pair) == 24 (8-byte hidden header + 16 member bytes)"
+STRING string_id159 "sizeof(Quad) == 24 (8-byte hidden header + 16 member bytes)"
+STRING string_id160 "hashPair {0x0102030405060708, 0x1112131415161718}"
+STRING string_id161 "hashPair {0, 0}"
+STRING string_id162 "hashQuad {1, 2, 0xdeadbeef, 0xffffffff}"
+STRING string_id163 "fnv1a: %llu passed, %llu failed\n"
+STRING string_id164 "ALL FNV1A TESTS PASSED\n"
+GLOBAL ghost_table 96
+GLOBAL ghost_table.___type 8 0
+GLOBAL ghost_table.lockState 8 0
+GLOBAL ghost_table.base 8 null
+GLOBAL ghost_table.len 8 0
+GLOBAL ghost_table.capacity 8 0
+GLOBAL ghost_table.refBase 8 null
+GLOBAL ghost_table.refCap 8 0
+GLOBAL ghost_table.refLen 8 0
+GLOBAL ghost_table.idBase 8 null
+GLOBAL ghost_table.idCap 8 0
+GLOBAL ghost_table.idLen 8 0
+GLOBAL ghost_table.nextId 8 0
+GLOBAL passed 8 0
+GLOBAL failed 8 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START insecure_fnv1a64Bytes
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-40 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-40
+@for_1:
+R_BRC LT 8 %v4 %v0 @for_end_2
+R_BIN ADD 8 %t0 $-8 %v4
+R_LD 1 %v5 %t0
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_1
+@for_end_2:
+R_RET %v3
+FUNC_END
+FUNC_START gtSlotAt
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 $-24 %t0
+R_BIN MUL 8 %t0 $-16 #8
+R_BIN ADD 8 %t0 $-24 %t0
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START __gtSlotAt
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 $-24 %t0
+R_BIN MUL 8 %t0 $-16 #8
+R_BIN ADD 8 %t0 $-24 %t0
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START gtLoad
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #0
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 8
+PUSH 8 $-32
+MEMCOPY
+R_RET $-24
+FUNC_END
+FUNC_START __gtLoad
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #0
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL __gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 8
+PUSH 8 $-32
+MEMCOPY
+R_RET $-24
+FUNC_END
+FUNC_START gtStore
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+PUSH 8 8
+PUSH 8 $-32
+ADDR_OF RAW $-32
+MEMCOPY
+FUNC_END
+FUNC_START __gtStore
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL __gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+PUSH 8 8
+PUSH 8 $-32
+ADDR_OF RAW $-32
+MEMCOPY
+FUNC_END
+FUNC_START gtAddrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN SUB 8 %t0 $-8 $-16
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START __gtAddrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN SUB 8 %t0 $-8 $-16
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START gtPtrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN ADD 8 %t0 $-16 $-8
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START __gtPtrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN ADD 8 %t0 $-16 $-8
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START gtHashAddr
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN SHR 8 %t0 $-8 #4
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #11
+R_BIN BXOR 8 %t0 $-24 %t0
+R_MOV 8 $-24 %t0
+R_BIN BAND 8 %t0 $-24 $-16
+R_RET %t0
+FUNC_END
+FUNC_START __gtHashAddr
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN SHR 8 %t0 $-8 #4
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #11
+R_BIN BXOR 8 %t0 $-24 %t0
+R_MOV 8 $-24 %t0
+R_BIN BAND 8 %t0 $-24 $-16
+R_RET %t0
+FUNC_END
+FUNC_START gtHashId
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-8 #11400714819323198485
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #32
+R_BIN BAND 8 %t0 %t0 $-16
+R_RET %t0
+FUNC_END
+FUNC_START __gtHashId
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-8 #11400714819323198485
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #32
+R_BIN BAND 8 %t0 %t0 $-16
+R_RET %t0
+FUNC_END
+FUNC_START gtHashFor
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_3
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+@end_of_if_3:
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL gtHashId
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+FUNC_END
+FUNC_START __gtHashFor
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_4
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL __gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+@end_of_if_4:
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL __gtHashId
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+FUNC_END
+FUNC_START gtClear
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_MOV 8 %v1 $-16
+R_MOV 8 %v0 $-32
+@for_5:
+R_BRC LT 8 %v0 %v1 @for_end_6
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+R_RMW INC 8 %v0
+JMP @for_5
+@for_end_6:
+FUNC_END
+FUNC_START __gtClear
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_MOV 8 %v1 $-16
+R_MOV 8 %v0 $-32
+@for_7:
+R_BRC LT 8 %v0 %v1 @for_end_8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+R_RMW INC 8 %v0
+JMP @for_7
+@for_end_8:
+FUNC_END
+FUNC_START gtT1Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_BIN SHR 8 %t0 $-24 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_9:
+R_BRC LT 8 %v1 $-64 @for_end_10
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_10
+@end_of_if_11:
+R_BIN SHR 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 $-48 @end_of_if_12
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_10
+@end_of_if_12:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_9
+@for_end_10:
+R_RET $-56
+FUNC_END
+FUNC_START __gtT1Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_BIN SHR 8 %t0 $-24 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_13:
+R_BRC LT 8 %v1 $-64 @for_end_14
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_14
+@end_of_if_15:
+R_BIN SHR 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 $-48 @end_of_if_16
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_14
+@end_of_if_16:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_13
+@for_end_14:
+R_RET $-56
+FUNC_END
+FUNC_START gtT1Insert
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v1 $-56
+@for_17:
+R_BRC LT 8 %v1 $-48 @for_end_18
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_19
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 $-24
+CALL gtStore
+CC_END sysv_x64
+JMP @for_end_18
+@end_of_if_19:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_17
+@for_end_18:
+FUNC_END
+FUNC_START __gtT1Insert
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v1 $-56
+@for_20:
+R_BRC LT 8 %v1 $-48 @for_end_21
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_22
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 $-24
+CALL __gtStore
+CC_END sysv_x64
+JMP @for_end_21
+@end_of_if_22:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_20
+@for_end_21:
+FUNC_END
+FUNC_START gtT1Rehash
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 %v2 $-16
+R_MOV 8 %v0 $-48
+@for_23:
+R_BRC LT 8 %v0 %v2 @for_end_24
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_25
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+CALL gtT1Insert
+CC_END sysv_x64
+@end_of_if_25:
+R_RMW INC 8 %v0
+JMP @for_23
+@for_end_24:
+FUNC_END
+FUNC_START __gtT1Rehash
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 %v2 $-16
+R_MOV 8 %v0 $-48
+@for_26:
+R_BRC LT 8 %v0 %v2 @for_end_27
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_28
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+CALL __gtT1Insert
+CC_END sysv_x64
+@end_of_if_28:
+R_RMW INC 8 %v0
+JMP @for_26
+@for_end_27:
+FUNC_END
+FUNC_START gtT1RemoveAt
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-64 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@for_29:
+R_BRC LT 8 $-72 $-56 @for_end_30
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+ADDR 8 $-80
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-80 #0 @for_end_30
+@end_of_if_31:
+CC_START sysv_x64
+R_ARG 0 8 $-80
+R_ARG 1 8 $-32
+CALL gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-89 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_33
+R_BRC LT 8 %v1 %v2 @end_of_if_34
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_34
+R_ST 1 $-89 #1
+@end_of_if_34:
+JMP @end_of_if_32
+@if_branch_33:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_35
+R_ST 1 $-89 #1
+@end_of_if_35:
+@end_of_if_32:
+PUSH 1 $-89
+NOT 1
+CMP
+JMP @end_of_if_36
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 $-80
+CALL gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_36:
+R_RMW INC 8 $-72
+JMP @for_29
+@for_end_30:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START __gtT1RemoveAt
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-64 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@for_37:
+R_BRC LT 8 $-72 $-56 @for_end_38
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+ADDR 8 $-80
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-80 #0 @for_end_38
+@end_of_if_39:
+CC_START sysv_x64
+R_ARG 0 8 $-80
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-89 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_41
+R_BRC LT 8 %v1 %v2 @end_of_if_42
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_42
+R_ST 1 $-89 #1
+@end_of_if_42:
+JMP @end_of_if_40
+@if_branch_41:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_43
+R_ST 1 $-89 #1
+@end_of_if_43:
+@end_of_if_40:
+PUSH 1 $-89
+NOT 1
+CMP
+JMP @end_of_if_44
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 $-80
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_44:
+R_RMW INC 8 $-72
+JMP @for_37
+@for_end_38:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START gtT16Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-24
+R_ARG 2 8 $-40
+CALL gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_45:
+R_BRC LT 8 %v1 $-64 @for_end_46
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_46
+@end_of_if_47:
+R_BRC EQ 8 %v2 $-24 @end_of_if_48
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_46
+@end_of_if_48:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+R_RMW INC 8 %v1
+JMP @for_45
+@for_end_46:
+R_RET $-56
+FUNC_END
+FUNC_START __gtT16Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-24
+R_ARG 2 8 $-40
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_49:
+R_BRC LT 8 %v1 $-64 @for_end_50
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_50
+@end_of_if_51:
+R_BRC EQ 8 %v2 $-24 @end_of_if_52
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_50
+@end_of_if_52:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+R_RMW INC 8 %v1
+JMP @for_49
+@for_end_50:
+R_RET $-56
+FUNC_END
+FUNC_START gtT16Insert
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-48 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-24
+R_ARG 2 8 $-48
+CALL gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_53:
+R_BRC LT 8 %v1 $-64 @for_end_54
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_55
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-24
+CALL gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 $-32
+CALL gtStore
+CC_END sysv_x64
+JMP @for_end_54
+@end_of_if_55:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_53
+@for_end_54:
+FUNC_END
+FUNC_START __gtT16Insert
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-48 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-24
+R_ARG 2 8 $-48
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_56:
+R_BRC LT 8 %v1 $-64 @for_end_57
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_58
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-24
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 $-32
+CALL __gtStore
+CC_END sysv_x64
+JMP @for_end_57
+@end_of_if_58:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_56
+@for_end_57:
+FUNC_END
+FUNC_START gtT16Rehash
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v0 $-56
+@for_59:
+R_BRC LT 8 %v0 $-48 @for_end_60
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_61
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+R_ARG 3 8 %v2
+R_ARG 4 8 $-40
+CALL gtT16Insert
+CC_END sysv_x64
+@end_of_if_61:
+R_RMW INC 8 %v0
+JMP @for_59
+@for_end_60:
+FUNC_END
+FUNC_START __gtT16Rehash
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v0 $-56
+@for_62:
+R_BRC LT 8 %v0 $-48 @for_end_63
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+R_ARG 3 8 %v2
+R_ARG 4 8 $-40
+CALL __gtT16Insert
+CC_END sysv_x64
+@end_of_if_64:
+R_RMW INC 8 %v0
+JMP @for_62
+@for_end_63:
+FUNC_END
+FUNC_START gtT16RemoveAt
+ALLOC 112
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_65:
+R_BRC LT 8 $-80 $-64 @for_end_66
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+ADDR 8 $-88
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-88 #0 @for_end_66
+@end_of_if_67:
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-88
+R_ARG 2 8 $-40
+CALL gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-97 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_69
+R_BRC LT 8 %v1 %v2 @end_of_if_70
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_70
+R_ST 1 $-97 #1
+@end_of_if_70:
+JMP @end_of_if_68
+@if_branch_69:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_71
+R_ST 1 $-97 #1
+@end_of_if_71:
+@end_of_if_68:
+PUSH 1 $-97
+NOT 1
+CMP
+JMP @end_of_if_72
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-88
+CALL gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 %v2
+CALL gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_72:
+R_RMW INC 8 $-80
+JMP @for_65
+@for_end_66:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START __gtT16RemoveAt
+ALLOC 112
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_73:
+R_BRC LT 8 $-80 $-64 @for_end_74
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+ADDR 8 $-88
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-88 #0 @for_end_74
+@end_of_if_75:
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-88
+R_ARG 2 8 $-40
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-97 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_77
+R_BRC LT 8 %v1 %v2 @end_of_if_78
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_78
+R_ST 1 $-97 #1
+@end_of_if_78:
+JMP @end_of_if_76
+@if_branch_77:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_79
+R_ST 1 $-97 #1
+@end_of_if_79:
+@end_of_if_76:
+PUSH 1 $-97
+NOT 1
+CMP
+JMP @end_of_if_80
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-88
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 %v2
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_80:
+R_RMW INC 8 $-80
+JMP @for_73
+@for_end_74:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START gtNewCap16
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_81
+R_RET #8
+@end_of_if_81:
+R_BIN MUL 8 %t0 $-8 #2
+R_RET %t0
+FUNC_END
+FUNC_START __gtNewCap16
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_82
+R_RET #8
+@end_of_if_82:
+R_BIN MUL 8 %t0 $-8 #2
+R_RET %t0
+FUNC_END
+FUNC_START gtGrown16
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-16
+CALL gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 $-32 #16
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-40 #0 @end_of_if_83
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_BIN MUL 8 %t0 $-32 #2
+R_ARG 1 8 %t0
+CALL gtClear
+CC_END sysv_x64
+R_BRC NEQ 8 $-16 #0 @end_of_if_84
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 $-32
+R_ARG 4 8 $-24
+CALL gtT16Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_84:
+@end_of_if_83:
+R_RET $-40
+FUNC_END
+FUNC_START __gtGrown16
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-16
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 $-32 #16
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-40 #0 @end_of_if_85
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_BIN MUL 8 %t0 $-32 #2
+R_ARG 1 8 %t0
+CALL __gtClear
+CC_END sysv_x64
+R_BRC NEQ 8 $-16 #0 @end_of_if_86
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 $-32
+R_ARG 4 8 $-24
+CALL __gtT16Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_86:
+@end_of_if_85:
+R_RET $-40
+FUNC_END
+FUNC_START gtUnlinkId
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 #0
+CALL gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 $-16 @end_of_if_87
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-48
+R_ARG 3 8 #0
+CALL gtT16RemoveAt
+CC_END sysv_x64
+ADDR 8 $-64
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 #1
+CALL gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-64 $-32 @end_of_if_88
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-64
+R_ARG 3 8 #1
+CALL gtT16RemoveAt
+CC_END sysv_x64
+@end_of_if_88:
+@end_of_if_87:
+FUNC_END
+FUNC_START __gtUnlinkId
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 #0
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 $-16 @end_of_if_89
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-48
+R_ARG 3 8 #0
+CALL __gtT16RemoveAt
+CC_END sysv_x64
+ADDR 8 $-64
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 #1
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-64 $-32 @end_of_if_90
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-64
+R_ARG 3 8 #1
+CALL __gtT16RemoveAt
+CC_END sysv_x64
+@end_of_if_90:
+@end_of_if_89:
+FUNC_END
+FUNC_START gt_ref_id
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_91
+R_RET #0
+@end_of_if_91:
+R_MOV 8 %v0 #0
+@loop_92:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_95
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_96
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-32
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BIN BAND 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 #1 @if_branch_98
+ADDR 8 $-48
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 %v1
+R_ARG 3 8 #0
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-48
+PUSH 8 ghost_table.refCap
+NEQ_INT 8
+CMP
+JMP @end_of_if_99
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v0
+@end_of_if_99:
+JMP @end_of_if_97
+@if_branch_98:
+R_ST 1 $-49 #1
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.refCap
+GT_INT 8
+CMP
+JMP @end_of_if_100
+ADDR 8 $-64
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 #0
+CALL __gtGrown16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-64 #0 @if_branch_102
+R_ST 1 $-49 #0
+JMP @end_of_if_101
+@if_branch_102:
+R_MOV 8 %t1 $-64
+R_ST 8 &ghost_table+40 %t1
+R_LEA %t0 &ghost_table #48 1
+R_PUSH 8 %t0
+CC_START sysv_x64
+PUSH 8 ghost_table.refCap
+POP ARG0 8
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_101:
+@end_of_if_100:
+PUSH 1 $-49
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.idCap
+GT_INT 8
+AND 1
+CMP
+JMP @end_of_if_103
+ADDR 8 $-72
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 #1
+CALL __gtGrown16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-72 #0 @if_branch_105
+R_ST 1 $-49 #0
+JMP @end_of_if_104
+@if_branch_105:
+R_MOV 8 %t1 $-72
+R_ST 8 &ghost_table+64 %t1
+R_LEA %t0 &ghost_table #72 1
+R_PUSH 8 %t0
+CC_START sysv_x64
+PUSH 8 ghost_table.idCap
+POP ARG0 8
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_104:
+@end_of_if_103:
+PUSH 1 $-49
+CMP
+JMP @end_of_if_106
+PUSH 8 ghost_table.nextId
+PUSH 8 1
+ADD_INT 8
+R_POPV 8 %v0
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+88 %t1
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 %v1
+R_ARG 3 8 %v0
+R_ARG 4 8 #0
+CALL __gtT16Insert
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 %v0
+R_ARG 3 8 %v1
+R_ARG 4 8 #1
+CALL __gtT16Insert
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-32
+R_BIN BOR 8 %t0 %v2 #1
+R_ARG 2 8 %t0
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v0 %v0
+@end_of_if_106:
+@end_of_if_97:
+@end_of_if_96:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_93
+@if_branch_95:
+JMP @loop_92
+@end_of_if_94:
+JMP @loop_92
+@loop_end_93:
+R_RET %v0
+FUNC_END
+FUNC_START gt_ref_resolve
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BRC NEQ 8 $-8 #0 @end_of_if_107
+@loop_108:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_111
+PUSH 8 ghost_table.idCap
+PUSH 8 0
+NEQ_INT 8
+CMP
+JMP @end_of_if_112
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 $-8
+R_ARG 3 8 #1
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.idCap
+NEQ_INT 8
+CMP
+JMP @end_of_if_113
+ADDR 8 $-16
+CC_START sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+R_BIN MUL 8 %t0 $-24 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG0 8
+CALL __gtPtrOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_113:
+@end_of_if_112:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_109
+@if_branch_111:
+JMP @loop_108
+@end_of_if_110:
+JMP @loop_108
+@loop_end_109:
+@end_of_if_107:
+R_RET $-16
+FUNC_END
+FUNC_START gt_alive_check
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_114
+R_RET #0
+@end_of_if_114:
+R_SETV 1 %v0 #0
+@loop_115:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_118
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG2 8
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_119
+R_SETV 1 %v0 #1
+@end_of_if_119:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_116
+@if_branch_118:
+JMP @loop_115
+@end_of_if_117:
+JMP @loop_115
+@loop_end_116:
+R_MOV 8 %s %v0
+R_RET %s
+FUNC_END
+FUNC_START gt_destruct
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-8 #0 @end_of_if_120
+@loop_121:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_124
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_125
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BIN BAND 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 #1 @end_of_if_126
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+PUSH 8 ghost_table.idBase
+POP ARG2 8
+PUSH 8 ghost_table.idCap
+POP ARG3 8
+R_ARG 4 8 %v1
+CALL __gtUnlinkId
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_126:
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-24
+CALL __gtT1RemoveAt
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+PUSH 8 ghost_table.capacity
+PUSH 8 8
+GT_INT 8
+PUSH 8 ghost_table.len
+PUSH 8 8
+MUL_INT 8
+PUSH 8 ghost_table.capacity
+LT_INT 8
+AND 1
+CMP
+JMP @end_of_if_127
+PUSH 8 ghost_table.capacity
+PUSH 8 1
+SHR 8
+R_POPV 8 %v0
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 %v0 #8
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 #0 @end_of_if_128
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 %v0
+CALL __gtClear
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-48
+R_ARG 3 8 %v0
+CALL __gtT1Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+CALL free 1
+CC_END sysv_x64
+R_MOV 8 %t1 $-48
+R_ST 8 &ghost_table+16 %t1
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+32 %t1
+@end_of_if_128:
+@end_of_if_127:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_125:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_122
+@if_branch_124:
+JMP @loop_121
+@end_of_if_123:
+JMP @loop_121
+@loop_end_122:
+@end_of_if_120:
+FUNC_END
+EXTERN exit imut_void imut_u32
+FUNC_START gt_init
+ALLOC 16
+@loop_129:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_132
+R_MOV 8 $-8 #0
+ADDR 8 $-8
+CC_START sysv_x64
+R_ARG 0 8 #64
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_133
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL exit 1
+CC_END sysv_x64
+@end_of_if_133:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 #8
+CALL __gtClear
+CC_END sysv_x64
+R_MOV 8 %t1 $-8
+R_ST 8 &ghost_table+16 %t1
+R_ST 8 &ghost_table+24 #0
+R_ST 8 &ghost_table+32 #8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_130
+@if_branch_132:
+JMP @loop_129
+@end_of_if_131:
+JMP @loop_129
+@loop_end_130:
+FUNC_END
+FUNC_START gt_moved
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-8 #0 @end_of_if_134
+@loop_135:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_138
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v0
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v0
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_139
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BIN BAND 8 %t0 %v1 #1
+R_BRC EQ 8 %t0 #1 @end_of_if_140
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+PUSH 8 ghost_table.idBase
+POP ARG2 8
+PUSH 8 ghost_table.idCap
+POP ARG3 8
+R_ARG 4 8 %v0
+CALL __gtUnlinkId
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_140:
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-24
+CALL __gtT1RemoveAt
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_139:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_136
+@if_branch_138:
+JMP @loop_135
+@end_of_if_137:
+JMP @loop_135
+@loop_end_136:
+@end_of_if_134:
+FUNC_END
+FUNC_START gt_register
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_141
+R_RET #1
+@end_of_if_141:
+R_ST 1 $-9 #1
+@loop_142:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_145
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 ghost_table.capacity
+EQ_INT 8
+CMP
+JMP @end_of_if_146
+PUSH 8 ghost_table.len
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.capacity
+GT_INT 8
+CMP
+JMP @end_of_if_147
+PUSH 8 ghost_table.capacity
+PUSH 8 2
+MUL_INT 8
+R_POPV 8 %v0
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 %v0 #8
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-48 #0 @if_branch_149
+R_ST 1 $-9 #0
+JMP @end_of_if_148
+@if_branch_149:
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 %v0
+CALL __gtClear
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-48
+R_ARG 3 8 %v0
+CALL __gtT1Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+CALL free 1
+CC_END sysv_x64
+R_MOV 8 %t1 $-48
+R_ST 8 &ghost_table+16 %t1
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+32 %t1
+@end_of_if_148:
+@end_of_if_147:
+PUSH 1 $-9
+CMP
+JMP @end_of_if_150
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Insert
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+@end_of_if_150:
+@end_of_if_146:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_143
+@if_branch_145:
+JMP @loop_142
+@end_of_if_144:
+JMP @loop_142
+@loop_end_143:
+R_LD 1 %s $-9
+R_RET %s
+FUNC_END
+FUNC_START check
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-9
+PUSH 1 ARG1
+ASSIGN 1 1 1
+PUSH 1 $-9
+CMP
+JMP @if_branch_152
+R_LD 8 %t0 &passed
+R_UN INC 8 %t0 %t0
+R_ST 8 &passed %t0
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_151
+@if_branch_152:
+R_LD 8 %t0 &failed
+R_UN INC 8 %t0 %t0
+R_ST 8 &failed %t0
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_151:
+RET 0
+FUNC_END
+FUNC_START checkHash
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-16 $-24 @if_branch_154
+R_LD 8 %t0 &passed
+R_UN INC 8 %t0 %t0
+R_ST 8 &passed %t0
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_153
+@if_branch_154:
+R_LD 8 %t0 &failed
+R_UN INC 8 %t0 %t0
+R_ST 8 &failed %t0
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_ARG 1 8 $-8
+R_ARG 2 8 $-24
+R_ARG 3 8 $-16
+VARARGS_XMM_COUNT 0
+CALL printf 4
+CC_END sysv_x64
+@end_of_if_153:
+RET 0
+FUNC_END
+FUNC_START hashStr
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+ADDR 8 $-24
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL strlen 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-32
+CC_START sysv_x64
+R_BIN ADD 8 %t0 $-24 #1
+R_ARG 0 8 %t0
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 $-24
+PUSH 8 $-8
+MEMCOPY
+ADDR 8 $-16
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-24
+CALL insecure_fnv1a64Bytes
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL free 1
+CC_END sysv_x64
+R_RET $-16
+FUNC_END
+FUNC_START hashPattern
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+ADDR 8 $-24
+CC_START sysv_x64
+R_BIN ADD 8 %t0 $-8 #1
+R_ARG 0 8 %t0
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+R_MOV 8 %v0 $-8
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+@for_155:
+R_BRC LT 8 $-48 %v0 @for_end_156
+R_BIN MUL 8 %t0 $-48 #37
+R_BIN ADD 8 %t0 %t0 #11
+R_BIN BAND 8 %t0 %t0 #255
+R_ST 1 $-49 %t0
+PUSH 8 $-24
+PUSH 8 $-48
+ADD_INT 8
+PUSH 8 1
+PUSH 1 $-49
+ADDR_OF RAW $-49
+MEMCOPY
+R_RMW INC 8 $-48
+JMP @for_155
+@for_end_156:
+ADDR 8 $-16
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-8
+CALL insecure_fnv1a64Bytes
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL free 1
+CC_END sysv_x64
+R_RET $-16
+FUNC_END
+FUNC_START hashPair
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_MOV 8 $-24 #24
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 24 $-56
+PUSH 8 $-8
+DEREF 24
+ASSIGN 24 24 24
+PUSH 8 $-32
+PUSH 8 $-24
+PUSH 24 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+ADDR 8 $-16
+CC_START sysv_x64
+R_BIN SUB 8 %t0 $-24 #16
+R_BIN ADD 8 %t0 $-32 %t0
+R_ARG 0 8 %t0
+R_ARG 1 8 #16
+CALL insecure_fnv1a64Bytes
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL free 1
+CC_END sysv_x64
+R_RET $-16
+FUNC_END
+FUNC_START hashQuad
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_MOV 8 $-24 #24
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 24 $-56
+PUSH 8 $-8
+DEREF 24
+ASSIGN 24 24 24
+PUSH 8 $-32
+PUSH 8 $-24
+PUSH 24 $-56
+ADDR_OF RAW $-56
+MEMCOPY
+ADDR 8 $-16
+CC_START sysv_x64
+R_BIN SUB 8 %t0 $-24 #16
+R_BIN ADD 8 %t0 $-32 %t0
+R_ARG 0 8 %t0
+R_ARG 1 8 #16
+CALL insecure_fnv1a64Bytes
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL free 1
+CC_END sysv_x64
+R_RET $-16
+FUNC_END
+FUNC_START main
+ALLOC 128
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_ARG 1 8 #0
+CALL insecure_fnv1a64Bytes
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #14695981039346656037
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #14695981039346656037
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638187200555641996
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9625390261332436968
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id12
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id13
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638190499090526629
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id14
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id15
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #620445648566982762
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id16
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id17
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #16654208175385433931
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id18
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id19
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11831194018420276491
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id20
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id21
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #8618312879776256743
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id22
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id23
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #17580284887202820368
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id24
+POP ARG0 8
+CC_START sysv_x64
+PUSH 8 string_id25
+POP ARG0 8
+CALL hashStr
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #3330193207084279677
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id26
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638163011299821354
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id27
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #2
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #599275651681571118
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id28
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #3
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #2813714132783166465
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id29
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #7
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #18226734573711439785
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id30
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #8
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #3931156000417648837
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id31
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #9
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #4454383383410823682
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id32
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #15
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9274623009836401825
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id33
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #16
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12387545992954858645
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id34
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #17
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #65185782699885066
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id35
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #31
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #16123853202563983905
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id36
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #32
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10952857708260800965
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id37
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #33
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10473472664085403114
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id38
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #63
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #3233879696196659489
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id39
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #64
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7552869386198218469
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id40
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #65
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #6911059632779012522
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id41
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #100
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12316872312821756577
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id42
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #255
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #14571156115752629537
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id43
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #256
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #14837709748493705509
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id44
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #1000
+CALL hashPattern
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #2403631003335126693
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #0
+R_SETV 2 %v0 #0
+R_SETV 4 %v0 #0
+R_MOV 8 %v0 #0
+R_SETV 4 %v0 #0
+R_MOV 8 %v0 #0
+R_SETV 1 %v0 #0
+CC_START sysv_x64
+PUSH 8 string_id45
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638153115695167455
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #1
+CC_START sysv_x64
+PUSH 8 string_id46
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638152016183539244
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #2
+CC_START sysv_x64
+PUSH 8 string_id47
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638155314718423877
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #7
+CC_START sysv_x64
+PUSH 8 string_id48
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638149817160282822
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #42
+CC_START sysv_x64
+PUSH 8 string_id49
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638128926439346813
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #127
+CC_START sysv_x64
+PUSH 8 string_id50
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638211389811462638
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #128
+CC_START sysv_x64
+PUSH 8 string_id51
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638293853183578463
+CALL checkHash
+CC_END sysv_x64
+R_SETV 1 %v0 #255
+CC_START sysv_x64
+PUSH 8 string_id52
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 1 %v0
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638352127299873646
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #0
+CC_START sysv_x64
+PUSH 8 string_id53
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #590684067820433389
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #1
+CC_START sysv_x64
+PUSH 8 string_id54
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #589727492704079044
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #2
+CC_START sysv_x64
+PUSH 8 string_id55
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #592597218053142079
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #7
+CC_START sysv_x64
+PUSH 8 string_id56
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #587814342471370354
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #42
+CC_START sysv_x64
+PUSH 8 string_id57
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #569639415260637799
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #127
+CC_START sysv_x64
+PUSH 8 string_id58
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #641382548987213674
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #128
+CC_START sysv_x64
+PUSH 8 string_id59
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #713125682713789549
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #255
+CC_START sysv_x64
+PUSH 8 string_id60
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #763824163880569834
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #256
+CC_START sysv_x64
+PUSH 8 string_id61
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #590682968308805178
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #257
+CC_START sysv_x64
+PUSH 8 string_id62
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #589728592215707255
+CALL checkHash
+CC_END sysv_x64
+R_SETV 2 %v0 #65535
+CC_START sysv_x64
+PUSH 8 string_id63
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 2 %v0
+CALL insecure_hashOf_u16
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #763862646787557219
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #0
+CC_START sysv_x64
+PUSH 8 string_id64
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5558979605539197941
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #1
+CC_START sysv_x64
+PUSH 8 string_id65
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12478008331234465636
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #2
+CC_START sysv_x64
+PUSH 8 string_id66
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10167666227858214167
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #7
+CC_START sysv_x64
+PUSH 8 string_id67
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7869321708915449410
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #42
+CC_START sysv_x64
+PUSH 8 string_id68
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10203658981158674303
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #127
+CC_START sysv_x64
+PUSH 8 string_id69
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7785338617881042426
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #128
+CC_START sysv_x64
+PUSH 8 string_id70
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5367018254603410549
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #255
+CC_START sysv_x64
+PUSH 8 string_id71
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7593377266945255034
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #256
+CC_START sysv_x64
+PUSH 8 string_id72
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #4934814342159144266
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #257
+CC_START sysv_x64
+PUSH 8 string_id73
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #13102173594614519311
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #65535
+CC_START sysv_x64
+PUSH 8 string_id74
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10992417411537582043
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #65536
+CC_START sysv_x64
+PUSH 8 string_id75
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5558023030422843596
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #16909060
+CC_START sysv_x64
+PUSH 8 string_id76
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12917768894214892981
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #2147483647
+CC_START sysv_x64
+PUSH 8 string_id77
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11047037850681434065
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #2147483648
+CC_START sysv_x64
+PUSH 8 string_id78
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5558838868050786933
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #3735928559
+CC_START sysv_x64
+PUSH 8 string_id79
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11839450912400667691
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #4294967295
+CC_START sysv_x64
+PUSH 8 string_id80
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11047178588169845073
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #0
+CC_START sysv_x64
+PUSH 8 string_id81
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12161962213042174405
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #1
+CC_START sysv_x64
+PUSH 8 string_id82
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9929646806074584996
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #2
+CC_START sysv_x64
+PUSH 8 string_id83
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #16626593026977353223
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #7
+CC_START sysv_x64
+PUSH 8 string_id84
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5465015992139406178
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #42
+CC_START sysv_x64
+PUSH 8 string_id85
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #18391255480883862255
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #127
+CC_START sysv_x64
+PUSH 8 string_id86
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #1347470266357551770
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #128
+CC_START sysv_x64
+PUSH 8 string_id87
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #2750429125540792901
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #255
+CC_START sysv_x64
+PUSH 8 string_id88
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10382681252565721882
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #256
+CC_START sysv_x64
+PUSH 8 string_id89
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #16390143479181108970
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #257
+CC_START sysv_x64
+PUSH 8 string_id90
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5701465539935650431
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #65535
+CC_START sysv_x64
+PUSH 8 string_id91
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9970289527379425035
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #65536
+CC_START sysv_x64
+PUSH 8 string_id92
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #14713704181997794188
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #16909060
+CC_START sysv_x64
+PUSH 8 string_id93
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11727677991710658437
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #2147483647
+CC_START sysv_x64
+PUSH 8 string_id94
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #17818800096642449761
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #2147483648
+CC_START sysv_x64
+PUSH 8 string_id95
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5860980763039959109
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #3735928559
+CC_START sysv_x64
+PUSH 8 string_id96
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #8436364122023583835
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #4294967295
+CC_START sysv_x64
+PUSH 8 string_id97
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5673037472935113441
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #81985529216486895
+CC_START sysv_x64
+PUSH 8 string_id98
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #4029383781087845461
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #9223372036854775807
+CC_START sysv_x64
+PUSH 8 string_id99
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10157194460633784765
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #9223372036854775808
+CC_START sysv_x64
+PUSH 8 string_id100
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12161821475553763397
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #18364758544493064720
+CC_START sysv_x64
+PUSH 8 string_id101
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #15244364643513354549
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #18446744073709551615
+CC_START sysv_x64
+PUSH 8 string_id102
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10157053723145373757
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-2147483648
+CC_START sysv_x64
+PUSH 8 string_id103
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5558838868050786933
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-123456
+CC_START sysv_x64
+PUSH 8 string_id104
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5664939816431960565
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-32768
+CC_START sysv_x64
+PUSH 8 string_id105
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #17935171537698748907
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-255
+CC_START sysv_x64
+PUSH 8 string_id106
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #6014962448677246055
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-129
+CC_START sysv_x64
+PUSH 8 string_id107
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #17228364472434321873
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-128
+CC_START sysv_x64
+PUSH 8 string_id108
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #8859553173873240406
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-2
+CC_START sysv_x64
+PUSH 8 string_id109
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #8093943181019293376
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #-1
+CC_START sysv_x64
+PUSH 8 string_id110
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11047178588169845073
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #0
+CC_START sysv_x64
+PUSH 8 string_id111
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5558979605539197941
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #1
+CC_START sysv_x64
+PUSH 8 string_id112
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12478008331234465636
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #2
+CC_START sysv_x64
+PUSH 8 string_id113
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10167666227858214167
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #7
+CC_START sysv_x64
+PUSH 8 string_id114
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7869321708915449410
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #42
+CC_START sysv_x64
+PUSH 8 string_id115
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10203658981158674303
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #127
+CC_START sysv_x64
+PUSH 8 string_id116
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7785338617881042426
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #128
+CC_START sysv_x64
+PUSH 8 string_id117
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5367018254603410549
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #255
+CC_START sysv_x64
+PUSH 8 string_id118
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7593377266945255034
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #256
+CC_START sysv_x64
+PUSH 8 string_id119
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #4934814342159144266
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #257
+CC_START sysv_x64
+PUSH 8 string_id120
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #13102173594614519311
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #65535
+CC_START sysv_x64
+PUSH 8 string_id121
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10992417411537582043
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #65536
+CC_START sysv_x64
+PUSH 8 string_id122
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5558023030422843596
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #16909060
+CC_START sysv_x64
+PUSH 8 string_id123
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12917768894214892981
+CALL checkHash
+CC_END sysv_x64
+R_SETV 4 %v0 #2147483647
+CC_START sysv_x64
+PUSH 8 string_id124
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 4 %v0
+CALL insecure_hashOf_s32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11047037850681434065
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-9223372036854775808
+CC_START sysv_x64
+PUSH 8 string_id125
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12161821475553763397
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-123456
+CC_START sysv_x64
+PUSH 8 string_id126
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12952779147007480097
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-32768
+CC_START sysv_x64
+PUSH 8 string_id127
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10359639675850579831
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-255
+CC_START sysv_x64
+PUSH 8 string_id128
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #98952073673114035
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-129
+CC_START sysv_x64
+PUSH 8 string_id129
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #2537960875119846589
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-128
+CC_START sysv_x64
+PUSH 8 string_id130
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #613511054313398546
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-2
+CC_START sysv_x64
+PUSH 8 string_id131
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #18165890468499916316
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #-1
+CC_START sysv_x64
+PUSH 8 string_id132
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10157053723145373757
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #0
+CC_START sysv_x64
+PUSH 8 string_id133
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12161962213042174405
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #1
+CC_START sysv_x64
+PUSH 8 string_id134
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9929646806074584996
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #2
+CC_START sysv_x64
+PUSH 8 string_id135
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #16626593026977353223
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #7
+CC_START sysv_x64
+PUSH 8 string_id136
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5465015992139406178
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #42
+CC_START sysv_x64
+PUSH 8 string_id137
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #18391255480883862255
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #127
+CC_START sysv_x64
+PUSH 8 string_id138
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #1347470266357551770
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #128
+CC_START sysv_x64
+PUSH 8 string_id139
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #2750429125540792901
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #255
+CC_START sysv_x64
+PUSH 8 string_id140
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10382681252565721882
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #256
+CC_START sysv_x64
+PUSH 8 string_id141
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #16390143479181108970
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #257
+CC_START sysv_x64
+PUSH 8 string_id142
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5701465539935650431
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #65535
+CC_START sysv_x64
+PUSH 8 string_id143
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9970289527379425035
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #65536
+CC_START sysv_x64
+PUSH 8 string_id144
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #14713704181997794188
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #16909060
+CC_START sysv_x64
+PUSH 8 string_id145
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #11727677991710658437
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #2147483647
+CC_START sysv_x64
+PUSH 8 string_id146
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #17818800096642449761
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #2147483648
+CC_START sysv_x64
+PUSH 8 string_id147
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5860980763039959109
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #3735928559
+CC_START sysv_x64
+PUSH 8 string_id148
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #8436364122023583835
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #4294967295
+CC_START sysv_x64
+PUSH 8 string_id149
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #5673037472935113441
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #81985529216486895
+CC_START sysv_x64
+PUSH 8 string_id150
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #4029383781087845461
+CALL checkHash
+CC_END sysv_x64
+R_MOV 8 %v0 #9223372036854775807
+CC_START sysv_x64
+PUSH 8 string_id151
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 %v0
+CALL insecure_hashOf_s64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #10157194460633784765
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id152
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #42
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #18391255480883862255
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id153
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #7
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #7869321708915449410
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id154
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #200
+CALL insecure_hashOf_u8
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #12638373018020809655
+CALL checkHash
+CC_END sysv_x64
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 #1234567
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #1234567
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 #1234568
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id155
+POP ARG0 8
+R_BIN EQ 8 %t0 $-40 $-48
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id156
+POP ARG0 8
+R_BIN NEQ 8 %t0 $-40 $-56
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id157
+POP ARG0 8
+CC_START sysv_x64
+R_ARG 0 8 #7
+CALL insecure_hashOf_u32
+CC_END sysv_x64
+PUSH_RET_INT 8
+CC_START sysv_x64
+R_ARG 0 8 #7
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+NEQ_INT 8
+POP ARG1 1
+CALL check
+CC_END sysv_x64
+ADDR 24 $-80
+PUSH 8 1
+PUSH 8 72623859790382856
+PUSH 8 1230066625199609624
+ASSIGN 24 24 24 m8 m8 m8
+ADDR 24 $-104
+PUSH 8 1
+PUSH 8 0
+PUSH 8 0
+ASSIGN 24 24 24 m8 m8 m8
+ADDR 24 $-128
+PUSH 8 2
+PUSH 4 1
+PUSH 4 2
+PUSH 4 3735928559
+PUSH 4 4294967295
+ASSIGN 24 24 24 m8 m4 m4 m4 m4
+CC_START sysv_x64
+PUSH 8 string_id158
+POP ARG0 8
+R_BIN EQ 8 %t0 #24 #24
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id159
+POP ARG0 8
+R_BIN EQ 8 %t0 #24 #24
+R_ARG 1 8 %t0
+CALL check
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id160
+POP ARG0 8
+CC_START sysv_x64
+PUSH 24 $-80
+ADDR_OF AUTO $-80
+POP ARG0 8
+CALL hashPair
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #8196511168062809125
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id161
+POP ARG0 8
+CC_START sysv_x64
+PUSH 24 $-104
+ADDR_OF AUTO $-104
+POP ARG0 8
+CALL hashPair
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #9808874869469701221
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id162
+POP ARG0 8
+CC_START sysv_x64
+PUSH 24 $-128
+ADDR_OF AUTO $-128
+POP ARG0 8
+CALL hashQuad
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG1 8
+R_ARG 2 8 #2110391782796641668
+CALL checkHash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 string_id163
+POP ARG0 8
+R_LD 8 %t0 &passed
+R_ARG 1 8 %t0
+R_LD 8 %t0 &failed
+R_ARG 2 8 %t0
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+R_LD 8 %t0 &failed
+R_BRC EQ 8 %t0 #0 @end_of_if_157
+CC_START sysv_x64
+PUSH 8 string_id164
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+@end_of_if_157:
+FUNC_END
+FUNC_START insecure_hashOf_u8
+ALLOC 64
+ADDR 1 $-1
+PUSH 1 ARG0
+ASSIGN 1 1 1
+R_MOV 8 $-16 #1
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 $-16
+PUSH 1 $-1
+ADDR_OF RAW $-1
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-48 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-48
+@for_158:
+R_BRC LT 8 %v4 %v0 @for_end_159
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-24 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_158
+@for_end_159:
+R_RET %v3
+FUNC_END
+FUNC_START insecure_hashOf_u16
+ALLOC 64
+ADDR 2 $-2
+PUSH 2 ARG0
+ASSIGN 2 2 2
+R_MOV 8 $-16 #2
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 $-16
+PUSH 2 $-2
+ADDR_OF RAW $-2
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-48 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-48
+@for_160:
+R_BRC LT 8 %v4 %v0 @for_end_161
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-24 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_160
+@for_end_161:
+R_RET %v3
+FUNC_END
+FUNC_START insecure_hashOf_u32
+ALLOC 64
+ADDR 4 $-4
+PUSH 4 ARG0
+ASSIGN 4 4 4
+R_MOV 8 $-16 #4
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 $-16
+PUSH 4 $-4
+ADDR_OF RAW $-4
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-48 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-48
+@for_162:
+R_BRC LT 8 %v4 %v0 @for_end_163
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-24 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_162
+@for_end_163:
+R_RET %v3
+FUNC_END
+FUNC_START insecure_hashOf_u64
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #8
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 $-16
+PUSH 8 $-8
+ADDR_OF RAW $-8
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-48 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-48
+@for_164:
+R_BRC LT 8 %v4 %v0 @for_end_165
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-24 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_164
+@for_end_165:
+R_RET %v3
+FUNC_END
+FUNC_START insecure_hashOf_s32
+ALLOC 64
+ADDR 4 $-4
+PUSH 4 ARG0
+ASSIGN 4 4 4
+R_MOV 8 $-16 #4
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 $-16
+PUSH 4 $-4
+ADDR_OF RAW $-4
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-48 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-48
+@for_166:
+R_BRC LT 8 %v4 %v0 @for_end_167
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-24 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_166
+@for_end_167:
+R_RET %v3
+FUNC_END
+FUNC_START insecure_hashOf_s64
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #8
+R_MOV 8 $-24 #0
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 $-16
+PUSH 8 $-8
+ADDR_OF RAW $-8
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-48 #0
+R_MOV 8 %v0 $-16
+R_MOV 8 %v4 $-48
+@for_168:
+R_BRC LT 8 %v4 %v0 @for_end_169
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-24 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_168
+@for_end_169:
+R_RET %v3
+FUNC_END

@@ -1,0 +1,67 @@
+STRING string_id1 "A=%llu\nB=%llu\nC=%llu\nD=%llu\nE=%llu\nLO=%llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START main
+ALLOC 80
+R_MOV 8 %v3 #88172645463325252
+R_MOV 8 $-16 #0
+R_MOV 8 $-24 #0
+R_MOV 8 %v2 #0
+R_MOV 8 %v1 #0
+R_MOV 8 %v0 #0
+R_MOV 8 $-56 #0
+R_MOV 8 $-72 #0
+R_MOV 8 %v5 #1000
+R_MOV 8 %v4 $-72
+@for_1:
+R_BRC LT 8 %v4 %v5 @for_end_2
+R_BIN MUL 8 %t0 %v3 #6364136223846793005
+R_BIN ADD 8 %v3 %t0 #1442695040888963407
+R_BIN BAND 8 %t0 %v3 #4294967295
+R_RMW ADD 8 $-16 %t0
+R_BIN BAND 8 %t0 %v3 #2147483648
+R_RMW ADD 8 $-24 %t0
+R_BIN BAND 8 %t0 %v3 #4294967280
+R_RMW ADD 8 %v2 %t0
+R_BIN ADD 8 %t0 %v3 #3000000000
+R_BIN BXOR 8 %v1 %v1 %t0
+R_BIN BAND 8 %t0 %v3 #4294967295
+R_BRC GT 8 %t0 #2147483647 @end_of_if_3
+R_RMW INC 8 $-56
+@end_of_if_3:
+R_BIN SHR 8 %t0 %v3 #7
+R_BIN BAND 8 %t0 %t0 #4294967295
+R_BIN BOR 8 %v0 %v0 %t0
+R_RMW INC 8 %v4
+JMP @for_1
+@for_end_2:
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-24
+R_ARG 3 8 %v2
+R_ARG 4 8 %v1
+R_ARG 5 8 %v0
+PUSH 8 $-56
+VARARGS_XMM_COUNT 0
+CALL printf 7
+CC_END sysv_x64
+FUNC_END

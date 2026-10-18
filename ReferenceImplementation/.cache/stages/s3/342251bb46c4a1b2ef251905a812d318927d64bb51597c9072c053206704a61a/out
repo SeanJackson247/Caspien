@@ -1,0 +1,352 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s got %llu want %llu\n"
+STRING string_id3 "len array"
+STRING string_id4 "len literal"
+STRING string_id5 "sizeof u64"
+STRING string_id6 "sizeof u8"
+STRING string_id7 "range sum"
+STRING string_id8 "deref auto"
+STRING string_id9 "bits_and"
+STRING string_id10 "bits_or"
+STRING string_id11 "bits_xor"
+STRING string_id12 "bits_left"
+STRING string_id13 "bits_right"
+STRING string_id14 "sat u8"
+STRING string_id15 "wrap u8"
+STRING string_id16 "call"
+STRING string_id17 "insecure_rand range"
+STRING string_id18 "insecure_rand range 2"
+STRING string_id19 "fails=%llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START inc
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BIN ADD 8 %t0 $-8 #1
+R_RET %t0
+FUNC_END
+FUNC_START check
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-16 $-24 @end_of_if_1
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+R_RET #0
+@end_of_if_1:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+R_ARG 2 8 $-16
+R_ARG 3 8 $-24
+VARARGS_XMM_COUNT 0
+CALL printf 4
+CC_END sysv_x64
+R_RET #1
+FUNC_END
+FUNC_START main
+ALLOC 176
+R_MOV 8 $-8 #0
+ADDR 32 $-40
+PUSH 8 3
+PUSH 8 4
+PUSH 8 5
+PUSH 8 6
+ASSIGN 32 32 32
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+R_ARG 1 8 #4
+R_ARG 2 8 #4
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_ARG 1 8 #5
+R_ARG 2 8 #5
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+R_ARG 1 8 #8
+R_ARG 2 8 #8
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+R_ARG 1 8 #1
+R_ARG 2 8 #1
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %v1 #0
+R_MOV 8 $-64 #0
+R_MOV 8 %v2 #4
+R_MOV 8 %v0 $-64
+@for_2:
+R_BRC LT 8 %v0 %v2 @for_end_3
+R_LDI 8 %t0 $-40 %v0 8
+R_RMW ADD 8 %v1 %t0
+R_RMW INC 8 %v0
+JMP @for_2
+@for_end_3:
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+R_ARG 1 8 %v1
+R_ARG 2 8 #18
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-80 #41
+ADDR 8 $-88
+PUSH 8 $-80
+ADDR_OF AUTO $-80
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_ARG 1 8 %t0
+R_ARG 2 8 #41
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-96 #12
+R_MOV 8 $-104 #10
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_BIN BAND 8 %t0 $-96 $-104
+R_ARG 1 8 %t0
+R_ARG 2 8 #8
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+R_BIN BOR 8 %t0 $-96 $-104
+R_ARG 1 8 %t0
+R_ARG 2 8 #14
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id11
+POP ARG0 8
+R_BIN BXOR 8 %t0 $-96 $-104
+R_ARG 1 8 %t0
+R_ARG 2 8 #6
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-112 #1
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id12
+POP ARG0 8
+R_BIN SHL 8 %t0 $-112 #4
+R_ARG 1 8 %t0
+R_ARG 2 8 #16
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-120 #256
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id13
+POP ARG0 8
+R_BIN SHR 8 %t0 $-120 #4
+R_ARG 1 8 %t0
+R_ARG 2 8 #16
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-128 #300
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id14
+POP ARG0 8
+R_BIN GT 8 %t0 $-128 #255
+R_BIN SUB 8 %t1 #255 $-128
+R_BIN MUL 8 %t0 %t0 %t1
+R_BIN ADD 8 %t0 $-128 %t0
+R_BIN BAND 8 %t0 %t0 #255
+R_ARG 1 8 %t0
+R_ARG 2 8 #255
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id15
+POP ARG0 8
+R_ARG 1 1 $-128
+R_ARG 2 8 #44
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-136
+PUSH 8 inc
+ASSIGN 8 8 8
+ADDR 8 $-144
+CC_START sysv_x64
+PUSH 8 $-136
+PUSH 8 5
+POP ARG0 8
+INVOKE 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id16
+POP ARG0 8
+R_ARG 1 8 $-144
+R_ARG 2 8 #6
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-152
+CC_START sysv_x64
+CALL rand 0
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-160
+CC_START sysv_x64
+CALL rand 0
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-168 #0
+R_MOV 8 $-176 #0
+R_BRC LT_EQ 8 $-152 #2147483647 @end_of_if_4
+R_MOV 8 $-168 #1
+@end_of_if_4:
+R_BRC LT_EQ 8 $-160 #2147483647 @end_of_if_5
+R_MOV 8 $-176 #1
+@end_of_if_5:
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id17
+POP ARG0 8
+R_ARG 1 8 $-168
+R_ARG 2 8 #1
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH 8 $-8
+CC_START sysv_x64
+PUSH 8 string_id18
+POP ARG0 8
+R_ARG 1 8 $-176
+R_ARG 2 8 #1
+CALL check
+CC_END sysv_x64
+PUSH_RET_INT 8
+ADD_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id19
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+FUNC_END

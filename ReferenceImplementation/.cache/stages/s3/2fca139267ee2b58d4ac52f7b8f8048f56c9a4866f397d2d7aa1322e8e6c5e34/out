@@ -1,0 +1,186 @@
+STRING string_id1 "%llu -> ok %llu"
+STRING string_id2 "%llu -> fail"
+STRING string_id3 "halve: "
+STRING string_id4 " / "
+STRING string_id5 "\n"
+STRING string_id6 "readings: "
+STRING string_id7 "live=%llu "
+STRING string_id8 "live=none "
+STRING string_id9 "dead=%llu\n"
+STRING string_id10 "dead=none\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+FUNC_START main
+ALLOC 192
+CC_START sysv_x64
+PUSH 8 string_id3
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+ADDR 8 $-128
+PUSH 24 $-72
+ADDR_OF RAW $-72
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-128
+R_MOV 8 $-136 %t0
+PUSH 8 $-136
+PUSH 8 1
+PUSH 8 0
+PUSH 8 5
+ASSIGN 24 24 24 m8 m8 m8
+@inl_end_33:
+R_BRC EQ 8 $-64 #0 @if_branch_16
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 #10
+R_ARG 2 8 $-56
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+JMP @end_of_if_17
+@if_branch_16:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 #10
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_17:
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+ADDR 8 $-152
+PUSH 24 $-96
+ADDR_OF RAW $-96
+ASSIGN 8 8 8
+@end_of_if_35:
+R_MOV 8 %t0 $-152
+R_MOV 8 $-168 %t0
+PUSH 8 $-168
+PUSH 8 1
+PUSH 8 1
+STACK_LOCK 8
+ASSIGN 24 24 24 m8 m8 m8
+@inl_end_36:
+R_BRC EQ 8 $-88 #0 @if_branch_20
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 #7
+R_ARG 2 8 $-80
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+JMP @end_of_if_21
+@if_branch_20:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 #7
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_21:
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+ADDR 8 $-176
+PUSH 24 $-120
+ADDR_OF RAW $-120
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-176
+R_MOV 8 $-184 %t0
+PUSH 8 $-184
+PUSH 8 1
+PUSH 8 0
+PUSH 8 0
+ASSIGN 24 24 24 m8 m8 m8
+@inl_end_39:
+R_BRC EQ 8 $-112 #0 @if_branch_24
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 #0
+R_ARG 2 8 $-104
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+JMP @end_of_if_25
+@if_branch_24:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 #0
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_25:
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+ADDR 24 $-24
+PUSH 8 0
+PUSH 8 0
+PUSH 8 7
+ASSIGN 24 24 24 m8 m8 m8
+ADDR 24 $-48
+PUSH 8 0
+PUSH 8 1
+STACK_LOCK 8
+ASSIGN 24 24 24 m8 m8 m8
+CC_START sysv_x64
+PUSH 8 string_id6
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+R_BRC EQ 8 $-16 #0 @if_branch_5
+CC_START sysv_x64
+PUSH 8 string_id7
+POP ARG0 8
+R_ARG 1 8 $-8
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_4
+@if_branch_5:
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+@end_of_if_4:
+R_BRC EQ 8 $-40 #0 @if_branch_7
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_6
+@if_branch_7:
+CC_START sysv_x64
+PUSH 8 string_id10
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+@end_of_if_6:
+FUNC_END

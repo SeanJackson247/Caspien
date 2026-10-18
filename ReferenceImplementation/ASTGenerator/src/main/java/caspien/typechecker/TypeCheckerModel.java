@@ -225,7 +225,7 @@ public final class TypeCheckerModel {
     public static final Set<String> FUNC_BASE_DECORATORS = new HashSet<>(Arrays.asList(
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
             "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve", "par_call", "await_call", "sleep",
-            "lock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
+            "lock", "lifetime", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
     public final Map<String, String> dropHookOwners = new HashMap<>();
 
     /** True for a file inside the compiler's own stdlib folder (the project's stdlib, see ProjectRoot). */

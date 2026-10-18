@@ -12,41 +12,47 @@ string_id2:
 string_id3:
     .asciz "FAIL %s\n"
 string_id4:
-    .asciz "FAIL uncaught: %s\n"
+    .asciz "zero"
 string_id5:
-    .asciz "out of memory"
+    .asciz "bound_vars"
 string_id6:
-    .asciz "random run: size"
+    .asciz "bound_mut"
 string_id7:
-    .asciz "random run: removes"
+    .asciz "addr_read"
 string_id8:
-    .asciz "random run: contains"
+    .asciz "catch_shift_ok"
 string_id9:
-    .asciz "sum of keys"
+    .asciz "catch_shift_throw"
 string_id10:
-    .asciz "sum of values"
+    .asciz "elide_basic"
 string_id11:
-    .asciz "iteration is strictly ascending"
+    .asciz "elide_bound"
 string_id12:
-    .asciz "position-weighted checksum"
+    .asciz "no_elide_branch_t"
 string_id13:
-    .asciz "replace keeps size"
+    .asciz "no_elide_branch_f"
 string_id14:
-    .asciz "get replaced"
+    .asciz "no_elide_loop"
 string_id15:
-    .asciz "negative key sorts first"
+    .asciz "no_elide_loop0"
 string_id16:
-    .asciz "lowerBound between keys"
+    .asciz "no_elide_addr"
 string_id17:
-    .asciz "absent get"
+    .asciz "dead_store"
 string_id18:
-    .asciz "remove absent"
+    .asciz "narrow"
 string_id19:
-    .asciz "remove present"
+    .asciz "boolfloat"
 string_id20:
-    .asciz "remove last"
+    .asciz "shift_basic"
 string_id21:
-    .asciz "remove from empty"
+    .asciz "shift_branch_t"
+string_id22:
+    .asciz "shift_branch_f"
+string_id23:
+    .asciz "shift_after_loop"
+string_id24:
+    .asciz "shift_in_loop"
 .text
 
 .globl gtSlotAt
@@ -5905,690 +5911,818 @@ L_end_of_if_203:
     movq %rbp, %rsp
     popq %rbp
     ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl id
+id:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -24(%rbp), %rax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl elide_basic
+elide_basic:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $64, %rsp
+    movq %rbx, -56(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq $5, -32(%rbp)
+    movq $7, -40(%rbp)
+    movq -32(%rbp), %rax
+    imulq -40(%rbp), %rax
+    addq -24(%rbp), %rax
+    pushq %rax
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__elide_basic_205(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -32(%rbp), %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call id
+    movq 8(%rsp), %rsp
+    pushq %rax
+    popq %rbx
+    popq %rax
+    addq %rbx, %rax
+    pushq %rax
+    popq %rax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    jmp L_end_of_gt_callsites__elide_basic_206
+L_gt_callsite__elide_basic_205:
+    movq -56(%rbp), %rbx
+    movq -16(%rbp), %rax
+    movq %rbp, %rsp
+    popq %rbp
+    addq $8, %rsp
+    movq %rax, -16(%rbp)
+    movq -8(%rbp), %rax
+    jmp *%rax
+L_end_of_gt_callsites__elide_basic_206:
+    movl $0, %eax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl elide_bound
+elide_bound:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $96, %rsp
+    movq %rbx, -72(%rbp)
+    movq %r12, -80(%rbp)
+    movq %r13, -88(%rbp)
+    movq %r14, -96(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq $4, -32(%rbp)
+    movl $0, %r14d
+    movq $0, -56(%rbp)
+    movq -32(%rbp), %r12
+    movq -56(%rbp), %r13
+L_for_207:
+    cmpq %r12, %r13
+    jae L_for_end_208
+    movq %r13, %rax
+    addq -24(%rbp), %rax
+    addq %rax, %r14
+    incq %r13
+    jmp L_for_207
+L_for_end_208:
+    movq %r14, %rax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r12
+    movq -88(%rbp), %r13
+    movq -96(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r12
+    movq -88(%rbp), %r13
+    movq -96(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl no_elide_branch
+no_elide_branch:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    leaq -17(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movb %al, (%rbx)
+    movq $5, -32(%rbp)
+    movzbq -17(%rbp), %rax
+    pushq %rax
+    popq %rax
+    testq %rax, %rax
+    je L_end_of_if_209
+    movq $6, -32(%rbp)
+L_end_of_if_209:
+    movq -32(%rbp), %rax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl no_elide_loop
+no_elide_loop:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $96, %rsp
+    movq %rbx, -72(%rbp)
+    movq %r12, -80(%rbp)
+    movq %r13, -88(%rbp)
+    movq %r14, -96(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movl $1, %r14d
+    movq $0, -48(%rbp)
+    movq -24(%rbp), %r12
+    movq -48(%rbp), %r13
+L_for_210:
+    cmpq %r12, %r13
+    jae L_for_end_211
+    movl $2, %r14d
+    addq %r13, %r14
+    incq %r13
+    jmp L_for_210
+L_for_end_211:
+    movq %r14, %rax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r12
+    movq -88(%rbp), %r13
+    movq -96(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r12
+    movq -88(%rbp), %r13
+    movq -96(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl no_elide_addr
+no_elide_addr:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    movq $3, -24(%rbp)
+    leaq -32(%rbp), %rax
+    pushq %rax
+    movq -24(%rbp), %rax
+    pushq %rax
+    addq $8, %rsp
+    leaq -24(%rbp), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -24(%rbp), %rax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl dead_store
+dead_store:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $32, %rsp
+    movq $9, -24(%rbp)
+    movl $1, %eax
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl narrow
+narrow:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    movq %r15, -48(%rbp)
+    movb $-56, -17(%rbp)
+    movb $-5, -18(%rbp)
+    movb $1, -19(%rbp)
+    movb $50, -20(%rbp)
+    movzbq -17(%rbp), %rax
+    movzbq -20(%rbp), %rbx
+    addq %rbx, %rax
+    cmpb $-6, %al
+    je L_end_of_if_212
+    movb $0, -19(%rbp)
+L_end_of_if_212:
+    movzbq -18(%rbp), %rax
+    addq $5, %rax
+    cmpb $0, %al
+    je L_end_of_if_213
+    movb $0, -19(%rbp)
+L_end_of_if_213:
+    movzbq -19(%rbp), %r15
+    movq %r15, %rax
+    movq -40(%rbp), %rbx
+    movq -48(%rbp), %r15
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq -48(%rbp), %r15
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl boolfloat
+boolfloat:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    movq %r15, -48(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movb $1, -25(%rbp)
+    movb $0, -26(%rbp)
+    movb $1, -27(%rbp)
+    movzbq -25(%rbp), %rax
+    pushq %rax
+    movzbq -26(%rbp), %rax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    andb %bl, %al
+    pushq %rax
+    popq %rax
+    testq %rax, %rax
+    je L_end_of_if_214
+    movb $0, -27(%rbp)
+L_end_of_if_214:
+    movzbq -25(%rbp), %rax
+    pushq %rax
+    popq %rax
+    xorb $1, %al
+    pushq %rax
+    popq %rax
+    testq %rax, %rax
+    je L_end_of_if_215
+    movb $0, -27(%rbp)
+L_end_of_if_215:
+    movzbq -27(%rbp), %r15
+    movq %r15, %rax
+    movq -40(%rbp), %rbx
+    movq -48(%rbp), %r15
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq -48(%rbp), %r15
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl shift_basic
+shift_basic:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $64, %rsp
+    movq %rbx, -56(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq $1, -32(%rbp)
+    movq -32(%rbp), %rax
+    addq -24(%rbp), %rax
+    movq %rax, -40(%rbp)
+    movq $2, -32(%rbp)
+    imulq $10, -32(%rbp), %rax
+    addq %rax, -40(%rbp)
+    movq $3, -32(%rbp)
+    imulq $100, -32(%rbp), %rax
+    addq %rax, -40(%rbp)
+    movq -40(%rbp), %rax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl shift_branch
+shift_branch:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $64, %rsp
+    movq %rbx, -56(%rbp)
+    movq %r15, -64(%rbp)
+    leaq -17(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movb %al, (%rbx)
+    movq $1, -32(%rbp)
+    movq -32(%rbp), %rax
+    movq %rax, -40(%rbp)
+    movzbq -17(%rbp), %rax
+    pushq %rax
+    popq %rax
+    testq %rax, %rax
+    je L_end_of_if_216
+    movq $2, -32(%rbp)
+L_end_of_if_216:
+    movq -32(%rbp), %r15
+    addq %r15, -40(%rbp)
+    movq $5, -32(%rbp)
+    movq -32(%rbp), %r15
+    addq %r15, -40(%rbp)
+    movq -40(%rbp), %rax
+    movq -56(%rbp), %rbx
+    movq -64(%rbp), %r15
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -56(%rbp), %rbx
+    movq -64(%rbp), %r15
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl shift_after_loop
+shift_after_loop:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $80, %rsp
+    movq %rbx, -72(%rbp)
+    movq %r13, -80(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movl $1, %r10d
+    movl $0, %r9d
+    movq $0, -56(%rbp)
+    movq -24(%rbp), %r13
+    movq -56(%rbp), %r8
+L_for_217:
+    cmpq %r13, %r8
+    jae L_for_end_218
+    movq %r10, %rax
+    addq %r8, %rax
+    addq %rax, %r9
+    incq %r8
+    jmp L_for_217
+L_for_end_218:
+    movl $100, %r10d
+    addq %r10, %r9
+    movq %r9, %rax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r13
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r13
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl shift_in_loop
+shift_in_loop:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $80, %rsp
+    movq %rbx, -72(%rbp)
+    movq %r13, -80(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movl $1, %r10d
+    movl $0, %r9d
+    movq $0, -56(%rbp)
+    movq -24(%rbp), %r13
+    movq -56(%rbp), %r8
+L_for_219:
+    cmpq %r13, %r8
+    jae L_for_end_220
+    addq %r10, %r9
+    movl $2, %r10d
+    incq %r8
+    jmp L_for_219
+L_for_end_220:
+    movl $7, %r10d
+    addq %r10, %r9
+    movq %r9, %rax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r13
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r13
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl readThrough
+readThrough:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -24(%rbp), %rax
+    movq (%rax), %rax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl addr_read
+addr_read:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    movq $41, -24(%rbp)
+    leaq -32(%rbp), %rax
+    pushq %rax
+    movq -24(%rbp), %rax
+    pushq %rax
+    addq $8, %rsp
+    leaq -24(%rbp), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__addr_read_221(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -32(%rbp), %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call readThrough
+    movq 8(%rsp), %rsp
+    pushq %rax
+    movl $1, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    addq %rbx, %rax
+    pushq %rax
+    popq %rax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    jmp L_end_of_gt_callsites__addr_read_222
+L_gt_callsite__addr_read_221:
+    movq -40(%rbp), %rbx
+    movq -16(%rbp), %rax
+    movq %rbp, %rsp
+    popq %rbp
+    addq $8, %rsp
+    movq %rax, -16(%rbp)
+    movq -8(%rbp), %rax
+    jmp *%rax
+L_end_of_gt_callsites__addr_read_222:
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl thrower
+thrower:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $48, %rsp
+    movq %rbx, -40(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    cmpq $0, -24(%rbp)
+    jne L_end_of_if_223
+    leaq -16(%rbp), %rax
+    pushq %rax
+    leaq string_id4(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -40(%rbp), %rbx
+    movq -16(%rbp), %rax
+    movq %rbp, %rsp
+    popq %rbp
+    addq $8, %rsp
+    movq %rax, -16(%rbp)
+    movq -8(%rbp), %rax
+    jmp *%rax
+L_end_of_if_223:
+    movq -24(%rbp), %rax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -40(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl catch_shift
+catch_shift:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $64, %rsp
+    movq %rbx, -56(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    jmp L_end_of_catches__catch_shift_225
+L_catch_224:
+    leaq -64(%rbp), %rsp
+    movq -16(%rbp), %rax
+    movq %rax, -48(%rbp)
+    movq -32(%rbp), %rax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+L_end_of_catches__catch_shift_225:
+    leaq -64(%rbp), %rsp
+    movq $10, -32(%rbp)
+    leaq -40(%rbp), %rax
+    pushq %rax
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_catch_224(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq -24(%rbp), %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call thrower
+    movq 8(%rsp), %rsp
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq $20, -32(%rbp)
+    movq -40(%rbp), %rax
+    addq -32(%rbp), %rax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -56(%rbp), %rbx
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl bound_vars
+bound_vars:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $112, %rsp
+    movq %rbx, -88(%rbp)
+    movq %r12, -96(%rbp)
+    movq %r13, -104(%rbp)
+    movq %r14, -112(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq $4, -32(%rbp)
+    movq $1, -40(%rbp)
+    movl $0, %r14d
+    movq -40(%rbp), %rax
+    movq %rax, -64(%rbp)
+    movq -32(%rbp), %r12
+    movq -64(%rbp), %r13
+L_for_226:
+    cmpq %r12, %r13
+    jae L_for_end_227
+    movq %r13, %rax
+    imulq -24(%rbp), %rax
+    addq %rax, %r14
+    incq %r13
+    jmp L_for_226
+L_for_end_227:
+    movq %r14, %rax
+    movq -88(%rbp), %rbx
+    movq -96(%rbp), %r12
+    movq -104(%rbp), %r13
+    movq -112(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -88(%rbp), %rbx
+    movq -96(%rbp), %r12
+    movq -104(%rbp), %r13
+    movq -112(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+
+.globl bound_mut
+bound_mut:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $96, %rsp
+    movq %rbx, -72(%rbp)
+    movq %r12, -80(%rbp)
+    movq %r13, -88(%rbp)
+    movq %r14, -96(%rbp)
+    leaq -24(%rbp), %rax
+    pushq %rax
+    movq %rdi, %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    movq $3, -32(%rbp)
+    movq -24(%rbp), %rax
+    movq %rax, -32(%rbp)
+    movl $0, %r14d
+    movq $0, -56(%rbp)
+    movq -32(%rbp), %r12
+    movq -56(%rbp), %r13
+L_for_228:
+    cmpq %r12, %r13
+    jae L_for_end_229
+    addq $1, %r14
+    incq %r13
+    jmp L_for_228
+L_for_end_229:
+    movq %r14, %rax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r12
+    movq -88(%rbp), %r13
+    movq -96(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
+    movl $0, %eax
+    movq -72(%rbp), %rbx
+    movq -80(%rbp), %r12
+    movq -88(%rbp), %r13
+    movq -96(%rbp), %r14
+    movq %rbp, %rsp
+    popq %rbp
+    ret
 
 .globl main
 main:
     pushq %rbp
     movq %rsp, %rbp
-    subq $256, %rsp
-    movq %rbx, -232(%rbp)
-    movq %r12, -240(%rbp)
-    movq %r14, -248(%rbp)
-    movq %r15, -256(%rbp)
-    jmp L_end_of_catches__main_212
-L_catch_205:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_catch_206:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_1
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_1:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_catch_207:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_2
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_2:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_catch_208:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_3
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_3:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -160(%rbp)
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_4
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_4:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_catch_209:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_5
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_5:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -160(%rbp)
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_6
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_6:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_catch_210:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_7
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_7:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -160(%rbp)
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_8
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_8:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_catch_211:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -32(%rbp)
-    leaq string_id4(%rip), %rax
-    pushq %rax
-    popq %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call printf
-    movq 8(%rsp), %rsp
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_9
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_9:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -160(%rbp)
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_10
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_10:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_catches__main_212:
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_init
-    movq 8(%rsp), %rsp
-    leaq -24(%rbp), %rax
-    pushq %rax
+    subq $32, %rsp
+    movq %rbx, -24(%rbp)
+    movq %r15, -32(%rbp)
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_catch_205(%rip), %rax
+    leaq L_gt_callsite__main_230(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    movq -208(%rbp), %rax
-    pushq %rax
-    movq -200(%rbp), %rax
-    pushq %rax
-    addq $16, %rsp
-    leaq -208(%rbp), %rax
-    pushq %rax
-    popq %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call __ctor__TreeMap_u64_u64
-    movq 8(%rsp), %rsp
-    subq $16, %rsp
-    movq -208(%rbp), %rax
-    movq %rax, 0(%rsp)
-    movq -200(%rbp), %rax
-    movq %rax, 8(%rsp)
-    movq %rsp, %r12
-    movq $16, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call malloc
-    movq 8(%rsp), %rsp
-    movq %rax, %r14
-    testq %r14, %r14
-    jz L_cg_new_done_0
-    movq %r14, %rdi
-    movq %r12, %rsi
-    movq $16, %rcx
-    rep movsb
-L_cg_new_done_0:
-    addq $16, %rsp
-    pushq %r14
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    testb %al, %al
-    jnz L_cg_gtreg_ok_1
-    popq %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call free
-    movq 8(%rsp), %rsp
-    xorq %rax, %rax
-    pushq %rax
-L_cg_gtreg_ok_1:
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_new_ok_214
-    leaq -16(%rbp), %rax
-    pushq %rax
     leaq string_id5(%rip), %rax
     pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_205
-L_new_ok_214:
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq $777, -40(%rbp)
-    movq $0, -48(%rbp)
-    movq $0, -56(%rbp)
-    movq $0, -72(%rbp)
-    movq $6000, -64(%rbp)
-    movq -72(%rbp), %rax
-    movq %rax, -80(%rbp)
-L_for_215:
-    movq -80(%rbp), %r15
-    cmpq -64(%rbp), %r15
-    jae L_for_end_216
-    imulq $1103515245, -40(%rbp), %rax
-    addq $12345, %rax
-    andq $2147483647, %rax
-    movq %rax, -40(%rbp)
-    movq -40(%rbp), %rax
-    shrq $16, %rax
-    movq %rax, %r8
-    andq $3, %r8
-    movq -40(%rbp), %rax
-    shrq $8, %rax
-    movq %rax, %r15
-    movq %r15, %rdx
-    shrq $2, %rdx
-    movq $6296488643826193619, %rax
-    mulq %rdx
-    shrq $7, %rdx
-    imulq $1500, %rdx, %rax
-    subq %rax, %r15
-    movq %r15, %rax
-    movq %rax, -96(%rbp)
-    cmpq $2, %r8
-    jae L_if_branch_218
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_catch_206(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -96(%rbp), %rsi
-    movq -80(%rbp), %rdx
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_set
-    movq 8(%rsp), %rsp
-    jmp L_end_of_if_217
-L_if_branch_218:
-    cmpq $2, %r8
-    jne L_if_branch_220
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_222(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -96(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_remove
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_end_of_if_221
-    addq $1, -48(%rbp)
-L_end_of_if_221:
-    jmp L_end_of_if_219
-L_if_branch_220:
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_224(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -96(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_contains
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_end_of_if_223
-    addq $1, -56(%rbp)
-L_end_of_if_223:
-L_end_of_if_219:
-L_end_of_if_217:
-    incq -80(%rbp)
-    jmp L_for_215
-L_for_end_216:
-    movq $0, -104(%rbp)
-    movq $0, -112(%rbp)
-    movq $0, -120(%rbp)
-    movb $1, -121(%rbp)
-    movl $0, %r9d
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -144(%rbp)
-    movq $0, -80(%rbp)
-L_for_225:
-    movq -144(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -80(%rbp)
-    jae L_for_end_226
-    movq -24(%rbp), %rax
-    movq %rax, -168(%rbp)
-    movq -80(%rbp), %r8
-    movq -168(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r8, %r15
-    movq 24(%rax,%r15,1), %r8
-    addq %r8, -104(%rbp)
-    movq -24(%rbp), %rax
-    movq %rax, -184(%rbp)
-    movq -80(%rbp), %r10
-    movq -184(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r10, %r15
-    movq 32(%rax,%r15,1), %rax
-    addq %rax, -112(%rbp)
-    movq -80(%rbp), %rax
-    addq $1, %rax
-    imulq %r8, %rax
-    addq -120(%rbp), %rax
-    movq %rax, %r15
-    movq $896011011859258473, %rax
-    mulq %r15
-    movq %r15, %rax
-    subq %rdx, %rax
-    shrq $1, %rax
-    addq %rdx, %rax
-    shrq $19, %rax
-    movl $1000003, %edx
-    imulq %rdx, %rax
-    movq %r15, %rdx
-    subq %rax, %rdx
-    movq %rdx, %rax
-    movq %rax, -120(%rbp)
-    cmpq $0, -80(%rbp)
-    je L_end_of_if_229
-    cmpq %r9, %r8
-    ja L_end_of_if_230
-    movb $0, -121(%rbp)
-L_end_of_if_230:
-L_end_of_if_229:
-    movq %r8, %r9
-    incq -80(%rbp)
-    jmp L_for_225
-L_for_end_226:
+    popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
     leaq L_gt_callsite__main_231(%rip), %rax
@@ -6596,28 +6730,18 @@ L_for_end_226:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id6(%rip), %rax
-    pushq %rax
-    popq %rdi
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_232(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
     pushq %rdi
-    movq -24(%rbp), %rdi
+    movl $10, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_u64_u64_size
+    call bound_vars
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
-    movl $943, %eax
+    movl $60, %eax
     pushq %rax
     popq %rbx
     popq %rax
@@ -6635,19 +6759,41 @@ L_for_end_226:
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
+    leaq L_gt_callsite__main_232(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id6(%rip), %rax
+    pushq %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
     leaq L_gt_callsite__main_233(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id7(%rip), %rax
-    pushq %rax
+    pushq %rdi
+    movl $5, %edi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call bound_mut
+    movq 8(%rsp), %rsp
     popq %rdi
-    movq -48(%rbp), %rax
-    cmpq $681, %rax
+    pushq %rax
+    movl $5, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
     sete %al
     movzbq %al, %rax
-    movq %rax, %rsi
+    pushq %rax
+    popq %rsi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
@@ -6662,21 +6808,9 @@ L_for_end_226:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id8(%rip), %rax
+    leaq string_id7(%rip), %rax
     pushq %rax
     popq %rdi
-    movq -56(%rbp), %rax
-    cmpq $715, %rax
-    sete %al
-    movzbq %al, %rax
-    movq %rax, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call check
-    movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
     leaq L_gt_callsite__main_235(%rip), %rax
@@ -6684,14 +6818,25 @@ L_for_end_226:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id9(%rip), %rax
-    pushq %rax
+    pushq %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call addr_read
+    movq 8(%rsp), %rsp
     popq %rdi
-    movq -104(%rbp), %rax
-    cmpq $711127, %rax
+    pushq %rax
+    movl $42, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
     sete %al
     movzbq %al, %rax
-    movq %rax, %rsi
+    pushq %rax
+    popq %rsi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
@@ -6706,21 +6851,9 @@ L_for_end_226:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id10(%rip), %rax
+    leaq string_id8(%rip), %rax
     pushq %rax
     popq %rdi
-    movq -112(%rbp), %rax
-    cmpq $4083601, %rax
-    sete %al
-    movzbq %al, %rax
-    movq %rax, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call check
-    movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
     leaq L_gt_callsite__main_237(%rip), %rax
@@ -6728,10 +6861,26 @@ L_for_end_226:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id11(%rip), %rax
-    pushq %rax
+    pushq %rdi
+    movl $5, %edi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call catch_shift
+    movq 8(%rsp), %rsp
     popq %rdi
-    movzbq -121(%rbp), %rsi
+    pushq %rax
+    movl $25, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
@@ -6746,99 +6895,28 @@ L_for_end_226:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id12(%rip), %rax
+    leaq string_id9(%rip), %rax
     pushq %rax
     popq %rdi
-    movq -120(%rbp), %rax
-    cmpq $52840, %rax
-    sete %al
-    movzbq %al, %rax
-    movq %rax, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call check
-    movq 8(%rsp), %rsp
-    leaq -160(%rbp), %rax
-    pushq %rax
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_catch_207(%rip), %rax
+    leaq L_gt_callsite__main_239(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    movq -224(%rbp), %rax
-    pushq %rax
-    movq -216(%rbp), %rax
-    pushq %rax
-    addq $16, %rsp
-    leaq -224(%rbp), %rax
-    pushq %rax
+    pushq %rdi
+    movl $0, %edi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call catch_shift
+    movq 8(%rsp), %rsp
     popq %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call __ctor__TreeMap_s32_u8
-    movq 8(%rsp), %rsp
-    subq $16, %rsp
-    movq -224(%rbp), %rax
-    movq %rax, 0(%rsp)
-    movq -216(%rbp), %rax
-    movq %rax, 8(%rsp)
-    movq %rsp, %r12
-    movq $16, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call malloc
-    movq 8(%rsp), %rsp
-    movq %rax, %r14
-    testq %r14, %r14
-    jz L_cg_new_done_2
-    movq %r14, %rdi
-    movq %r12, %rsi
-    movq $16, %rcx
-    rep movsb
-L_cg_new_done_2:
-    addq $16, %rsp
-    pushq %r14
-    popq %rax
     pushq %rax
-    pushq %rax
-    popq %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    testb %al, %al
-    jnz L_cg_gtreg_ok_3
-    popq %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call free
-    movq 8(%rsp), %rsp
-    xorq %rax, %rax
-    pushq %rax
-L_cg_gtreg_ok_3:
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
+    movl $10, %eax
     pushq %rax
     popq %rbx
     popq %rax
@@ -6846,92 +6924,154 @@ L_cg_gtreg_ok_3:
     sete %al
     movzbq %al, %rax
     pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_new_ok_240
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_207
-L_new_ok_240:
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_catch_208(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -160(%rbp), %rdi
-    movl $5, %esi
-    movl $50, %edx
+    popq %rsi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_set
+    call check
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_catch_209(%rip), %rax
+    leaq L_gt_callsite__main_240(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    movq -160(%rbp), %rdi
-    movq $-3, %rsi
-    movl $30, %edx
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_set
-    movq 8(%rsp), %rsp
-    leaq -8(%rbp), %rax
+    leaq string_id10(%rip), %rax
     pushq %rax
-    leaq L_catch_210(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -160(%rbp), %rdi
-    movl $9, %esi
-    movl $90, %edx
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_set
-    movq 8(%rsp), %rsp
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_catch_211(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -160(%rbp), %rdi
-    movl $5, %esi
-    movl $51, %edx
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_set
-    movq 8(%rsp), %rsp
+    popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
     leaq L_gt_callsite__main_241(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movl $1, %edi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call elide_basic
+    movq 8(%rsp), %rsp
+    popq %rdi
+    pushq %rax
+    movl $5, %eax
+    movq %rax, %r15
+    shlq $3, %rax
+    subq %r15, %rax
+    addq $1, %rax
+    addq $5, %rax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_242(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id11(%rip), %rax
+    pushq %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_243(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movl $1, %edi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call elide_bound
+    movq 8(%rsp), %rsp
+    popq %rdi
+    pushq %rax
+    movl $10, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_244(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id12(%rip), %rax
+    pushq %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_245(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movl $1, %edi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call no_elide_branch
+    movq 8(%rsp), %rsp
+    popq %rdi
+    pushq %rax
+    movl $6, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_246(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
@@ -6941,153 +7081,29 @@ L_new_ok_240:
     popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_242(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_size
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    movl $3, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call check
-    movq 8(%rsp), %rsp
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_243(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq string_id14(%rip), %rax
-    pushq %rax
-    popq %rdi
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_244(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $5, %esi
-    movl $0, %edx
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_get
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    movl $51, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    movzbq %al, %rax
-    movzbq %bl, %rbx
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call check
-    movq 8(%rsp), %rsp
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_245(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq string_id15(%rip), %rax
-    pushq %rax
-    popq %rdi
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_246(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movq $-3, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
     leaq L_gt_callsite__main_247(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $5, %esi
+    movl $0, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
+    call no_elide_branch
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
-    movl $1, %eax
+    movl $5, %eax
     pushq %rax
     popq %rbx
     popq %rax
     cmpq %rbx, %rax
     sete %al
     movzbq %al, %rax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    andb %bl, %al
     pushq %rax
     popq %rsi
     movq %rsp, %rax
@@ -7104,7 +7120,7 @@ L_new_ok_240:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
-    leaq string_id16(%rip), %rax
+    leaq string_id14(%rip), %rax
     pushq %rax
     popq %rdi
     leaq -8(%rbp), %rax
@@ -7115,18 +7131,17 @@ L_new_ok_240:
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $6, %esi
+    movl $3, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
+    call no_elide_loop
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
-    movl $2, %eax
+    movl $4, %eax
     pushq %rax
     popq %rbx
     popq %rax
@@ -7134,6 +7149,14 @@ L_new_ok_240:
     sete %al
     movzbq %al, %rax
     pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
     leaq L_gt_callsite__main_250(%rip), %rax
@@ -7141,15 +7164,67 @@ L_new_ok_240:
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
+    leaq string_id15(%rip), %rax
+    pushq %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_251(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $10, %esi
+    movl $0, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
+    call no_elide_loop
+    movq 8(%rsp), %rsp
+    popq %rdi
+    pushq %rax
+    movl $1, %eax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_252(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id16(%rip), %rax
+    pushq %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_253(%rip), %rax
+    pushq %rax
+    popq %rax
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call no_elide_addr
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
@@ -7161,10 +7236,6 @@ L_new_ok_240:
     sete %al
     movzbq %al, %rax
     pushq %rax
-    popq %rbx
-    popq %rax
-    andb %bl, %al
-    pushq %rax
     popq %rsi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7175,7 +7246,7 @@ L_new_ok_240:
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_251(%rip), %rax
+    leaq L_gt_callsite__main_254(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
@@ -7185,30 +7256,25 @@ L_new_ok_240:
     popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_252(%rip), %rax
+    leaq L_gt_callsite__main_255(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $4, %esi
-    movl $99, %edx
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_get
+    call dead_store
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
-    movl $99, %eax
+    movl $1, %eax
     pushq %rax
     popq %rbx
     popq %rax
-    movzbq %al, %rax
-    movzbq %bl, %rbx
     cmpq %rbx, %rax
     sete %al
     movzbq %al, %rax
@@ -7223,7 +7289,7 @@ L_new_ok_240:
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_253(%rip), %rax
+    leaq L_gt_callsite__main_256(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
@@ -7233,25 +7299,20 @@ L_new_ok_240:
     popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_254(%rip), %rax
+    leaq L_gt_callsite__main_257(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $4, %esi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_remove
+    call narrow
     movq 8(%rsp), %rsp
     popq %rdi
-    pushq %rax
-    popq %rax
-    xorb $1, %al
     pushq %rax
     popq %rsi
     movq %rsp, %rax
@@ -7263,7 +7324,7 @@ L_new_ok_240:
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_255(%rip), %rax
+    leaq L_gt_callsite__main_258(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
@@ -7273,78 +7334,21 @@ L_new_ok_240:
     popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_256(%rip), %rax
+    leaq L_gt_callsite__main_259(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movq $-3, %rsi
+    movl $1, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_remove
+    call boolfloat
     movq 8(%rsp), %rsp
     popq %rdi
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_257(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_size
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    movl $2, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    andb %bl, %al
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_258(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movq $-3, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_contains
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    popq %rax
-    xorb $1, %al
-    pushq %rax
-    popq %rbx
-    popq %rax
-    andb %bl, %al
     pushq %rax
     popq %rsi
     movq %rsp, %rax
@@ -7356,7 +7360,7 @@ L_new_ok_240:
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_259(%rip), %rax
+    leaq L_gt_callsite__main_260(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
@@ -7366,75 +7370,32 @@ L_new_ok_240:
     popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_260(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $9, %esi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_remove
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
     leaq L_gt_callsite__main_261(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $5, %esi
+    movl $4, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_remove
+    call shift_basic
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
-    popq %rbx
-    popq %rax
-    andb %bl, %al
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__main_262(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    pushq %rdi
-    movq -160(%rbp), %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_size
-    movq 8(%rsp), %rsp
-    popq %rdi
-    pushq %rax
-    movl $0, %eax
+    movl $1, %eax
+    addq $4, %rax
+    addq $20, %rax
+    addq $300, %rax
     pushq %rax
     popq %rbx
     popq %rax
     cmpq %rbx, %rax
     sete %al
     movzbq %al, %rax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    andb %bl, %al
     pushq %rax
     popq %rsi
     movq %rsp, %rax
@@ -7446,7 +7407,7 @@ L_new_ok_240:
     movq 8(%rsp), %rsp
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_263(%rip), %rax
+    leaq L_gt_callsite__main_262(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
@@ -7456,25 +7417,31 @@ L_new_ok_240:
     popq %rdi
     leaq -8(%rbp), %rax
     pushq %rax
-    leaq L_gt_callsite__main_264(%rip), %rax
+    leaq L_gt_callsite__main_263(%rip), %rax
     pushq %rax
     popq %rax
     popq %rbx
     movq %rax, (%rbx)
     pushq %rdi
-    movq -160(%rbp), %rdi
-    movl $5, %esi
+    movl $1, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call TreeMap_s32_u8_remove
+    call shift_branch
     movq 8(%rsp), %rsp
     popq %rdi
     pushq %rax
+    movl $1, %eax
+    addq $2, %rax
+    addq $5, %rax
+    pushq %rax
+    popq %rbx
     popq %rax
-    xorb $1, %al
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
     pushq %rax
     popq %rsi
     movq %rsp, %rax
@@ -7484,175 +7451,147 @@ L_new_ok_240:
     movl $0, %eax
     call check
     movq 8(%rsp), %rsp
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_11
-    movq -160(%rbp), %rax
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_264(%rip), %rax
     pushq %rax
     popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id22(%rip), %rax
     pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_11:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $0, -160(%rbp)
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_12
-    movq -24(%rbp), %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_265(%rip), %rax
     pushq %rax
     popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_12:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movl $0, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call gt_destruct
+    call shift_branch
     movq 8(%rsp), %rsp
-    movq $0, -24(%rbp)
-    jmp L_end_of_gt_callsites__main_265
-L_gt_callsite__main_222:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_13
-    movq -24(%rbp), %rax
+    popq %rdi
+    pushq %rax
+    movl $1, %eax
+    addq $1, %rax
+    addq $5, %rax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_266(%rip), %rax
     pushq %rax
     popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id23(%rip), %rax
     pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_13:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $1, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call exit
-    movq 8(%rsp), %rsp
-L_gt_callsite__main_224:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_14
-    movq -24(%rbp), %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_267(%rip), %rax
     pushq %rax
     popq %rax
-    movq %rsp, %rdx
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movl $3, %edi
+    movq %rsp, %rax
     andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call shift_after_loop
+    movq 8(%rsp), %rsp
+    popq %rdi
     pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_14:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
+    movl $3, %eax
+    addq $3, %rax
+    addq $100, %rax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call gt_destruct
+    call check
     movq 8(%rsp), %rsp
-    movq $1, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call exit
-    movq 8(%rsp), %rsp
-L_gt_callsite__main_227:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_15
-    movq -24(%rbp), %rax
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_268(%rip), %rax
     pushq %rax
     popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
+    popq %rbx
+    movq %rax, (%rbx)
+    leaq string_id24(%rip), %rax
     pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_15:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq $1, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call exit
-    movq 8(%rsp), %rsp
-L_gt_callsite__main_228:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_16
-    movq -24(%rbp), %rax
+    popq %rdi
+    leaq -8(%rbp), %rax
+    pushq %rax
+    leaq L_gt_callsite__main_269(%rip), %rax
     pushq %rax
     popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_16:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
+    popq %rbx
+    movq %rax, (%rbx)
+    pushq %rdi
+    movl $3, %edi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call gt_destruct
+    call shift_in_loop
     movq 8(%rsp), %rsp
+    popq %rdi
+    pushq %rax
+    movl $1, %eax
+    addq $2, %rax
+    addq $2, %rax
+    addq $7, %rax
+    pushq %rax
+    popq %rbx
+    popq %rax
+    cmpq %rbx, %rax
+    sete %al
+    movzbq %al, %rax
+    pushq %rax
+    popq %rsi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call check
+    movq 8(%rsp), %rsp
+    jmp L_end_of_gt_callsites__main_270
+L_gt_callsite__main_230:
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7662,29 +7601,6 @@ L_drop_skip_16:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_231:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_17
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_17:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7694,29 +7610,6 @@ L_drop_skip_17:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_232:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_18
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_18:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7726,29 +7619,6 @@ L_drop_skip_18:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_233:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_19
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_19:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7758,29 +7628,6 @@ L_drop_skip_19:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_234:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_20
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_20:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7790,29 +7637,6 @@ L_drop_skip_20:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_235:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_21
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_21:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7822,29 +7646,6 @@ L_drop_skip_21:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_236:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_22
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_22:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7854,29 +7655,6 @@ L_drop_skip_22:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_237:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_23
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_23:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7886,29 +7664,24 @@ L_drop_skip_23:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_238:
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_24
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_24:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
+    movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call gt_destruct
+    call exit
     movq 8(%rsp), %rsp
+L_gt_callsite__main_239:
+    movq $1, %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
+    movl $0, %eax
+    call exit
+    movq 8(%rsp), %rsp
+L_gt_callsite__main_240:
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7918,52 +7691,6 @@ L_drop_skip_24:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_241:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_25
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_25:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_26
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_26:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -7973,52 +7700,6 @@ L_drop_skip_26:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_242:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_27
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_27:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_28
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_28:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8028,52 +7709,6 @@ L_drop_skip_28:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_243:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_29
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_29:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_30
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_30:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8083,52 +7718,6 @@ L_drop_skip_30:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_244:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_31
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_31:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_32
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_32:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8138,52 +7727,6 @@ L_drop_skip_32:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_245:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_33
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_33:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_34
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_34:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8193,52 +7736,6 @@ L_drop_skip_34:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_246:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_35
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_35:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_36
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_36:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8248,52 +7745,6 @@ L_drop_skip_36:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_247:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_37
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_37:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_38
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_38:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8303,52 +7754,6 @@ L_drop_skip_38:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_248:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_39
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_39:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_40
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_40:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8358,52 +7763,6 @@ L_drop_skip_40:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_249:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_41
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_41:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_42
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_42:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8413,52 +7772,6 @@ L_drop_skip_42:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_250:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_43
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_43:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_44
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_44:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8468,52 +7781,6 @@ L_drop_skip_44:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_251:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_45
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_45:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_46
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_46:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8523,52 +7790,6 @@ L_drop_skip_46:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_252:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_47
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_47:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_48
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_48:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8578,52 +7799,6 @@ L_drop_skip_48:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_253:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_49
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_49:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_50
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_50:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8633,52 +7808,6 @@ L_drop_skip_50:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_254:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_51
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_51:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_52
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_52:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8688,52 +7817,6 @@ L_drop_skip_52:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_255:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_53
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_53:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_54
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_54:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8743,52 +7826,6 @@ L_drop_skip_54:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_256:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_55
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_55:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_56
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_56:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8798,52 +7835,6 @@ L_drop_skip_56:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_257:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_57
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_57:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_58
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_58:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8853,52 +7844,6 @@ L_drop_skip_58:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_258:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_59
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_59:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_60
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_60:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8908,52 +7853,6 @@ L_drop_skip_60:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_259:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_61
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_61:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_62
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_62:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -8963,52 +7862,6 @@ L_drop_skip_62:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_260:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_63
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_63:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_64
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_64:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -9018,52 +7871,6 @@ L_drop_skip_64:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_261:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_65
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_65:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_66
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_66:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -9073,52 +7880,6 @@ L_drop_skip_66:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_262:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_67
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_67:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_68
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_68:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -9128,52 +7889,6 @@ L_drop_skip_68:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_263:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_69
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_69:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_70
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_70:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -9183,52 +7898,6 @@ L_drop_skip_70:
     call exit
     movq 8(%rsp), %rsp
 L_gt_callsite__main_264:
-    cmpq $0, -160(%rbp)
-    je L_drop_skip_71
-    movq -160(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_s32_u8
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_71:
-    movq -160(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    cmpq $0, -24(%rbp)
-    je L_drop_skip_72
-    movq -24(%rbp), %rax
-    pushq %rax
-    popq %rax
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    subq $8, %rsp
-    movq %rdx, (%rsp)
-    pushq %rax
-    call __drop_TreeMap_u64_u64
-    addq $8, %rsp
-    movq (%rsp), %rsp
-L_drop_skip_72:
-    movq -24(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
     movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
@@ -9237,2698 +7906,55 @@ L_drop_skip_72:
     movl $0, %eax
     call exit
     movq 8(%rsp), %rsp
-L_end_of_gt_callsites__main_265:
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r14
-    movq -256(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl __ctor__TreeMap_u64_u64
-__ctor__TreeMap_u64_u64:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $80, %rsp
-    movq %rbx, -56(%rbp)
-    movq %r12, -64(%rbp)
-    movq %r15, -72(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_end_of_catches____ctor__TreeMap_u64_u64_267
-L_catch_266:
-    leaq -80(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -40(%rbp)
-    movq -40(%rbp), %rax
-    movq %rax, -16(%rbp)
-    movq -56(%rbp), %rbx
-    movq -64(%rbp), %r12
-    movq -72(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_catches____ctor__TreeMap_u64_u64_267:
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq $16, %rdi
+L_gt_callsite__main_265:
+    movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call malloc
+    call exit
     movq 8(%rsp), %rsp
-    movq %rax, %r12
-    testq %r12, %r12
-    jz L_cg_newdyn_null_4
-    movq $0, 0(%r12)
-    movq $0, 8(%r12)
-    jmp L_cg_newdyn_done_5
-L_cg_newdyn_null_4:
-L_cg_newdyn_done_5:
-    pushq %r12
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq %rax, %rdi
+L_gt_callsite__main_266:
+    movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call gt_register
+    call exit
     movq 8(%rsp), %rsp
-    testb %al, %al
-    jnz L_cg_gtreg_ok_6
-    popq %rax
-    movq %rax, %rdi
+L_gt_callsite__main_267:
+    movq $1, %rdi
     movq %rsp, %rax
     andq $-16, %rsp
     subq $16, %rsp
     movq %rax, 8(%rsp)
     movl $0, %eax
-    call free
+    call exit
     movq 8(%rsp), %rsp
-    xorq %rax, %rax
-    pushq %rax
-L_cg_gtreg_ok_6:
-    popq %rax
-    pushq %rax
-    pushq %rax
+L_gt_callsite__main_268:
+    movq $1, %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
     movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_alloc_ok_268
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_266
-L_alloc_ok_268:
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -32(%rbp), %rax
-    movq $0, -32(%rbp)
-    movq -24(%rbp), %r15
-    pushq %r15
-    movl $1, %r15d
-    pushq %r15
-    pushq %rax
-    movq %rsp, %r10
-    movq 16(%rsp), %r11
-    movq 8(%r10), %rax
-    movq %rax, 0(%r11)
-    movq 0(%r10), %rax
-    movq %rax, 8(%r11)
-    addq $24, %rsp
-    movq -24(%rbp), %rax
-    movq -56(%rbp), %rbx
-    movq -64(%rbp), %r12
-    movq -72(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
+    call exit
+    movq 8(%rsp), %rsp
+L_gt_callsite__main_269:
+    movq $1, %rdi
+    movq %rsp, %rax
+    andq $-16, %rsp
+    subq $16, %rsp
+    movq %rax, 8(%rsp)
     movl $0, %eax
-    movq -56(%rbp), %rbx
-    movq -64(%rbp), %r12
-    movq -72(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_lowerBound
-TreeMap_u64_u64_lowerBound:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $128, %rsp
-    movq %rbx, -104(%rbp)
-    movq %r13, -112(%rbp)
-    movq %r14, -120(%rbp)
-    movq %r15, -128(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movl $0, %r9d
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %r13
-    movq $0, -64(%rbp)
-    movl $64, %r14d
-    movq -64(%rbp), %r10
-L_for_269:
-    cmpq %r14, %r10
-    jae L_for_end_270
-    cmpq %r13, %r9
-    jae L_end_of_if_271
-    movq %r13, %rax
-    subq %r9, %rax
-    shrq $1, %rax
-    movq %r9, %r8
-    addq %rax, %r8
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -88(%rbp)
-    movq %r8, %rax
-    movq %rax, -96(%rbp)
-    movq -88(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -96(%rbp)
-    jae L_end_of_match_272
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r8, %r15
-    movq 24(%rax,%r15,1), %rax
-    cmpq -32(%rbp), %rax
-    jae L_if_branch_274
-    movq %r8, %r9
-    addq $1, %r9
-    jmp L_end_of_if_273
-L_if_branch_274:
-    movq %r8, %r13
-L_end_of_if_273:
-L_end_of_match_272:
-L_end_of_if_271:
-    incq %r10
-    jmp L_for_269
-L_for_end_270:
-    movq %r9, %rax
-    movq -104(%rbp), %rbx
-    movq -112(%rbp), %r13
-    movq -120(%rbp), %r14
-    movq -128(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
+    call exit
+    movq 8(%rsp), %rsp
+L_end_of_gt_callsites__main_270:
     movl $0, %eax
-    movq -104(%rbp), %rbx
-    movq -112(%rbp), %r13
-    movq -120(%rbp), %r14
-    movq -128(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_size
-TreeMap_u64_u64_size:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %rax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_keyAt
-TreeMap_u64_u64_keyAt:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    movq %r15, -48(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
+    movq -24(%rbp), %rbx
     movq -32(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_valueAt
-TreeMap_u64_u64_valueAt:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    movq %r15, -48(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -32(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $32, %rax
-    movq (%rax), %rax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_set
-TreeMap_u64_u64_set:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $272, %rsp
-    movq %rbx, -248(%rbp)
-    movq %r12, -256(%rbp)
-    movq %r15, -264(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -40(%rbp), %rax
-    pushq %rax
-    movq %rdx, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_end_of_catches__TreeMap_u64_u64_set_276
-L_catch_275:
-    leaq -272(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -96(%rbp)
-    movq -96(%rbp), %rax
-    movq %rax, -16(%rbp)
-    movq -248(%rbp), %rbx
-    movq -256(%rbp), %r12
-    movq -264(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_catches__TreeMap_u64_u64_set_276:
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %rax
-    movq %rax, -48(%rbp)
-    leaq -56(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_u64_u64_set_277(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -176(%rbp)
-    movq -56(%rbp), %rax
-    movq %rax, -184(%rbp)
-    movq -176(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -184(%rbp)
-    jae L_end_of_match_278
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -56(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    cmpq -32(%rbp), %rax
-    jne L_end_of_if_279
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -56(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq -40(%rbp), %rbx
-    movq %rbx, 16(%rax)
-    movl $0, %eax
-    movq -248(%rbp), %rbx
-    movq -256(%rbp), %r12
-    movq -264(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_279:
-L_end_of_match_278:
-    leaq -80(%rbp), %rax
-    pushq %rax
-    movl $2, %eax
-    subq $8, %rsp
-    movq %rax, -16(%rsp)
-    movq -32(%rbp), %rax
-    subq $8, %rsp
-    movq %rax, (%rsp)
-    movq -40(%rbp), %rax
-    subq $8, %rsp
-    movq %rax, 16(%rsp)
-    movq 24(%rsp), %r15
-    movq 0(%rsp), %rdi
-    movq %rdi, 0(%r15)
-    movq 8(%rsp), %rdi
-    movq %rdi, 8(%r15)
-    movq 16(%rsp), %rdi
-    movq %rdi, 16(%r15)
-    addq $32, %rsp
-    leaq -88(%rbp), %rax
-    pushq %rax
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rbx
-    movq (%rbx), %rax
-    pushq %rax
-    movq -48(%rbp), %rax
-    pushq %rax
-    movl $1, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    movq -80(%rbp), %rax
-    pushq %rax
-    movq -72(%rbp), %rax
-    pushq %rax
-    movq -64(%rbp), %rax
-    pushq %rax
-    movq 24(%rsp), %r12
-    movq 32(%rsp), %rax
-    pushq %rax
-    movq (%rax), %rbx
-    movq 8(%rax), %rcx
-    cmpq %rcx, %r12
-    ja L_cg_resize_grow_7
-    leaq 0(,%r12,4), %rdx
-    cmpq %rcx, %rdx
-    jb L_cg_resize_shrink_9
-    movq %rax, %r15
-    jmp L_cg_resize_hdr_8
-L_cg_resize_shrink_9:
-    movq %r12, %r15
-    jmp L_cg_resize_call_10
-L_cg_resize_grow_7:
-    leaq (%rcx,%rcx), %rdx
-    cmpq %rdx, %r12
-    cmovaq %r12, %rdx
-    movq %rdx, %r15
-L_cg_resize_call_10:
-    movq %rax, %rdi
-    movq %r15, %rsi
-    imulq $24, %rsi, %rsi
-    addq $16, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call realloc
-    movq 8(%rsp), %rsp
-    movq %r15, %rcx
-    movq %rax, %r15
-    testq %r15, %r15
-    jz L_cg_resize_end_11
-L_cg_resize_hdr_8:
-    movq %r12, 0(%r15)
-    movq %rcx, 8(%r15)
-L_cg_resize_fill_12:
-    cmpq %r12, %rbx
-    jge L_cg_resize_end_11
-    movq %rbx, %rax
-    imulq $24, %rax, %rax
-    leaq 16(%r15,%rax), %rax
-    movq 24(%rsp), %rdx
-    movq %rdx, 0(%rax)
-    movq 16(%rsp), %rdx
-    movq %rdx, 8(%rax)
-    movq 8(%rsp), %rdx
-    movq %rdx, 16(%rax)
-    incq %rbx
-    jmp L_cg_resize_fill_12
-L_cg_resize_end_11:
-    popq %rbx
-    testq %r15, %r15
-    jz L_cg_resize_gt_skip_13
-    cmpq %rbx, %r15
-    je L_cg_resize_gt_skip_13
-    pushq %rbx
-    movq %rbx, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_moved
-    movq 8(%rsp), %rsp
-    popq %rbx
-    pushq %r15
-    movq %r15, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    popq %r15
-L_cg_resize_gt_skip_13:
-    addq $40, %rsp
-    pushq %r15
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_alloc_ok_280
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_275
-L_alloc_ok_280:
-    movq -24(%rbp), %rax
-    movq $0, 8(%rax)
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -88(%rbp), %rax
-    movq %rax, -168(%rbp)
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq (%rax), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq -168(%rbp), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq $0, -88(%rbp)
-    movq -48(%rbp), %rax
-    subq -56(%rbp), %rax
-    movq %rax, -104(%rbp)
-    movq $0, -120(%rbp)
-    movq -104(%rbp), %rax
-    movq %rax, -112(%rbp)
-    movq -120(%rbp), %rax
-    movq %rax, -128(%rbp)
-L_for_281:
-    movq -128(%rbp), %r15
-    cmpq -112(%rbp), %r15
-    jae L_for_end_282
-    movq -48(%rbp), %r10
-    subq -128(%rbp), %r10
-    movq %r10, %rax
-    subq $1, %rax
-    movq %rax, -144(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -192(%rbp)
-    movq -144(%rbp), %rax
-    movq %rax, -200(%rbp)
-    movq -192(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -200(%rbp)
-    jae L_end_of_match_283
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -144(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    movq %rax, -152(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -144(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $32, %rax
-    movq (%rax), %rax
-    movq %rax, -160(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -208(%rbp)
-    movq %r10, %rax
-    movq %rax, -216(%rbp)
-    movq -208(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -216(%rbp)
-    jae L_end_of_match_284
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r10, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq -152(%rbp), %rbx
-    movq %rbx, 8(%rax)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r10, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq -160(%rbp), %rbx
-    movq %rbx, 16(%rax)
-L_end_of_match_284:
-L_end_of_match_283:
-    incq -128(%rbp)
-    jmp L_for_281
-L_for_end_282:
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -224(%rbp)
-    movq -56(%rbp), %rax
-    movq %rax, -232(%rbp)
-    movq -224(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -232(%rbp)
-    jae L_end_of_match_285
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -56(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq -32(%rbp), %rbx
-    movq %rbx, 8(%rax)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -56(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq -40(%rbp), %rbx
-    movq %rbx, 16(%rax)
-L_end_of_match_285:
-    jmp L_end_of_gt_callsites__TreeMap_u64_u64_set_286
-L_gt_callsite__TreeMap_u64_u64_set_277:
-    movq -248(%rbp), %rbx
-    movq -256(%rbp), %r12
-    movq -264(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_u64_u64_set_286:
-    movl $0, %eax
-    movq -248(%rbp), %rbx
-    movq -256(%rbp), %r12
-    movq -264(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_get
-TreeMap_u64_u64_get:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $80, %rsp
-    movq %rbx, -72(%rbp)
-    movq %r15, -80(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -40(%rbp), %rax
-    pushq %rax
-    movq %rdx, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -48(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_u64_u64_get_287(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -56(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -64(%rbp)
-    movq -56(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -64(%rbp)
-    jae L_end_of_match_288
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    cmpq -32(%rbp), %rax
-    jne L_end_of_if_289
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $32, %rax
-    movq (%rax), %rax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_289:
-L_end_of_match_288:
-    movq -40(%rbp), %rax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    jmp L_end_of_gt_callsites__TreeMap_u64_u64_get_290
-L_gt_callsite__TreeMap_u64_u64_get_287:
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_u64_u64_get_290:
-    movl $0, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_contains
-TreeMap_u64_u64_contains:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $80, %rsp
-    movq %rbx, -72(%rbp)
-    movq %r15, -80(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -40(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_u64_u64_contains_291(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -48(%rbp)
-    movq -40(%rbp), %rax
-    movq %rax, -56(%rbp)
-    movq -48(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -56(%rbp)
-    jae L_end_of_match_292
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -40(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    cmpq -32(%rbp), %rax
-    jne L_end_of_if_293
-    movl $1, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_293:
-L_end_of_match_292:
-    movl $0, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    jmp L_end_of_gt_callsites__TreeMap_u64_u64_contains_294
-L_gt_callsite__TreeMap_u64_u64_contains_291:
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_u64_u64_contains_294:
-    movl $0, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_u64_u64_remove
-TreeMap_u64_u64_remove:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $256, %rsp
-    movq %rbx, -232(%rbp)
-    movq %r12, -240(%rbp)
-    movq %r15, -248(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_end_of_catches__TreeMap_u64_u64_remove_296
-L_catch_295:
-    leaq -256(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -160(%rbp)
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_catches__TreeMap_u64_u64_remove_296:
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %rax
-    movq %rax, -40(%rbp)
-    leaq -48(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_u64_u64_remove_297(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movq -32(%rbp), %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_u64_u64_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -176(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -184(%rbp)
-    movq -176(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -184(%rbp)
-    jae L_end_of_match_298
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    cmpq -32(%rbp), %rax
-    jne L_end_of_if_299
-    movq -40(%rbp), %rax
-    subq $1, %rax
-    movq %rax, -56(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movq (%rax), %rax
-    movq %rax, -64(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $24, %r15, %r15
-    addq %r15, %rax
-    addq $32, %rax
-    movq (%rax), %rax
-    movq %rax, -72(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -88(%rbp)
-    movq -56(%rbp), %rax
-    movq %rax, -80(%rbp)
-    movq -88(%rbp), %r8
-L_for_300:
-    cmpq -80(%rbp), %r8
-    jae L_for_end_301
-    movq %r8, %r9
-    addq $1, %r9
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -192(%rbp)
-    movq %r9, %rax
-    movq %rax, -200(%rbp)
-    movq -192(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -200(%rbp)
-    jae L_end_of_match_302
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r9, %r15
-    movq 24(%rax,%r15,1), %r10
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq 32(%rax,%r15,1), %r9
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -208(%rbp)
-    movq %r8, %rax
-    movq %rax, -216(%rbp)
-    movq -208(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -216(%rbp)
-    jae L_end_of_match_303
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r8, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq %r10, %rbx
-    movq %rbx, 8(%rax)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $24, %r8, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq %r9, %rbx
-    movq %rbx, 16(%rax)
-L_end_of_match_303:
-L_end_of_match_302:
-    incq %r8
-    jmp L_for_300
-L_for_end_301:
-    leaq -144(%rbp), %rax
-    pushq %rax
-    movl $2, %eax
-    subq $8, %rsp
-    movq %rax, -16(%rsp)
-    movq -64(%rbp), %rax
-    subq $8, %rsp
-    movq %rax, (%rsp)
-    movq -72(%rbp), %rax
-    subq $8, %rsp
-    movq %rax, 16(%rsp)
-    movq 24(%rsp), %r15
-    movq 0(%rsp), %rdi
-    movq %rdi, 0(%r15)
-    movq 8(%rsp), %rdi
-    movq %rdi, 8(%r15)
-    movq 16(%rsp), %rdi
-    movq %rdi, 16(%r15)
-    addq $32, %rsp
-    leaq -152(%rbp), %rax
-    pushq %rax
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rbx
-    movq (%rbx), %rax
-    pushq %rax
-    movq -56(%rbp), %rax
-    pushq %rax
-    movq -144(%rbp), %rax
-    pushq %rax
-    movq -136(%rbp), %rax
-    pushq %rax
-    movq -128(%rbp), %rax
-    pushq %rax
-    movq 24(%rsp), %r12
-    movq 32(%rsp), %rax
-    pushq %rax
-    movq (%rax), %rbx
-    movq 8(%rax), %rcx
-    cmpq %rcx, %r12
-    ja L_cg_resize_grow_14
-    leaq 0(,%r12,4), %rdx
-    cmpq %rcx, %rdx
-    jb L_cg_resize_shrink_16
-    movq %rax, %r15
-    jmp L_cg_resize_hdr_15
-L_cg_resize_shrink_16:
-    movq %r12, %r15
-    jmp L_cg_resize_call_17
-L_cg_resize_grow_14:
-    leaq (%rcx,%rcx), %rdx
-    cmpq %rdx, %r12
-    cmovaq %r12, %rdx
-    movq %rdx, %r15
-L_cg_resize_call_17:
-    movq %rax, %rdi
-    movq %r15, %rsi
-    imulq $24, %rsi, %rsi
-    addq $16, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call realloc
-    movq 8(%rsp), %rsp
-    movq %r15, %rcx
-    movq %rax, %r15
-    testq %r15, %r15
-    jz L_cg_resize_end_18
-L_cg_resize_hdr_15:
-    movq %r12, 0(%r15)
-    movq %rcx, 8(%r15)
-L_cg_resize_fill_19:
-    cmpq %r12, %rbx
-    jge L_cg_resize_end_18
-    movq %rbx, %rax
-    imulq $24, %rax, %rax
-    leaq 16(%r15,%rax), %rax
-    movq 24(%rsp), %rdx
-    movq %rdx, 0(%rax)
-    movq 16(%rsp), %rdx
-    movq %rdx, 8(%rax)
-    movq 8(%rsp), %rdx
-    movq %rdx, 16(%rax)
-    incq %rbx
-    jmp L_cg_resize_fill_19
-L_cg_resize_end_18:
-    popq %rbx
-    testq %r15, %r15
-    jz L_cg_resize_gt_skip_20
-    cmpq %rbx, %r15
-    je L_cg_resize_gt_skip_20
-    pushq %rbx
-    movq %rbx, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_moved
-    movq 8(%rsp), %rsp
-    popq %rbx
-    pushq %r15
-    movq %r15, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    popq %r15
-L_cg_resize_gt_skip_20:
-    addq $40, %rsp
-    pushq %r15
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_alloc_ok_304
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_295
-L_alloc_ok_304:
-    movq -24(%rbp), %rax
-    movq $0, 8(%rax)
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -152(%rbp), %rax
-    movq %rax, -168(%rbp)
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq (%rax), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq -168(%rbp), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq $0, -152(%rbp)
-    movl $1, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_299:
-L_end_of_match_298:
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    jmp L_end_of_gt_callsites__TreeMap_u64_u64_remove_305
-L_gt_callsite__TreeMap_u64_u64_remove_297:
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_u64_u64_remove_305:
-    movl $0, %eax
-    movq -232(%rbp), %rbx
-    movq -240(%rbp), %r12
-    movq -248(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl __ctor__TreeMap_s32_u8
-__ctor__TreeMap_s32_u8:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $80, %rsp
-    movq %rbx, -56(%rbp)
-    movq %r12, -64(%rbp)
-    movq %r15, -72(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_end_of_catches____ctor__TreeMap_s32_u8_307
-L_catch_306:
-    leaq -80(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -40(%rbp)
-    movq -40(%rbp), %rax
-    movq %rax, -16(%rbp)
-    movq -56(%rbp), %rbx
-    movq -64(%rbp), %r12
-    movq -72(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_catches____ctor__TreeMap_s32_u8_307:
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq $16, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call malloc
-    movq 8(%rsp), %rsp
-    movq %rax, %r12
-    testq %r12, %r12
-    jz L_cg_newdyn_null_21
-    movq $0, 0(%r12)
-    movq $0, 8(%r12)
-    jmp L_cg_newdyn_done_22
-L_cg_newdyn_null_21:
-L_cg_newdyn_done_22:
-    pushq %r12
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    testb %al, %al
-    jnz L_cg_gtreg_ok_23
-    popq %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call free
-    movq 8(%rsp), %rsp
-    xorq %rax, %rax
-    pushq %rax
-L_cg_gtreg_ok_23:
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_alloc_ok_308
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_306
-L_alloc_ok_308:
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -32(%rbp), %rax
-    movq $0, -32(%rbp)
-    movq -24(%rbp), %r15
-    pushq %r15
-    movl $3, %r15d
-    pushq %r15
-    pushq %rax
-    movq %rsp, %r10
-    movq 16(%rsp), %r11
-    movq 8(%r10), %rax
-    movq %rax, 0(%r11)
-    movq 0(%r10), %rax
-    movq %rax, 8(%r11)
-    addq $24, %rsp
-    movq -24(%rbp), %rax
-    movq -56(%rbp), %rbx
-    movq -64(%rbp), %r12
-    movq -72(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -56(%rbp), %rbx
-    movq -64(%rbp), %r12
-    movq -72(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_lowerBound
-TreeMap_s32_u8_lowerBound:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $128, %rsp
-    movq %rbx, -104(%rbp)
-    movq %r13, -112(%rbp)
-    movq %r14, -120(%rbp)
-    movq %r15, -128(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -28(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movl %eax, (%rbx)
-    movl $0, %r9d
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %r13
-    movq $0, -64(%rbp)
-    movl $64, %r14d
-    movq -64(%rbp), %r10
-L_for_309:
-    cmpq %r14, %r10
-    jae L_for_end_310
-    cmpq %r13, %r9
-    jae L_end_of_if_311
-    movq %r13, %rax
-    subq %r9, %rax
-    shrq $1, %rax
-    movq %r9, %r8
-    addq %rax, %r8
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -88(%rbp)
-    movq %r8, %rax
-    movq %rax, -96(%rbp)
-    movq -88(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -96(%rbp)
-    jae L_end_of_match_312
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $16, %r8, %r15
-    movl 24(%rax,%r15,1), %eax
-    movl -28(%rbp), %ebx
-    cmpl %ebx, %eax
-    jge L_if_branch_314
-    movq %r8, %r9
-    addq $1, %r9
-    jmp L_end_of_if_313
-L_if_branch_314:
-    movq %r8, %r13
-L_end_of_if_313:
-L_end_of_match_312:
-L_end_of_if_311:
-    incq %r10
-    jmp L_for_309
-L_for_end_310:
-    movq %r9, %rax
-    movq -104(%rbp), %rbx
-    movq -112(%rbp), %r13
-    movq -120(%rbp), %r14
-    movq -128(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -104(%rbp), %rbx
-    movq -112(%rbp), %r13
-    movq -120(%rbp), %r14
-    movq -128(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_size
-TreeMap_s32_u8_size:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %rax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_keyAt
-TreeMap_s32_u8_keyAt:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    movq %r15, -48(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -32(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_valueAt
-TreeMap_s32_u8_valueAt:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    movq %r15, -48(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -32(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -32(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $28, %rax
-    movzbq (%rax), %rax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq -48(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_set
-TreeMap_s32_u8_set:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $240, %rsp
-    movq %rbx, -216(%rbp)
-    movq %r12, -224(%rbp)
-    movq %r15, -232(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -28(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movl %eax, (%rbx)
-    leaq -29(%rbp), %rax
-    pushq %rax
-    movq %rdx, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movb %al, (%rbx)
-    jmp L_end_of_catches__TreeMap_s32_u8_set_316
-L_catch_315:
-    leaq -240(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -80(%rbp)
-    movq -80(%rbp), %rax
-    movq %rax, -16(%rbp)
-    movq -216(%rbp), %rbx
-    movq -224(%rbp), %r12
-    movq -232(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_catches__TreeMap_s32_u8_set_316:
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %rax
-    movq %rax, -40(%rbp)
-    leaq -48(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_s32_u8_set_317(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movl -28(%rbp), %esi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -152(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -160(%rbp)
-    movq -152(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -160(%rbp)
-    jae L_end_of_match_318
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movl -28(%rbp), %ebx
-    cmpl %ebx, %eax
-    jne L_end_of_if_319
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movzbq -29(%rbp), %rbx
-    movb %bl, 12(%rax)
-    movl $0, %eax
-    movq -216(%rbp), %rbx
-    movq -224(%rbp), %r12
-    movq -232(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_319:
-L_end_of_match_318:
-    leaq -64(%rbp), %rax
-    pushq %rax
-    movl $4, %eax
-    subq $8, %rsp
-    movq %rax, -8(%rsp)
-    movl -28(%rbp), %eax
-    subq $4, %rsp
-    movl %eax, 4(%rsp)
-    movzbq -29(%rbp), %rax
-    subq $1, %rsp
-    movb %al, 9(%rsp)
-    subq $3, %rsp
-    movq 16(%rsp), %r15
-    movq 0(%rsp), %rdi
-    movq %rdi, 0(%r15)
-    movq 8(%rsp), %rdi
-    movq %rdi, 8(%r15)
-    addq $24, %rsp
-    leaq -72(%rbp), %rax
-    pushq %rax
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rbx
-    movq (%rbx), %rax
-    pushq %rax
-    movq -40(%rbp), %rax
-    pushq %rax
-    movl $1, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    movq -64(%rbp), %rax
-    pushq %rax
-    movq -56(%rbp), %rax
-    pushq %rax
-    movq 16(%rsp), %r12
-    movq 24(%rsp), %rax
-    pushq %rax
-    movq (%rax), %rbx
-    movq 8(%rax), %rcx
-    cmpq %rcx, %r12
-    ja L_cg_resize_grow_24
-    leaq 0(,%r12,4), %rdx
-    cmpq %rcx, %rdx
-    jb L_cg_resize_shrink_26
-    movq %rax, %r15
-    jmp L_cg_resize_hdr_25
-L_cg_resize_shrink_26:
-    movq %r12, %r15
-    jmp L_cg_resize_call_27
-L_cg_resize_grow_24:
-    leaq (%rcx,%rcx), %rdx
-    cmpq %rdx, %r12
-    cmovaq %r12, %rdx
-    movq %rdx, %r15
-L_cg_resize_call_27:
-    movq %rax, %rdi
-    movq %r15, %rsi
-    imulq $16, %rsi, %rsi
-    addq $16, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call realloc
-    movq 8(%rsp), %rsp
-    movq %r15, %rcx
-    movq %rax, %r15
-    testq %r15, %r15
-    jz L_cg_resize_end_28
-L_cg_resize_hdr_25:
-    movq %r12, 0(%r15)
-    movq %rcx, 8(%r15)
-L_cg_resize_fill_29:
-    cmpq %r12, %rbx
-    jge L_cg_resize_end_28
-    movq %rbx, %rax
-    imulq $16, %rax, %rax
-    leaq 16(%r15,%rax), %rax
-    movq 16(%rsp), %rdx
-    movq %rdx, 0(%rax)
-    movq 8(%rsp), %rdx
-    movq %rdx, 8(%rax)
-    incq %rbx
-    jmp L_cg_resize_fill_29
-L_cg_resize_end_28:
-    popq %rbx
-    testq %r15, %r15
-    jz L_cg_resize_gt_skip_30
-    cmpq %rbx, %r15
-    je L_cg_resize_gt_skip_30
-    pushq %rbx
-    movq %rbx, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_moved
-    movq 8(%rsp), %rsp
-    popq %rbx
-    pushq %r15
-    movq %r15, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    popq %r15
-L_cg_resize_gt_skip_30:
-    addq $32, %rsp
-    pushq %r15
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_alloc_ok_320
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_315
-L_alloc_ok_320:
-    movq -24(%rbp), %rax
-    movq $0, 8(%rax)
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -72(%rbp), %rax
-    movq %rax, -144(%rbp)
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq (%rax), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq -144(%rbp), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq $0, -72(%rbp)
-    movq -40(%rbp), %rax
-    subq -48(%rbp), %rax
-    movq %rax, -88(%rbp)
-    movq $0, -104(%rbp)
-    movq -88(%rbp), %rax
-    movq %rax, -96(%rbp)
-    movq -104(%rbp), %rax
-    movq %rax, -112(%rbp)
-L_for_321:
-    movq -112(%rbp), %r15
-    cmpq -96(%rbp), %r15
-    jae L_for_end_322
-    movq -40(%rbp), %r10
-    subq -112(%rbp), %r10
-    movq %r10, %rax
-    subq $1, %rax
-    movq %rax, -128(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -168(%rbp)
-    movq -128(%rbp), %rax
-    movq %rax, -176(%rbp)
-    movq -168(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -176(%rbp)
-    jae L_end_of_match_323
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -128(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movl %eax, -132(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -128(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $28, %rax
-    movzbq (%rax), %rax
-    movb %al, -133(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -184(%rbp)
-    movq %r10, %rax
-    movq %rax, -192(%rbp)
-    movq -184(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -192(%rbp)
-    jae L_end_of_match_324
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $16, %r10, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movl -132(%rbp), %ebx
-    movl %ebx, 8(%rax)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $16, %r10, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movzbq -133(%rbp), %rbx
-    movb %bl, 12(%rax)
-L_end_of_match_324:
-L_end_of_match_323:
-    incq -112(%rbp)
-    jmp L_for_321
-L_for_end_322:
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -200(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -208(%rbp)
-    movq -200(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -208(%rbp)
-    jae L_end_of_match_325
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movl -28(%rbp), %ebx
-    movl %ebx, 8(%rax)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movzbq -29(%rbp), %rbx
-    movb %bl, 12(%rax)
-L_end_of_match_325:
-    jmp L_end_of_gt_callsites__TreeMap_s32_u8_set_326
-L_gt_callsite__TreeMap_s32_u8_set_317:
-    movq -216(%rbp), %rbx
-    movq -224(%rbp), %r12
-    movq -232(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_s32_u8_set_326:
-    movl $0, %eax
-    movq -216(%rbp), %rbx
-    movq -224(%rbp), %r12
-    movq -232(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_get
-TreeMap_s32_u8_get:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $80, %rsp
-    movq %rbx, -72(%rbp)
-    movq %r15, -80(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -28(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movl %eax, (%rbx)
-    leaq -29(%rbp), %rax
-    pushq %rax
-    movq %rdx, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movb %al, (%rbx)
-    leaq -40(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_s32_u8_get_327(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movl -28(%rbp), %esi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -48(%rbp)
-    movq -40(%rbp), %rax
-    movq %rax, -56(%rbp)
-    movq -48(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -56(%rbp)
-    jae L_end_of_match_328
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -40(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movl -28(%rbp), %ebx
-    cmpl %ebx, %eax
-    jne L_end_of_if_329
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -40(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $28, %rax
-    movzbq (%rax), %rax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_329:
-L_end_of_match_328:
-    movzbq -29(%rbp), %r15
-    movq %r15, %rax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    jmp L_end_of_gt_callsites__TreeMap_s32_u8_get_330
-L_gt_callsite__TreeMap_s32_u8_get_327:
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_s32_u8_get_330:
-    movl $0, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_contains
-TreeMap_s32_u8_contains:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $80, %rsp
-    movq %rbx, -72(%rbp)
-    movq %r15, -80(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -28(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movl %eax, (%rbx)
-    leaq -40(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_s32_u8_contains_331(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movl -28(%rbp), %esi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -48(%rbp)
-    movq -40(%rbp), %rax
-    movq %rax, -56(%rbp)
-    movq -48(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -56(%rbp)
-    jae L_end_of_match_332
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -40(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movl -28(%rbp), %ebx
-    cmpl %ebx, %eax
-    jne L_end_of_if_333
-    movl $1, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_333:
-L_end_of_match_332:
-    movl $0, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    jmp L_end_of_gt_callsites__TreeMap_s32_u8_contains_334
-L_gt_callsite__TreeMap_s32_u8_contains_331:
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_s32_u8_contains_334:
-    movl $0, %eax
-    movq -72(%rbp), %rbx
-    movq -80(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl TreeMap_s32_u8_remove
-TreeMap_s32_u8_remove:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $224, %rsp
-    movq %rbx, -200(%rbp)
-    movq %r12, -208(%rbp)
-    movq %r15, -216(%rbp)
-    leaq -24(%rbp), %rax
-    pushq %rax
-    movq %rdi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    leaq -28(%rbp), %rax
-    pushq %rax
-    movq %rsi, %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movl %eax, (%rbx)
-    jmp L_end_of_catches__TreeMap_s32_u8_remove_336
-L_catch_335:
-    leaq -224(%rbp), %rsp
-    movq -16(%rbp), %rax
-    movq %rax, -136(%rbp)
-    movl $0, %eax
-    movq -200(%rbp), %rbx
-    movq -208(%rbp), %r12
-    movq -216(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_catches__TreeMap_s32_u8_remove_336:
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq (%rax), %rax
-    movq %rax, -40(%rbp)
-    leaq -48(%rbp), %rax
-    pushq %rax
-    leaq -8(%rbp), %rax
-    pushq %rax
-    leaq L_gt_callsite__TreeMap_s32_u8_remove_337(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rdi
-    movl -28(%rbp), %esi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call TreeMap_s32_u8_lowerBound
-    movq 8(%rsp), %rsp
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -152(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -160(%rbp)
-    movq -152(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -160(%rbp)
-    jae L_end_of_match_338
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movl -28(%rbp), %ebx
-    cmpl %ebx, %eax
-    jne L_end_of_if_339
-    movq -40(%rbp), %rax
-    subq $1, %rax
-    movq %rax, -56(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $24, %rax
-    movl (%rax), %eax
-    movl %eax, -60(%rbp)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq -48(%rbp), %r15
-    imulq $16, %r15, %r15
-    addq %r15, %rax
-    addq $28, %rax
-    movzbq (%rax), %rax
-    movb %al, -61(%rbp)
-    movq -48(%rbp), %rax
-    movq %rax, -80(%rbp)
-    movq -56(%rbp), %rax
-    movq %rax, -72(%rbp)
-    movq -80(%rbp), %r8
-L_for_340:
-    cmpq -72(%rbp), %r8
-    jae L_for_end_341
-    movq %r8, %r9
-    addq $1, %r9
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -168(%rbp)
-    movq %r9, %rax
-    movq %rax, -176(%rbp)
-    movq -168(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -176(%rbp)
-    jae L_end_of_match_342
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $16, %r9, %r15
-    movl 24(%rax,%r15,1), %eax
-    movl %eax, %r10d
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movzbq 28(%rax,%r15,1), %rax
-    movzbl %al, %r9d
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    movq %rax, -184(%rbp)
-    movq %r8, %rax
-    movq %rax, -192(%rbp)
-    movq -184(%rbp), %rax
-    movq (%rax), %rax
-    cmpq %rax, -192(%rbp)
-    jae L_end_of_match_343
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $16, %r8, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq %r10, %rbx
-    movl %ebx, 8(%rax)
-    movq -24(%rbp), %rax
-    movq 8(%rax), %rax
-    imulq $16, %r8, %r15
-    addq %r15, %rax
-    addq $16, %rax
-    movq %r9, %rbx
-    movb %bl, 12(%rax)
-L_end_of_match_343:
-L_end_of_match_342:
-    incq %r8
-    jmp L_for_340
-L_for_end_341:
-    leaq -120(%rbp), %rax
-    pushq %rax
-    movl $4, %eax
-    subq $8, %rsp
-    movq %rax, -8(%rsp)
-    movl -60(%rbp), %eax
-    subq $4, %rsp
-    movl %eax, 4(%rsp)
-    movzbq -61(%rbp), %rax
-    subq $1, %rsp
-    movb %al, 9(%rsp)
-    subq $3, %rsp
-    movq 16(%rsp), %r15
-    movq 0(%rsp), %rdi
-    movq %rdi, 0(%r15)
-    movq 8(%rsp), %rdi
-    movq %rdi, 8(%r15)
-    addq $24, %rsp
-    leaq -128(%rbp), %rax
-    pushq %rax
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rbx
-    movq (%rbx), %rax
-    pushq %rax
-    movq -56(%rbp), %rax
-    pushq %rax
-    movq -120(%rbp), %rax
-    pushq %rax
-    movq -112(%rbp), %rax
-    pushq %rax
-    movq 16(%rsp), %r12
-    movq 24(%rsp), %rax
-    pushq %rax
-    movq (%rax), %rbx
-    movq 8(%rax), %rcx
-    cmpq %rcx, %r12
-    ja L_cg_resize_grow_31
-    leaq 0(,%r12,4), %rdx
-    cmpq %rcx, %rdx
-    jb L_cg_resize_shrink_33
-    movq %rax, %r15
-    jmp L_cg_resize_hdr_32
-L_cg_resize_shrink_33:
-    movq %r12, %r15
-    jmp L_cg_resize_call_34
-L_cg_resize_grow_31:
-    leaq (%rcx,%rcx), %rdx
-    cmpq %rdx, %r12
-    cmovaq %r12, %rdx
-    movq %rdx, %r15
-L_cg_resize_call_34:
-    movq %rax, %rdi
-    movq %r15, %rsi
-    imulq $16, %rsi, %rsi
-    addq $16, %rsi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call realloc
-    movq 8(%rsp), %rsp
-    movq %r15, %rcx
-    movq %rax, %r15
-    testq %r15, %r15
-    jz L_cg_resize_end_35
-L_cg_resize_hdr_32:
-    movq %r12, 0(%r15)
-    movq %rcx, 8(%r15)
-L_cg_resize_fill_36:
-    cmpq %r12, %rbx
-    jge L_cg_resize_end_35
-    movq %rbx, %rax
-    imulq $16, %rax, %rax
-    leaq 16(%r15,%rax), %rax
-    movq 16(%rsp), %rdx
-    movq %rdx, 0(%rax)
-    movq 8(%rsp), %rdx
-    movq %rdx, 8(%rax)
-    incq %rbx
-    jmp L_cg_resize_fill_36
-L_cg_resize_end_35:
-    popq %rbx
-    testq %r15, %r15
-    jz L_cg_resize_gt_skip_37
-    cmpq %rbx, %r15
-    je L_cg_resize_gt_skip_37
-    pushq %rbx
-    movq %rbx, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_moved
-    movq 8(%rsp), %rsp
-    popq %rbx
-    pushq %r15
-    movq %r15, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_register
-    movq 8(%rsp), %rsp
-    popq %r15
-L_cg_resize_gt_skip_37:
-    addq $32, %rsp
-    pushq %r15
-    popq %rax
-    pushq %rax
-    pushq %rax
-    movl $0, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    cmpq %rbx, %rax
-    sete %al
-    movzbq %al, %rax
-    pushq %rax
-    popq %rax
-    testq %rax, %rax
-    je L_alloc_ok_344
-    leaq -16(%rbp), %rax
-    pushq %rax
-    leaq string_id5(%rip), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    jmp L_catch_335
-L_alloc_ok_344:
-    movq -24(%rbp), %rax
-    movq $0, 8(%rax)
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq -128(%rbp), %rax
-    movq %rax, -144(%rbp)
-    movq -24(%rbp), %rax
-    pushq %rax
-    movl $8, %eax
-    pushq %rax
-    popq %rbx
-    popq %rax
-    addq %rbx, %rax
-    pushq %rax
-    popq %rax
-    pushq %rax
-    pushq %rax
-    popq %rax
-    movq (%rax), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movq -144(%rbp), %rax
-    pushq %rax
-    popq %rax
-    popq %rbx
-    movq %rax, (%rbx)
-    movq $0, -128(%rbp)
-    movl $1, %eax
-    movq -200(%rbp), %rbx
-    movq -208(%rbp), %r12
-    movq -216(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-L_end_of_if_339:
-L_end_of_match_338:
-    movl $0, %eax
-    movq -200(%rbp), %rbx
-    movq -208(%rbp), %r12
-    movq -216(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    jmp L_end_of_gt_callsites__TreeMap_s32_u8_remove_345
-L_gt_callsite__TreeMap_s32_u8_remove_337:
-    movq -200(%rbp), %rbx
-    movq -208(%rbp), %r12
-    movq -216(%rbp), %r15
-    movq -16(%rbp), %rax
-    movq %rbp, %rsp
-    popq %rbp
-    addq $8, %rsp
-    movq %rax, -16(%rbp)
-    movq -8(%rbp), %rax
-    jmp *%rax
-L_end_of_gt_callsites__TreeMap_s32_u8_remove_345:
-    movl $0, %eax
-    movq -200(%rbp), %rbx
-    movq -208(%rbp), %r12
-    movq -216(%rbp), %r15
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl __drop_TreeMap_u64_u64
-__drop_TreeMap_u64_u64:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    movq 16(%rbp), %rax
-    movq %rax, -8(%rbp)
-    movq -8(%rbp), %rax
-    pushq %rax
-    popq %rbx
-    movq (%rbx), %rax
-    addq $8, %rbx
-    pushq %rax
-    movq (%rbx), %rax
-    pushq %rax
-    popq %rax
-    movq %rax, -16(%rbp)
-    popq %rax
-    movq %rax, -24(%rbp)
-    cmpq $0, -16(%rbp)
-    je L_drop_skip_73
-L_drop_skip_73:
-    movq -16(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-
-.globl __drop_TreeMap_s32_u8
-__drop_TreeMap_s32_u8:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $48, %rsp
-    movq %rbx, -40(%rbp)
-    movq 16(%rbp), %rax
-    movq %rax, -8(%rbp)
-    movq -8(%rbp), %rax
-    pushq %rax
-    popq %rbx
-    movq (%rbx), %rax
-    addq $8, %rbx
-    pushq %rax
-    movq (%rbx), %rax
-    pushq %rax
-    popq %rax
-    movq %rax, -16(%rbp)
-    popq %rax
-    movq %rax, -24(%rbp)
-    cmpq $0, -16(%rbp)
-    je L_drop_skip_74
-L_drop_skip_74:
-    movq -16(%rbp), %rax
-    movq %rax, %rdi
-    movq %rsp, %rax
-    andq $-16, %rsp
-    subq $16, %rsp
-    movq %rax, 8(%rsp)
-    movl $0, %eax
-    call gt_destruct
-    movq 8(%rsp), %rsp
-    movl $0, %eax
-    movq -40(%rbp), %rbx
-    movq %rbp, %rsp
-    popq %rbp
-    ret
-    movl $0, %eax
-    movq -40(%rbp), %rbx
     movq %rbp, %rsp
     popq %rbp
     ret

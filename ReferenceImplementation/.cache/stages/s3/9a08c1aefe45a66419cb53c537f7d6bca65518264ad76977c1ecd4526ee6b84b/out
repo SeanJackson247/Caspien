@@ -1,0 +1,1022 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "f64 array: write through a variable index"
+STRING string_id4 "f64 array: a[i] -= a[i] * c"
+STRING string_id5 "f64 array: two arrays in one statement"
+STRING string_id6 "f64 array: nested loops with two indices"
+STRING string_id7 "f32 array: write through a variable index"
+STRING string_id8 "f32 array: a[i] -= a[i] * c"
+STRING string_id9 "f32 array: two arrays in one statement"
+STRING string_id10 "f32 array: nested loops with two indices"
+STRING string_id11 "f32 array of three: square in place"
+STRING string_id12 "f64 array of three: square in place"
+STRING string_id13 "source arrays untouched"
+GLOBAL da 40
+GLOBAL da.0 8 1.5
+GLOBAL da.1 8 2.5
+GLOBAL da.2 8 3.5
+GLOBAL da.3 8 4.5
+GLOBAL da.4 8 5.5
+GLOBAL db 40
+GLOBAL db.0 8 0.0
+GLOBAL db.1 8 0.0
+GLOBAL db.2 8 0.0
+GLOBAL db.3 8 0.0
+GLOBAL db.4 8 0.0
+GLOBAL fa 20
+GLOBAL fa.0 4 1.5
+GLOBAL fa.1 4 2.5
+GLOBAL fa.2 4 3.5
+GLOBAL fa.3 4 4.5
+GLOBAL fa.4 4 5.5
+GLOBAL fb 20
+GLOBAL fb.0 4 0.0
+GLOBAL fb.1 4 0.0
+GLOBAL fb.2 4 0.0
+GLOBAL fb.3 4 0.0
+GLOBAL fb.4 4 0.0
+GLOBAL fc 12
+GLOBAL fc.0 4 1.0
+GLOBAL fc.1 4 2.0
+GLOBAL fc.2 4 4.0
+GLOBAL dc 24
+GLOBAL dc.0 8 1.0
+GLOBAL dc.1 8 2.0
+GLOBAL dc.2 8 4.0
+EXTERN printf imut_void static_imut_string VARARGS
+FUNC_START main
+R_XVAR %x0 $-20 4
+R_XVAR %x1 $-16 8
+ALLOC 736
+R_SETV 1 %v0 #0
+R_GTOX 8 %x1 #0
+R_GTOX 4 %x0 #0
+R_MOV 8 $-40 #0
+R_MOV 8 $-32 #5
+R_MOV 8 %v2 $-40
+R_LDX 8 %y0 &da
+R_FBINX MUL 8 %y0 %y0 #4611686018427387904
+R_FBINX ADD 8 %y0 %y0 #4598175219545276416
+R_STX 8 &db %y0
+R_LDX 8 %y0 &da+8
+R_FBINX MUL 8 %y0 %y0 #4611686018427387904
+R_FBINX ADD 8 %y0 %y0 #4598175219545276416
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &da+16
+R_FBINX MUL 8 %y0 %y0 #4611686018427387904
+R_FBINX ADD 8 %y0 %y0 #4598175219545276416
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &da+24
+R_FBINX MUL 8 %y0 %y0 #4611686018427387904
+R_FBINX ADD 8 %y0 %y0 #4598175219545276416
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &da+32
+R_FBINX MUL 8 %y0 %y0 #4611686018427387904
+R_FBINX ADD 8 %y0 %y0 #4598175219545276416
+R_STX 8 &db+32 %y0
+@for_end_4:
+R_MOV 8 $-64 #0
+R_MOV 8 $-56 #5
+R_MOV 8 %v1 $-64
+R_LDX 8 %y0 &db
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+8
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+16
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+24
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+32
+R_FBINX ADD 8 %x1 %x1 %y0
+@for_end_6:
+R_FCMP EQ 8 %t0 %x1 #4630298551262380032
+R_LDX 8 %y0 &db
+R_FCMP EQ 8 %t1 %y0 #4614500768194494464
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 8 %y0 &db+32
+R_FCMP EQ 8 %t1 %y0 #4622522805030748160
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-568
+PUSH 8 string_id3
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-569 %t0
+PUSH 1 $-569
+CMP
+JMP @if_branch_52
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-568
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_53
+@if_branch_52:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-568
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_53:
+R_MOV 8 $-88 #0
+R_MOV 8 $-80 #5
+R_MOV 8 %v2 $-88
+R_LDX 8 %y0 &db
+R_LDX 8 %y1 &db
+R_FBINX MUL 8 %y1 %y1 #4602678819172646912
+R_FBINX SUB 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &db+8
+R_LDX 8 %y1 &db+8
+R_FBINX MUL 8 %y1 %y1 #4602678819172646912
+R_FBINX SUB 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &db+16
+R_LDX 8 %y1 &db+16
+R_FBINX MUL 8 %y1 %y1 #4602678819172646912
+R_FBINX SUB 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &db+24
+R_LDX 8 %y1 &db+24
+R_FBINX MUL 8 %y1 %y1 #4602678819172646912
+R_FBINX SUB 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &db+32
+R_LDX 8 %y1 &db+32
+R_FBINX MUL 8 %y1 %y1 #4602678819172646912
+R_FBINX SUB 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_8:
+R_GTOX 8 %x1 #0
+R_MOV 8 $-104 #0
+R_MOV 8 $-96 #5
+R_MOV 8 %v1 $-104
+R_LDX 8 %y0 &db
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+8
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+16
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+24
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+32
+R_FBINX ADD 8 %x1 %x1 %y0
+@for_end_10:
+R_FCMP EQ 8 %t0 %x1 #4625794951635009536
+R_LDX 8 %y0 &db
+R_FCMP EQ 8 %t1 %y0 #4609997168567123968
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 8 %y0 &db+8
+R_FCMP EQ 8 %t1 %y0 #4613093393310941184
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 8 %y0 &db+32
+R_FCMP EQ 8 %t1 %y0 #4618019205403377664
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-584
+PUSH 8 string_id4
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-585 %t0
+PUSH 1 $-585
+CMP
+JMP @if_branch_56
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-584
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_57
+@if_branch_56:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-584
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_57:
+R_MOV 8 $-120 #0
+R_MOV 8 $-112 #5
+R_MOV 8 %v2 $-120
+R_LDX 8 %y0 &da
+R_LDX 8 %y1 &db
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &da+8
+R_LDX 8 %y1 &db+8
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &da+16
+R_LDX 8 %y1 &db+16
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &da+24
+R_LDX 8 %y1 &db+24
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &da+32
+R_LDX 8 %y1 &db+32
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_12:
+R_GTOX 8 %x1 #0
+R_MOV 8 $-136 #0
+R_MOV 8 $-128 #5
+R_MOV 8 %v1 $-136
+R_LDX 8 %y0 &db
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+8
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+16
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+24
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+32
+R_FBINX ADD 8 %x1 %x1 %y0
+@for_end_14:
+R_FCMP EQ 8 %t0 %x1 #4630210590332157952
+R_LDX 8 %y0 &db
+R_FCMP EQ 8 %t1 %y0 #4614219293217783808
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 8 %y0 &db+24
+R_FCMP EQ 8 %t1 %y0 #4621326536379727872
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-600
+PUSH 8 string_id5
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-601 %t0
+PUSH 1 $-601
+CMP
+JMP @if_branch_60
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-600
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_61
+@if_branch_60:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-600
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_61:
+R_MOV 8 $-152 #0
+R_MOV 8 $-144 #5
+R_MOV 8 %v1 $-152
+R_ST 8 &db #0
+R_ST 8 &db+8 #0
+R_ST 8 &db+16 #0
+R_ST 8 &db+24 #0
+R_ST 8 &db+32 #0
+@for_end_16:
+R_MOV 8 $-168 #0
+R_MOV 8 $-160 #5
+R_MOV 8 %v2 $-168
+R_MOV 8 $-184 #0
+R_MOV 8 $-176 #5
+R_MOV 8 %v1 $-184
+R_LDX 8 %y0 &db
+R_LDX 8 %y1 &da
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &db+8
+R_LDX 8 %y1 &da
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &db+16
+R_LDX 8 %y1 &da
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &db+24
+R_LDX 8 %y1 &da
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &db+32
+R_LDX 8 %y1 &da
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_20:
+R_MOV 8 $-248 #0
+R_MOV 8 $-240 #5
+R_MOV 8 %v1 $-248
+R_LDX 8 %y0 &db
+R_LDX 8 %y1 &da+8
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &db+8
+R_LDX 8 %y1 &da+8
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &db+16
+R_LDX 8 %y1 &da+8
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &db+24
+R_LDX 8 %y1 &da+8
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &db+32
+R_LDX 8 %y1 &da+8
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_102:
+R_MOV 8 $-232 #0
+R_MOV 8 $-224 #5
+R_MOV 8 %v1 $-232
+R_LDX 8 %y0 &db
+R_LDX 8 %y1 &da+16
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &db+8
+R_LDX 8 %y1 &da+16
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &db+16
+R_LDX 8 %y1 &da+16
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &db+24
+R_LDX 8 %y1 &da+16
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &db+32
+R_LDX 8 %y1 &da+16
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_104:
+R_MOV 8 $-216 #0
+R_MOV 8 $-208 #5
+R_MOV 8 %v1 $-216
+R_LDX 8 %y0 &db
+R_LDX 8 %y1 &da+24
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &db+8
+R_LDX 8 %y1 &da+24
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &db+16
+R_LDX 8 %y1 &da+24
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &db+24
+R_LDX 8 %y1 &da+24
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &db+32
+R_LDX 8 %y1 &da+24
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_106:
+R_MOV 8 $-200 #0
+R_MOV 8 $-192 #5
+R_MOV 8 %v1 $-200
+R_LDX 8 %y0 &db
+R_LDX 8 %y1 &da+32
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db %y0
+R_LDX 8 %y0 &db+8
+R_LDX 8 %y1 &da+32
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+8 %y0
+R_LDX 8 %y0 &db+16
+R_LDX 8 %y1 &da+32
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+16 %y0
+R_LDX 8 %y0 &db+24
+R_LDX 8 %y1 &da+32
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+24 %y0
+R_LDX 8 %y0 &db+32
+R_LDX 8 %y1 &da+32
+R_FBINX ADD 8 %y0 %y0 %y1
+R_STX 8 &db+32 %y0
+@for_end_108:
+@for_end_18:
+R_GTOX 8 %x1 #0
+R_MOV 8 $-264 #0
+R_MOV 8 $-256 #5
+R_MOV 8 %t0 $-264
+R_MOV 8 $-272 %t0
+R_LDX 8 %y0 &db
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+8
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+16
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+24
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &db+32
+R_FBINX ADD 8 %x1 %x1 %y0
+@for_end_22:
+R_FCMP EQ 8 %t0 %x1 #4635857682052415488
+R_LDX 8 %y0 &db+16
+R_FCMP EQ 8 %t1 %y0 #4625619029774565376
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-616
+PUSH 8 string_id6
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-617 %t0
+PUSH 1 $-617
+CMP
+JMP @if_branch_64
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-616
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_65
+@if_branch_64:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-616
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_65:
+R_MOV 8 $-288 #0
+R_MOV 8 $-280 #5
+R_MOV 8 %v2 $-288
+R_LDX 4 %y0 &fa
+R_FBINX MUL 4 %y0 %y0 #1073741824
+R_FBINX ADD 4 %y0 %y0 #1048576000
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fa+4
+R_FBINX MUL 4 %y0 %y0 #1073741824
+R_FBINX ADD 4 %y0 %y0 #1048576000
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fa+8
+R_FBINX MUL 4 %y0 %y0 #1073741824
+R_FBINX ADD 4 %y0 %y0 #1048576000
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fa+12
+R_FBINX MUL 4 %y0 %y0 #1073741824
+R_FBINX ADD 4 %y0 %y0 #1048576000
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fa+16
+R_FBINX MUL 4 %y0 %y0 #1073741824
+R_FBINX ADD 4 %y0 %y0 #1048576000
+R_STX 4 &fb+16 %y0
+@for_end_24:
+R_MOV 8 $-304 #0
+R_MOV 8 $-296 #5
+R_MOV 8 %v1 $-304
+R_LDX 4 %y0 &fb
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+4
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+8
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+12
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+16
+R_FBINX ADD 4 %x0 %x0 %y0
+@for_end_26:
+R_FCMP EQ 4 %t0 %x0 #1108410368
+R_LDX 4 %y0 &fb
+R_FCMP EQ 4 %t1 %y0 #1078984704
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fb+16
+R_FCMP EQ 4 %t1 %y0 #1093926912
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-632
+PUSH 8 string_id7
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-633 %t0
+PUSH 1 $-633
+CMP
+JMP @if_branch_68
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-632
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_69
+@if_branch_68:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-632
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_69:
+R_MOV 8 $-320 #0
+R_MOV 8 $-312 #5
+R_MOV 8 %v2 $-320
+R_LDX 4 %y0 &fb
+R_LDX 4 %y1 &fb
+R_FBINX MUL 4 %y1 %y1 #1056964608
+R_FBINX SUB 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fb+4
+R_LDX 4 %y1 &fb+4
+R_FBINX MUL 4 %y1 %y1 #1056964608
+R_FBINX SUB 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fb+8
+R_LDX 4 %y1 &fb+8
+R_FBINX MUL 4 %y1 %y1 #1056964608
+R_FBINX SUB 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fb+12
+R_LDX 4 %y1 &fb+12
+R_FBINX MUL 4 %y1 %y1 #1056964608
+R_FBINX SUB 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fb+16
+R_LDX 4 %y1 &fb+16
+R_FBINX MUL 4 %y1 %y1 #1056964608
+R_FBINX SUB 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_28:
+R_GTOX 4 %x0 #0
+R_MOV 8 $-336 #0
+R_MOV 8 $-328 #5
+R_MOV 8 %v1 $-336
+R_LDX 4 %y0 &fb
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+4
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+8
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+12
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+16
+R_FBINX ADD 4 %x0 %x0 %y0
+@for_end_30:
+R_FCMP EQ 4 %t0 %x0 #1100021760
+R_LDX 4 %y0 &fb
+R_FCMP EQ 4 %t1 %y0 #1070596096
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fb+4
+R_FCMP EQ 4 %t1 %y0 #1076363264
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fb+16
+R_FCMP EQ 4 %t1 %y0 #1085538304
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-648
+PUSH 8 string_id8
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-649 %t0
+PUSH 1 $-649
+CMP
+JMP @if_branch_72
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-648
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_73
+@if_branch_72:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-648
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_73:
+R_MOV 8 $-352 #0
+R_MOV 8 $-344 #5
+R_MOV 8 %v2 $-352
+R_LDX 4 %y0 &fa
+R_LDX 4 %y1 &fb
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fa+4
+R_LDX 4 %y1 &fb+4
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fa+8
+R_LDX 4 %y1 &fb+8
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fa+12
+R_LDX 4 %y1 &fb+12
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fa+16
+R_LDX 4 %y1 &fb+16
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_32:
+R_GTOX 4 %x0 #0
+R_MOV 8 $-368 #0
+R_MOV 8 $-360 #5
+R_MOV 8 %v1 $-368
+R_LDX 4 %y0 &fb
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+4
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+8
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+12
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+16
+R_FBINX ADD 4 %x0 %x0 %y0
+@for_end_34:
+R_FCMP EQ 4 %t0 %x0 #1108246528
+R_LDX 4 %y0 &fb
+R_FCMP EQ 4 %t1 %y0 #1078460416
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fb+12
+R_FCMP EQ 4 %t1 %y0 #1091698688
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-664
+PUSH 8 string_id9
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-665 %t0
+PUSH 1 $-665
+CMP
+JMP @if_branch_76
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-664
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_77
+@if_branch_76:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-664
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_77:
+R_MOV 8 $-384 #0
+R_MOV 8 $-376 #5
+R_MOV 8 %v1 $-384
+R_ST 4 &fb #0
+R_ST 4 &fb+4 #0
+R_ST 4 &fb+8 #0
+R_ST 4 &fb+12 #0
+R_ST 4 &fb+16 #0
+@for_end_36:
+R_MOV 8 $-400 #0
+R_MOV 8 $-392 #5
+R_MOV 8 %v2 $-400
+R_MOV 8 $-416 #0
+R_MOV 8 $-408 #5
+R_MOV 8 %v1 $-416
+R_LDX 4 %y0 &fb
+R_LDX 4 %y1 &fa
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fb+4
+R_LDX 4 %y1 &fa
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fb+8
+R_LDX 4 %y1 &fa
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fb+12
+R_LDX 4 %y1 &fa
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fb+16
+R_LDX 4 %y1 &fa
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_40:
+R_MOV 8 $-480 #0
+R_MOV 8 $-472 #5
+R_MOV 8 %v1 $-480
+R_LDX 4 %y0 &fb
+R_LDX 4 %y1 &fa+4
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fb+4
+R_LDX 4 %y1 &fa+4
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fb+8
+R_LDX 4 %y1 &fa+4
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fb+12
+R_LDX 4 %y1 &fa+4
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fb+16
+R_LDX 4 %y1 &fa+4
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_94:
+R_MOV 8 $-464 #0
+R_MOV 8 $-456 #5
+R_MOV 8 %v1 $-464
+R_LDX 4 %y0 &fb
+R_LDX 4 %y1 &fa+8
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fb+4
+R_LDX 4 %y1 &fa+8
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fb+8
+R_LDX 4 %y1 &fa+8
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fb+12
+R_LDX 4 %y1 &fa+8
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fb+16
+R_LDX 4 %y1 &fa+8
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_96:
+R_MOV 8 $-448 #0
+R_MOV 8 $-440 #5
+R_MOV 8 %v1 $-448
+R_LDX 4 %y0 &fb
+R_LDX 4 %y1 &fa+12
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fb+4
+R_LDX 4 %y1 &fa+12
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fb+8
+R_LDX 4 %y1 &fa+12
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fb+12
+R_LDX 4 %y1 &fa+12
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fb+16
+R_LDX 4 %y1 &fa+12
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_98:
+R_MOV 8 $-432 #0
+R_MOV 8 $-424 #5
+R_MOV 8 %v1 $-432
+R_LDX 4 %y0 &fb
+R_LDX 4 %y1 &fa+16
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb %y0
+R_LDX 4 %y0 &fb+4
+R_LDX 4 %y1 &fa+16
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+4 %y0
+R_LDX 4 %y0 &fb+8
+R_LDX 4 %y1 &fa+16
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+8 %y0
+R_LDX 4 %y0 &fb+12
+R_LDX 4 %y1 &fa+16
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+12 %y0
+R_LDX 4 %y0 &fb+16
+R_LDX 4 %y1 &fa+16
+R_FBINX ADD 4 %y0 %y0 %y1
+R_STX 4 &fb+16 %y0
+@for_end_100:
+@for_end_38:
+R_GTOX 4 %x0 #0
+R_MOV 8 $-496 #0
+R_MOV 8 $-488 #5
+R_MOV 8 %t0 $-496
+R_MOV 8 $-272 %t0
+R_LDX 4 %y0 &fb
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+4
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+8
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+12
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fb+16
+R_FBINX ADD 4 %x0 %x0 %y0
+@for_end_42:
+R_FCMP EQ 4 %t0 %x0 #1118765056
+R_LDX 4 %y0 &fb+8
+R_FCMP EQ 4 %t1 %y0 #1099694080
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-680
+PUSH 8 string_id10
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-681 %t0
+PUSH 1 $-681
+CMP
+JMP @if_branch_80
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-680
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_81
+@if_branch_80:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-680
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_81:
+R_MOV 8 $-512 #0
+R_MOV 8 $-504 #3
+R_MOV 8 %v2 $-512
+R_LDX 4 %y0 &fc
+R_LDX 4 %y1 &fc
+R_FBINX MUL 4 %y0 %y0 %y1
+R_STX 4 &fc %y0
+R_LDX 4 %y0 &fc+4
+R_LDX 4 %y1 &fc+4
+R_FBINX MUL 4 %y0 %y0 %y1
+R_STX 4 &fc+4 %y0
+R_LDX 4 %y0 &fc+8
+R_LDX 4 %y1 &fc+8
+R_FBINX MUL 4 %y0 %y0 %y1
+R_STX 4 &fc+8 %y0
+@for_end_44:
+R_GTOX 4 %x0 #0
+R_MOV 8 $-528 #0
+R_MOV 8 $-520 #3
+R_MOV 8 %v1 $-528
+R_LDX 4 %y0 &fc
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fc+4
+R_FBINX ADD 4 %x0 %x0 %y0
+R_LDX 4 %y0 &fc+8
+R_FBINX ADD 4 %x0 %x0 %y0
+@for_end_46:
+R_FCMP EQ 4 %t0 %x0 #1101529088
+R_LDX 4 %y0 &fc
+R_FCMP EQ 4 %t1 %y0 #1065353216
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fc+4
+R_FCMP EQ 4 %t1 %y0 #1082130432
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fc+8
+R_FCMP EQ 4 %t1 %y0 #1098907648
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-696
+PUSH 8 string_id11
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-697 %t0
+PUSH 1 $-697
+CMP
+JMP @if_branch_84
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-696
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_85
+@if_branch_84:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-696
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_85:
+R_MOV 8 $-544 #0
+R_MOV 8 $-536 #3
+R_MOV 8 %v2 $-544
+R_LDX 8 %y0 &dc
+R_LDX 8 %y1 &dc
+R_FBINX MUL 8 %y0 %y0 %y1
+R_STX 8 &dc %y0
+R_LDX 8 %y0 &dc+8
+R_LDX 8 %y1 &dc+8
+R_FBINX MUL 8 %y0 %y0 %y1
+R_STX 8 &dc+8 %y0
+R_LDX 8 %y0 &dc+16
+R_LDX 8 %y1 &dc+16
+R_FBINX MUL 8 %y0 %y0 %y1
+R_STX 8 &dc+16 %y0
+@for_end_48:
+R_GTOX 8 %x1 #0
+R_MOV 8 $-560 #0
+R_MOV 8 $-552 #3
+R_MOV 8 %v1 $-560
+R_LDX 8 %y0 &dc
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &dc+8
+R_FBINX ADD 8 %x1 %x1 %y0
+R_LDX 8 %y0 &dc+16
+R_FBINX ADD 8 %x1 %x1 %y0
+@for_end_50:
+R_FCMP EQ 8 %t0 %x1 #4626604192193052672
+R_LDX 8 %y0 &dc
+R_FCMP EQ 8 %t1 %y0 #4607182418800017408
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 8 %y0 &dc+8
+R_FCMP EQ 8 %t1 %y0 #4616189618054758400
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 8 %y0 &dc+16
+R_FCMP EQ 8 %t1 %y0 #4625196817309499392
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-712
+PUSH 8 string_id12
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-713 %t0
+PUSH 1 $-713
+CMP
+JMP @if_branch_88
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-712
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_89
+@if_branch_88:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-712
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_89:
+R_LDX 8 %y0 &da
+R_FCMP EQ 8 %t0 %y0 #4609434218613702656
+R_LDX 8 %y0 &da+32
+R_FCMP EQ 8 %t1 %y0 #4617878467915022336
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fa
+R_FCMP EQ 4 %t1 %y0 #1069547520
+R_BIN AND 1 %t0 %t0 %t1
+R_LDX 4 %y0 &fa+16
+R_FCMP EQ 4 %t1 %y0 #1085276160
+R_BIN AND 1 %t0 %t0 %t1
+R_SETV 1 %v0 %t0
+ADDR 8 $-728
+PUSH 8 string_id13
+ASSIGN 8 8 8
+R_MOV 8 %t0 %v0
+R_ST 1 $-729 %t0
+PUSH 1 $-729
+CMP
+JMP @if_branch_92
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-728
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_93
+@if_branch_92:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-728
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_93:
+RET 0
+FUNC_END

@@ -1,0 +1,6 @@
+N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/small_struct_dot_test.caspien:62 - @dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)
+N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/small_struct_dot_test.caspien:55 - @dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)
+N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/small_struct_dot_test.caspien:82 - @dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)
+N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/small_struct_dot_test.caspien:77 - @dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)
+N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/small_struct_dot_test.caspien:104 - @dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)
+N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/small_struct_dot_test.caspien:96 - @dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)

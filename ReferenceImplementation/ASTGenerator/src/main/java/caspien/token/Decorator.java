@@ -81,6 +81,13 @@ public final class Decorator {
      * grant a superset/subset-related proof.
      */
     public List<Boolean> lockInSomeWrapped;
+    /**
+     * Lifetime contract (docs/LifetimeContracts.md): "@lock match(lifetime(a) >= lifetime(b) > lifetime(c))" is stored as a decorator named
+     * "lifetime" with `lifetimeTerms` = [a, b, c] and `lifetimeOps` = [">=", ">"] (operator i sits between term i and term i+1); both stay null
+     * for every other decorator.
+     */
+    public List<String> lifetimeTerms;
+    public List<String> lifetimeOps;
     public Decorator(String name, List<String> args, List<Boolean> argIsString, int line, String file) {
         this.name = name;
         this.args = args;

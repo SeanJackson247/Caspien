@@ -1,0 +1,661 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "f64 expression with six constants"
+STRING string_id4 "f64 constant minus variable"
+STRING string_id5 "f64 zero minus variable"
+STRING string_id6 "f64 constant divided by variable"
+STRING string_id7 "f64 zero times variable"
+STRING string_id8 "f64 twenty different constants"
+STRING string_id9 "f64 reused constants in a loop"
+STRING string_id10 "f64 large, small and negative constants"
+STRING string_id11 "f64 compares with immediate operands"
+STRING string_id12 "f64 constant arguments and returns"
+STRING string_id13 "f64 global from constants"
+STRING string_id14 "f32 expression with six constants"
+STRING string_id15 "f32 constant as left operand, zero"
+STRING string_id16 "f32 twenty different constants"
+STRING string_id17 "f32 reused constants in a loop"
+STRING string_id18 "f32 compares, arguments, returns, global"
+STRING string_id19 "the same constant as f32 and as f64"
+STRING string_id20 "negative f32 and f64 constants as operands"
+GLOBAL g64 8 0.0
+GLOBAL g32 4 0.0
+EXTERN printf imut_void static_imut_string VARARGS
+FUNC_START main
+R_XVAR %x0 $-52 4
+R_XVAR %x1 $-16 8
+R_XVAR %x2 $-56 4
+R_XVAR %x3 $-24 8
+ALLOC 368
+R_ST 1 $-1 #0
+R_ST 1 $-1 #1
+ADDR 8 $-80
+PUSH 8 string_id3
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-81 %t0
+PUSH 1 $-81
+CMP
+JMP @if_branch_8
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-80
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_9
+@if_branch_8:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-80
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_9:
+R_ST 1 $-1 #1
+ADDR 8 $-96
+PUSH 8 string_id4
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-97 %t0
+PUSH 1 $-97
+CMP
+JMP @if_branch_12
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-96
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_13
+@if_branch_12:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-96
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_13:
+R_ST 1 $-1 #1
+ADDR 8 $-112
+PUSH 8 string_id5
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-113 %t0
+PUSH 1 $-113
+CMP
+JMP @if_branch_16
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-112
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_17
+@if_branch_16:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-112
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_17:
+R_ST 1 $-1 #1
+ADDR 8 $-128
+PUSH 8 string_id6
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-129 %t0
+PUSH 1 $-129
+CMP
+JMP @if_branch_20
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-128
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_21
+@if_branch_20:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-128
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_21:
+R_ST 1 $-1 #1
+ADDR 8 $-144
+PUSH 8 string_id7
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-145 %t0
+PUSH 1 $-145
+CMP
+JMP @if_branch_24
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-144
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_25
+@if_branch_24:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-144
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_25:
+R_GTOX 8 %x1 #0
+R_FBINX ADD 8 %x1 %x1 #4607182418800017408
+R_FBINX ADD 8 %x1 %x1 #4611686018427387904
+R_FBINX ADD 8 %x1 %x1 #4613937818241073152
+R_FBINX ADD 8 %x1 %x1 #4616189618054758400
+R_FBINX ADD 8 %x1 %x1 #4617315517961601024
+R_FBINX ADD 8 %x1 %x1 #4618441417868443648
+R_FBINX ADD 8 %x1 %x1 #4619567317775286272
+R_FBINX ADD 8 %x1 %x1 #4620693217682128896
+R_FBINX ADD 8 %x1 %x1 #4621256167635550208
+R_FBINX ADD 8 %x1 %x1 #4621819117588971520
+R_FBINX ADD 8 %x1 %x1 #4622382067542392832
+R_FBINX ADD 8 %x1 %x1 #4622945017495814144
+R_FBINX ADD 8 %x1 %x1 #4623507967449235456
+R_FBINX ADD 8 %x1 %x1 #4624070917402656768
+R_FBINX ADD 8 %x1 %x1 #4624633867356078080
+R_FBINX ADD 8 %x1 %x1 #4625196817309499392
+R_FBINX ADD 8 %x1 %x1 #4625478292286210048
+R_FBINX ADD 8 %x1 %x1 #4625759767262920704
+R_FBINX ADD 8 %x1 %x1 #4626041242239631360
+R_FBINX ADD 8 %x1 %x1 #4626322717216342016
+R_FCMP EQ 8 %t0 %x1 #4641592734702895104
+R_ST 1 $-1 %t0
+ADDR 8 $-160
+PUSH 8 string_id8
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-161 %t0
+PUSH 1 $-161
+CMP
+JMP @if_branch_28
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-160
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_29
+@if_branch_28:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-160
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_29:
+R_GTOX 8 %x3 #4607182418800017408
+R_MOV 8 $-40 #0
+R_MOV 8 $-32 #6
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+R_FBINX MUL 8 %x3 %x3 #4609434218613702656
+R_FBINX ADD 8 %x3 %x3 #4602678819172646912
+R_FBINX MUL 8 %x3 %x3 #4609434218613702656
+R_FBINX ADD 8 %x3 %x3 #4602678819172646912
+R_FBINX MUL 8 %x3 %x3 #4609434218613702656
+R_FBINX ADD 8 %x3 %x3 #4602678819172646912
+R_FBINX MUL 8 %x3 %x3 #4609434218613702656
+R_FBINX ADD 8 %x3 %x3 #4602678819172646912
+R_FBINX MUL 8 %x3 %x3 #4609434218613702656
+R_FBINX ADD 8 %x3 %x3 #4602678819172646912
+R_FBINX MUL 8 %x3 %x3 #4609434218613702656
+R_FBINX ADD 8 %x3 %x3 #4602678819172646912
+@for_end_4:
+R_FCMP EQ 8 %t0 %x3 #4626824094518607872
+R_ST 1 $-1 %t0
+ADDR 8 $-176
+PUSH 8 string_id9
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-177 %t0
+PUSH 1 $-177
+CMP
+JMP @if_branch_32
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-176
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_33
+@if_branch_32:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-176
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_33:
+R_ST 1 $-1 #1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 8 $-192
+PUSH 8 string_id10
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-193 %t0
+PUSH 1 $-193
+CMP
+JMP @if_branch_36
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-192
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_37
+@if_branch_36:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-192
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_37:
+R_ST 1 $-1 #1
+ADDR 8 $-208
+PUSH 8 string_id11
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-209 %t0
+PUSH 1 $-209
+CMP
+JMP @if_branch_40
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-208
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_41
+@if_branch_40:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-208
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_41:
+R_ST 1 $-1 #1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 8 $-224
+PUSH 8 string_id12
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-225 %t0
+PUSH 1 $-225
+CMP
+JMP @if_branch_52
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-224
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_53
+@if_branch_52:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-224
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_53:
+R_MOV 8 %t0 #4609434218613702656
+R_ST 8 &g64 %t0
+R_LDX 8 %y0 &g64
+R_FBINX MUL 8 %y0 %y0 #4613937818241073152
+R_FBINX ADD 8 %y0 %y0 #4602678819172646912
+R_STX 8 &g64 %y0
+R_LDX 8 %y0 &g64
+R_FCMP EQ 8 %t0 %y0 #4617315517961601024
+R_ST 1 $-1 %t0
+ADDR 8 $-240
+PUSH 8 string_id13
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-241 %t0
+PUSH 1 $-241
+CMP
+JMP @if_branch_56
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-240
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_57
+@if_branch_56:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-240
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_57:
+R_ST 1 $-1 #1
+ADDR 8 $-256
+PUSH 8 string_id14
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-257 %t0
+PUSH 1 $-257
+CMP
+JMP @if_branch_60
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-256
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_61
+@if_branch_60:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-256
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_61:
+R_ST 1 $-1 #1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 8 $-272
+PUSH 8 string_id15
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-273 %t0
+PUSH 1 $-273
+CMP
+JMP @if_branch_64
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-272
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_65
+@if_branch_64:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-272
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_65:
+R_GTOX 4 %x0 #0
+R_FBINX ADD 4 %x0 %x0 #1065353216
+R_FBINX ADD 4 %x0 %x0 #1073741824
+R_FBINX ADD 4 %x0 %x0 #1077936128
+R_FBINX ADD 4 %x0 %x0 #1082130432
+R_FBINX ADD 4 %x0 %x0 #1084227584
+R_FBINX ADD 4 %x0 %x0 #1086324736
+R_FBINX ADD 4 %x0 %x0 #1088421888
+R_FBINX ADD 4 %x0 %x0 #1090519040
+R_FBINX ADD 4 %x0 %x0 #1091567616
+R_FBINX ADD 4 %x0 %x0 #1092616192
+R_FBINX ADD 4 %x0 %x0 #1093664768
+R_FBINX ADD 4 %x0 %x0 #1094713344
+R_FBINX ADD 4 %x0 %x0 #1095761920
+R_FBINX ADD 4 %x0 %x0 #1096810496
+R_FBINX ADD 4 %x0 %x0 #1097859072
+R_FBINX ADD 4 %x0 %x0 #1098907648
+R_FBINX ADD 4 %x0 %x0 #1099431936
+R_FBINX ADD 4 %x0 %x0 #1099956224
+R_FBINX ADD 4 %x0 %x0 #1100480512
+R_FBINX ADD 4 %x0 %x0 #1101004800
+R_FCMP EQ 4 %t0 %x0 #1129447424
+R_ST 1 $-1 %t0
+ADDR 8 $-288
+PUSH 8 string_id16
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-289 %t0
+PUSH 1 $-289
+CMP
+JMP @if_branch_68
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-288
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_69
+@if_branch_68:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-288
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_69:
+R_GTOX 4 %x2 #1065353216
+R_MOV 8 $-72 #0
+R_MOV 8 $-64 #6
+R_MOV 8 %t0 $-72
+R_MOV 8 $-48 %t0
+R_FBINX MUL 4 %x2 %x2 #1069547520
+R_FBINX ADD 4 %x2 %x2 #1056964608
+R_FBINX MUL 4 %x2 %x2 #1069547520
+R_FBINX ADD 4 %x2 %x2 #1056964608
+R_FBINX MUL 4 %x2 %x2 #1069547520
+R_FBINX ADD 4 %x2 %x2 #1056964608
+R_FBINX MUL 4 %x2 %x2 #1069547520
+R_FBINX ADD 4 %x2 %x2 #1056964608
+R_FBINX MUL 4 %x2 %x2 #1069547520
+R_FBINX ADD 4 %x2 %x2 #1056964608
+R_FBINX MUL 4 %x2 %x2 #1069547520
+R_FBINX ADD 4 %x2 %x2 #1056964608
+@for_end_6:
+R_FCMP EQ 4 %t0 %x2 #1101938688
+R_ST 1 $-1 %t0
+ADDR 8 $-304
+PUSH 8 string_id17
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-305 %t0
+PUSH 1 $-305
+CMP
+JMP @if_branch_72
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-304
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_73
+@if_branch_72:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-304
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_73:
+R_ST 1 $-1 #1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+R_ST 4 &g32 #1069547520
+R_LDX 4 %y0 &g32
+R_FBINX MUL 4 %y0 %y0 #1077936128
+R_FBINX ADD 4 %y0 %y0 #1056964608
+R_STX 4 &g32 %y0
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 4 g32
+PUSH 4 5.0
+EQ_FLOAT 4
+AND 1
+ASSIGN 1 1 1
+ADDR 8 $-320
+PUSH 8 string_id18
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-321 %t0
+PUSH 1 $-321
+CMP
+JMP @if_branch_80
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-320
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_81
+@if_branch_80:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-320
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_81:
+R_ST 1 $-1 #1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 8 $-336
+PUSH 8 string_id19
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-337 %t0
+PUSH 1 $-337
+CMP
+JMP @if_branch_84
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-336
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_85
+@if_branch_84:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-336
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_85:
+R_ST 1 $-1 #1
+ADDR 1 $-1
+PUSH 1 $-1
+PUSH 1 1
+AND 1
+PUSH 1 1
+AND 1
+ASSIGN 1 1 1
+ADDR 8 $-352
+PUSH 8 string_id20
+ASSIGN 8 8 8
+R_LD 1 %t0 $-1
+R_ST 1 $-353 %t0
+PUSH 1 $-353
+CMP
+JMP @if_branch_88
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-352
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_89
+@if_branch_88:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-352
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_89:
+RET 0
+FUNC_END

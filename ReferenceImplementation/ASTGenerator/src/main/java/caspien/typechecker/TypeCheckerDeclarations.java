@@ -276,7 +276,8 @@ public final class TypeCheckerDeclarations {
         hub.signatures.checkNoRecursion();
         hub.signatures.validateNoThrowReachableFromGhostTableFunctions();
         hub.signatures.validateNoAutoReturns();
-        hub.signatures.validateNoRefSomeStructMembers();
+        // lifetime contracts v1: a `ref some` struct member is allowed (scoped types)
+        hub.lifetimes.validateNoScopedMemberElements();
         hub.signatures.validateNoAutoStructMembers();
         hub.signatures.validateNoRecursiveStructs();
         hub.signatures.validateNoPointersInLockStructs();
@@ -694,6 +695,7 @@ public final class TypeCheckerDeclarations {
         }
         letTok.chk.resolvedType = rhsType.canonical();
 
+        hub.lifetimes.requireNotStaticScoped(rhsType, letTok, "global '" + name + "'");
         hub.model.globals.put(name, rhsType);
         hub.model.globalDeclOrder.put(name, declOrder);
         hub.model.globalOrder.add(name);

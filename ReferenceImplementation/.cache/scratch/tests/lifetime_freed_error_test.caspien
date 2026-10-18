@@ -1,0 +1,12 @@
+// The owner of the borrowed object is replaced (the old object is freed) while `b` still holds it, then `b.a` is read. Must not compile.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new A{v= 1}
+	let b = mut B{a= ref a}
+	a = mut ?new A{v= 2}
+	unsafe extern{ printf("%llu\n", b.a.v) }
+}

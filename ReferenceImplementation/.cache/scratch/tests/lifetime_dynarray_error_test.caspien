@@ -1,0 +1,8 @@
+// A dynarray of a scoped type is not supported (a resize moves the elements).
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+struct Bag{@pub{ items: owns some mut dynarray(mut B) }}
+func main() void{
+}

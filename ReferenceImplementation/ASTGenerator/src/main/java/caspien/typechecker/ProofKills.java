@@ -180,6 +180,31 @@ public final class ProofKills {
         }
     }
 
+    /** A read of a `ref some` struct member (path key "b.a"): covered by the proof made when it was stored. */
+    public static void memberRead(Token at, String path, List<MatchPattern> active) {
+        if (suppressReads > 0) {
+            return;
+        }
+        List<MatchPattern> all = implicitBySlot.get(funcKey() + "|" + path);
+        if (all == null) {
+            return;
+        }
+        List<MatchPattern> cands = new ArrayList<>();
+        for (MatchPattern p : all) {
+            if (!p.invalidated) {
+                cands.add(p);
+            }
+        }
+        for (MatchPattern p : active) {
+            if (!p.invalidated && p.kind.equals("alive") && path.equals(p.slotKey)) {
+                cands.add(p);
+            }
+        }
+        if (!cands.isEmpty()) {
+            use(at, cands, path);
+        }
+    }
+
     /** True when something that may destroy was recorded after this alive proof was made (only the post-check pass knows whether it really can). */
     public static boolean hasEvents(MatchPattern p) {
         List<ProofKillsEv> l = events.get(p);

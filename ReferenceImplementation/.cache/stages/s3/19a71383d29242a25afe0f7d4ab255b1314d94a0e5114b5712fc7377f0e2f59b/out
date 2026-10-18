@@ -1,0 +1,634 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "message from thrower"
+STRING string_id4 "second message"
+STRING string_id5 "translated"
+STRING string_id6 "own frame"
+STRING string_id7 "one frame up"
+STRING string_id9 "two frames up"
+STRING string_id11 "three frames up"
+STRING string_id12 "three frames: not thrown"
+STRING string_id13 "a different throw site"
+STRING string_id14 "different site: not thrown"
+STRING string_id15 "message replaced by a catch"
+STRING string_id17 "thrown and caught one frame apart"
+STRING string_id18 "same frame: not thrown"
+STRING string_id19 "no throw: catch not entered"
+STRING string_id20 "no throw: value passes through"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN strlen mut_u64 static_imut_string
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN strcmp mut_s32 static_imut_string static_imut_string
+FUNC_START middle
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__middle_6
+@catch_5:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__middle_6:
+R_MOV 8 %v0 $-24
+R_BRC EQ 8 %v0 #0 @end_of_if_64
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+JMP @catch_5
+@end_of_if_64:
+R_BRC EQ 8 %v0 #1 @end_of_if_65
+ADDR 8 $-16
+PUSH 8 string_id4
+ASSIGN 8 8 8
+JMP @catch_5
+@end_of_if_65:
+R_MOV 8 $-56 %v0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START selfThrower
+ALLOC 16
+THROW string_id6
+ADDR 8 $-16
+PUSH 8 string_id6
+ASSIGN 8 8 8
+GT_UNWIND MSG
+FUNC_END
+FUNC_START oneFrame
+ALLOC 48
+JMP @end_of_catches__oneFrame_13
+@catch_12:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-24 %t0
+ADDR 8 $-32
+PUSH 8 string_id7
+ASSIGN 8 8 8
+ADDR 1 $-33
+CC_START sysv_x64
+R_ARG 0 8 $-24
+PUSH 8 string_id3
+POP ARG1 8
+CALL strcmp 2
+CC_END sysv_x64
+PUSH_RET_INT 4
+PUSH 4 0
+EQ_INT 4
+ASSIGN 1 1 1
+PUSH 1 $-33
+CMP
+JMP @if_branch_76
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_77
+@if_branch_76:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_77:
+RET 0
+@end_of_catches__oneFrame_13:
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+JMP @catch_12
+@after_try_block_11:
+JMP @end_of_gt_callsites__oneFrame_16
+@gt_callsite__oneFrame_14:
+GT_UNWIND MSG
+@gt_callsite__oneFrame_15:
+GT_UNWIND MSG
+@end_of_gt_callsites__oneFrame_16:
+FUNC_END
+FUNC_START twoFrames
+ALLOC 64
+JMP @end_of_catches__twoFrames_19
+@catch_18:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-24 %t0
+ADDR 8 $-32
+PUSH 8 string_id9
+ASSIGN 8 8 8
+ADDR 1 $-33
+CC_START sysv_x64
+R_ARG 0 8 $-24
+PUSH 8 string_id3
+POP ARG1 8
+CALL strcmp 2
+CC_END sysv_x64
+PUSH_RET_INT 4
+PUSH 4 0
+EQ_INT 4
+ASSIGN 1 1 1
+PUSH 1 $-33
+CMP
+JMP @if_branch_88
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_89
+@if_branch_88:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_89:
+RET 0
+@end_of_catches__twoFrames_19:
+JMP @end_of_catches__middle_93
+@catch_92:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+JMP @catch_18
+@end_of_catches__middle_93:
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+JMP @catch_92
+@after_try_block_17:
+JMP @end_of_gt_callsites__twoFrames_22
+@gt_callsite__twoFrames_20:
+GT_UNWIND MSG
+@gt_callsite__twoFrames_21:
+GT_UNWIND MSG
+@end_of_gt_callsites__twoFrames_22:
+FUNC_END
+FUNC_START threeFrames
+ALLOC 80
+JMP @end_of_catches__threeFrames_25
+@catch_24:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+PUSH 8 string_id11
+ASSIGN 8 8 8
+ADDR 1 $-41
+CC_START sysv_x64
+R_ARG 0 8 $-32
+PUSH 8 string_id3
+POP ARG1 8
+CALL strcmp 2
+CC_END sysv_x64
+PUSH_RET_INT 4
+PUSH 4 0
+EQ_INT 4
+ASSIGN 1 1 1
+PUSH 1 $-41
+CMP
+JMP @if_branch_100
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_101
+@if_branch_100:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_101:
+RET 0
+@end_of_catches__threeFrames_25:
+JMP @end_of_catches__outer_105
+@catch_104:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-16 %t0
+JMP @catch_24
+@end_of_catches__outer_105:
+ADDR 8 $-56
+ADDR 8 $-8
+PUSH_LABEL @catch_104 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #0
+CALL middle
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-24 %t0
+ADDR 8 $-80
+PUSH 8 string_id12
+ASSIGN 8 8 8
+@if_branch_108:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-80
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_109:
+@after_try_block_23:
+JMP @end_of_gt_callsites__threeFrames_28
+@gt_callsite__threeFrames_26:
+GT_UNWIND MSG
+@gt_callsite__threeFrames_27:
+GT_UNWIND MSG
+@end_of_gt_callsites__threeFrames_28:
+FUNC_END
+FUNC_START otherMessage
+ALLOC 80
+JMP @end_of_catches__otherMessage_31
+@catch_30:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+PUSH 8 string_id13
+ASSIGN 8 8 8
+ADDR 1 $-41
+CC_START sysv_x64
+R_ARG 0 8 $-32
+PUSH 8 string_id4
+POP ARG1 8
+CALL strcmp 2
+CC_END sysv_x64
+PUSH_RET_INT 4
+PUSH 4 0
+EQ_INT 4
+ASSIGN 1 1 1
+PUSH 1 $-41
+CMP
+JMP @if_branch_112
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_113
+@if_branch_112:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_113:
+RET 0
+@end_of_catches__otherMessage_31:
+JMP @end_of_catches__outer_117
+@catch_116:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-16 %t0
+JMP @catch_30
+@end_of_catches__outer_117:
+ADDR 8 $-56
+ADDR 8 $-8
+PUSH_LABEL @catch_116 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL middle
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-24 %t0
+ADDR 8 $-80
+PUSH 8 string_id14
+ASSIGN 8 8 8
+@if_branch_120:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-80
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_121:
+@after_try_block_29:
+JMP @end_of_gt_callsites__otherMessage_34
+@gt_callsite__otherMessage_32:
+GT_UNWIND MSG
+@gt_callsite__otherMessage_33:
+GT_UNWIND MSG
+@end_of_gt_callsites__otherMessage_34:
+FUNC_END
+FUNC_START translated
+ALLOC 64
+JMP @end_of_catches__translated_37
+@catch_36:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-24 %t0
+ADDR 8 $-32
+PUSH 8 string_id15
+ASSIGN 8 8 8
+ADDR 1 $-33
+CC_START sysv_x64
+R_ARG 0 8 $-24
+PUSH 8 string_id5
+POP ARG1 8
+CALL strcmp 2
+CC_END sysv_x64
+PUSH_RET_INT 4
+PUSH 4 0
+EQ_INT 4
+ASSIGN 1 1 1
+PUSH 1 $-33
+CMP
+JMP @if_branch_124
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_125
+@if_branch_124:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-32
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_125:
+RET 0
+@end_of_catches__translated_37:
+JMP @end_of_catches__translator_129
+@catch_128:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+ADDR 8 $-16
+PUSH 8 string_id5
+ASSIGN 8 8 8
+JMP @catch_36
+@end_of_catches__translator_129:
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+JMP @catch_128
+@after_try_block_35:
+JMP @end_of_gt_callsites__translated_40
+@gt_callsite__translated_38:
+GT_UNWIND MSG
+@gt_callsite__translated_39:
+GT_UNWIND MSG
+@end_of_gt_callsites__translated_40:
+FUNC_END
+FUNC_START sameFrame
+ALLOC 64
+JMP @end_of_catches__sameFrame_43
+@catch_42:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+PUSH 8 string_id17
+ASSIGN 8 8 8
+ADDR 1 $-41
+CC_START sysv_x64
+R_ARG 0 8 $-32
+PUSH 8 string_id6
+POP ARG1 8
+CALL strcmp 2
+CC_END sysv_x64
+PUSH_RET_INT 4
+PUSH 4 0
+EQ_INT 4
+ASSIGN 1 1 1
+PUSH 1 $-41
+CMP
+JMP @if_branch_136
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_137
+@if_branch_136:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_137:
+RET 0
+@end_of_catches__sameFrame_43:
+ADDR 8 $-24
+ADDR 8 $-8
+PUSH_LABEL @catch_42 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL selfThrower
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-56
+PUSH 8 string_id18
+ASSIGN 8 8 8
+@if_branch_140:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-56
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_141:
+@after_try_block_41:
+JMP @end_of_gt_callsites__sameFrame_46
+@gt_callsite__sameFrame_44:
+GT_UNWIND MSG
+@gt_callsite__sameFrame_45:
+GT_UNWIND MSG
+@end_of_gt_callsites__sameFrame_46:
+FUNC_END
+FUNC_START noThrow
+ALLOC 80
+JMP @end_of_catches__noThrow_49
+@catch_48:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+PUSH 8 string_id19
+ASSIGN 8 8 8
+@if_branch_144:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-40
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_145:
+RET 0
+@end_of_catches__noThrow_49:
+JMP @end_of_catches__outer_149
+@catch_148:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+JMP @catch_48
+@end_of_catches__outer_149:
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @catch_148 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #5
+CALL middle
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-48
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-24 %t0
+ADDR 8 $-72
+PUSH 8 string_id20
+ASSIGN 8 8 8
+R_BIN EQ 8 %t0 $-24 #5
+R_ST 1 $-73 %t0
+PUSH 1 $-73
+CMP
+JMP @if_branch_152
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+R_ARG 1 8 $-72
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_153
+@if_branch_152:
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-72
+VARARGS_XMM_COUNT 0
+CALL printf 2
+CC_END sysv_x64
+@end_of_if_153:
+@after_try_block_47:
+JMP @end_of_gt_callsites__noThrow_52
+@gt_callsite__noThrow_50:
+GT_UNWIND MSG
+@gt_callsite__noThrow_51:
+GT_UNWIND MSG
+@end_of_gt_callsites__noThrow_52:
+FUNC_END
+FUNC_START main
+ALLOC 16
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_53 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL oneFrame
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_54 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL twoFrames
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_55 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL threeFrames
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_56 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL otherMessage
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_57 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL translated
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_58 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL sameFrame
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_59 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL noThrow
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_60 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL twoFrames
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_61 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+CALL otherMessage
+CC_END sysv_x64
+RET 0
+JMP @end_of_gt_callsites__main_62
+@gt_callsite__main_53:
+EXIT
+@gt_callsite__main_54:
+EXIT
+@gt_callsite__main_55:
+EXIT
+@gt_callsite__main_56:
+EXIT
+@gt_callsite__main_57:
+EXIT
+@gt_callsite__main_58:
+EXIT
+@gt_callsite__main_59:
+EXIT
+@gt_callsite__main_60:
+EXIT
+@gt_callsite__main_61:
+EXIT
+@end_of_gt_callsites__main_62:
+FUNC_END

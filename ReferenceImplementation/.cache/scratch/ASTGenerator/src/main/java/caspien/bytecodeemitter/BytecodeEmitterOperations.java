@@ -1005,10 +1005,10 @@ final class BytecodeEmitterOperations {
         return t;
     }
 
-    /** Null for void ("imut_void"/"mut_void", exact match) so no PUSH_RET is emitted. */
+    /** Null for void ("imut_void"/"mut_void", exact match) or a call whose result is discarded, so no PUSH_RET is emitted. */
     public String voidSafeReturnType(Token op) {
         String t = op.chk.resolvedType;
-        if (t == null || t.equals("imut_void") || t.equals("mut_void")) {
+        if (t == null || t.equals("imut_void") || t.equals("mut_void") || op.chk.resultDiscarded) {
             return null;
         }
         return t;

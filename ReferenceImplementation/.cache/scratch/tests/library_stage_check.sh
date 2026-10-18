@@ -15,9 +15,9 @@ ok(){ echo "PASS $*"; }
 
 # 1. the orchestrator launches no stage as a program
 if grep -q '\.Main"' Compiler.java; then fail "Compiler.java still names a stage Main class"; else ok "Compiler.java launches no stage Main"; fi
-grep -q 'runProgramStage(cache, "s2"' Compiler.java && grep -q 'runProgramStage(cache, "s3"' Compiler.java && grep -q 'runLibraryStage(cache, "s4"' Compiler.java && grep -q 'caspien.frontend.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
+grep -q 'runProgramStage(cache, "s2"' Compiler.java && grep -q 'runProgramStage(cache, "s3"' Compiler.java && grep -q 'runProgramStage(cache, "s4"' Compiler.java && grep -q 'caspien.frontend.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
 grep -q 'hobProgram, hobOut, optOut' Compiler.java && grep -q 'opt.program, optOut, lobOut' Compiler.java && ok "stages 1-3 hand the BytecodeProgram on (not its text)" || fail "a stage 1-3 handover is not the program object"
-grep -q 'lob.text, lobOut.toString(), asmOut' Compiler.java && ok "the LOB goes to Codegen as text" || fail "Codegen does not take the LOB text"
+grep -q 'lob.program, lobOut, asmOut' Compiler.java && ok "the LOB goes to Codegen as the program" || fail "Codegen does not take the LOB program"
 
 # 2. a real build: no child JVM at all (the one `java` is the orchestrator itself)
 cat > t/p.caspien <<'P'

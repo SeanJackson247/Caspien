@@ -1,0 +1,9951 @@
+STRING string_id1 "out of memory: cannot create the ghost table\n"
+STRING string_id2 "out of memory"
+STRING string_id3 "NumberFormatException"
+STRING string_id4 "DynamicArray: sum=%llu popped=%llu len=%llu third=%llu\n"
+STRING string_id5 "HashMap: threes=%llu ones=%llu twos=%llu missing=%llu distinct=%llu\n"
+STRING string_id6 "caspien"
+STRING string_id7 " lang"
+STRING string_id8 "String: len=%llu first=%c l_at=%lld prefix_len=%llu\n"
+STRING string_id9 "insecure_hashOf: same=%llu different=%llu\n"
+GLOBAL ghost_table 96
+GLOBAL ghost_table.___type 8 0
+GLOBAL ghost_table.lockState 8 0
+GLOBAL ghost_table.base 8 null
+GLOBAL ghost_table.len 8 0
+GLOBAL ghost_table.capacity 8 0
+GLOBAL ghost_table.refBase 8 null
+GLOBAL ghost_table.refCap 8 0
+GLOBAL ghost_table.refLen 8 0
+GLOBAL ghost_table.idBase 8 null
+GLOBAL ghost_table.idCap 8 0
+GLOBAL ghost_table.idLen 8 0
+GLOBAL ghost_table.nextId 8 0
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START gtSlotAt
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-40 %t0
+R_BIN MUL 8 %t0 $-32 #8
+R_BIN ADD 8 %t0 $-40 %t0
+R_MOV 8 $-48 %t0
+R_RET $-48
+FUNC_END
+FUNC_START __gtSlotAt
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-8
+R_MOV 8 $-24 %t0
+R_BIN MUL 8 %t0 $-16 #8
+R_BIN ADD 8 %t0 $-24 %t0
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START gtLoad
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtLoad_1 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+ADDR_OF RAW $-40
+PUSH 8 8
+PUSH 8 $-48
+MEMCOPY
+R_RET $-40
+JMP @end_of_gt_callsites__gtLoad_2
+@gt_callsite__gtLoad_1:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtLoad_2:
+FUNC_END
+FUNC_START __gtLoad
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-24 #0
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL __gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+ADDR_OF RAW $-24
+PUSH 8 8
+PUSH 8 $-32
+MEMCOPY
+R_RET $-24
+FUNC_END
+FUNC_START gtStore
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+ADDR 8 $-56
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtStore_3 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-56
+PUSH 8 8
+PUSH 8 $-48
+ADDR_OF RAW $-48
+MEMCOPY
+JMP @end_of_gt_callsites__gtStore_4
+@gt_callsite__gtStore_3:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtStore_4:
+FUNC_END
+FUNC_START __gtStore
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+CALL __gtSlotAt
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+PUSH 8 8
+PUSH 8 $-32
+ADDR_OF RAW $-32
+MEMCOPY
+FUNC_END
+FUNC_START gtAddrOf
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_BIN SUB 8 %t0 $-24 $-32
+R_MOV 8 $-40 %t0
+R_RET $-40
+FUNC_END
+FUNC_START __gtAddrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN SUB 8 %t0 $-8 $-16
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START gtPtrOf
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_BIN ADD 8 %t0 $-32 $-24
+R_MOV 8 $-40 %t0
+R_RET $-40
+FUNC_END
+FUNC_START __gtPtrOf
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BIN ADD 8 %t0 $-16 $-8
+R_MOV 8 $-24 %t0
+R_RET $-24
+FUNC_END
+FUNC_START gtHashAddr
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN SHR 8 %t0 $-24 #4
+R_MOV 8 $-40 %t0
+R_BIN SHR 8 %t0 $-40 #11
+R_BIN BXOR 8 %t0 $-40 %t0
+R_MOV 8 $-40 %t0
+R_BIN BAND 8 %t0 $-40 $-32
+R_RET %t0
+FUNC_END
+FUNC_START __gtHashAddr
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN SHR 8 %t0 $-8 #4
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #11
+R_BIN BXOR 8 %t0 $-24 %t0
+R_MOV 8 $-24 %t0
+R_BIN BAND 8 %t0 $-24 $-16
+R_RET %t0
+FUNC_END
+FUNC_START gtHashId
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-24 #11400714819323198485
+R_MOV 8 $-40 %t0
+R_BIN SHR 8 %t0 $-40 #32
+R_BIN BAND 8 %t0 %t0 $-32
+R_RET %t0
+FUNC_END
+FUNC_START __gtHashId
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_BIN MUL 8 %t0 $-8 #11400714819323198485
+R_MOV 8 $-24 %t0
+R_BIN SHR 8 %t0 $-24 #32
+R_BIN BAND 8 %t0 %t0 $-16
+R_RET %t0
+FUNC_END
+FUNC_START gtHashFor
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-24 #0 @end_of_if_5
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtHashFor_6 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-40
+CALL gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+@end_of_if_5:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtHashFor_7 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-40
+CALL gtHashId
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+JMP @end_of_gt_callsites__gtHashFor_8
+@gt_callsite__gtHashFor_6:
+GT_UNWIND MSG
+@gt_callsite__gtHashFor_7:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtHashFor_8:
+FUNC_END
+FUNC_START __gtHashFor
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_9
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL __gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+@end_of_if_9:
+CC_START sysv_x64
+R_ARG 0 8 $-16
+R_ARG 1 8 $-24
+CALL __gtHashId
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+FUNC_END
+FUNC_START gtClear
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 %v1 $-32
+R_MOV 8 %v0 $-48
+@for_10:
+R_BRC LT 8 %v0 %v1 @for_end_11
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtClear_12 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+R_RMW INC 8 %v0
+JMP @for_10
+@for_end_11:
+JMP @end_of_gt_callsites__gtClear_13
+@gt_callsite__gtClear_12:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtClear_13:
+FUNC_END
+FUNC_START __gtClear
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_MOV 8 %v1 $-16
+R_MOV 8 %v0 $-32
+@for_14:
+R_BRC LT 8 %v0 %v1 @for_end_15
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+R_RMW INC 8 %v0
+JMP @for_14
+@for_end_15:
+FUNC_END
+FUNC_START gtT1Find
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-32 #1
+R_MOV 8 $-48 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Find_16 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-48
+CALL gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v0
+R_BIN SHR 8 %t0 $-40 #1
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-72 %t0
+R_MOV 8 $-88 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-80 %t0
+R_MOV 8 %v1 $-88
+@for_17:
+R_BRC LT 8 %v1 $-80 @for_end_18
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Find_19 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_18
+@end_of_if_20:
+R_BIN SHR 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 $-64 @end_of_if_21
+R_MOV 8 %t0 %v0
+R_MOV 8 $-72 %t0
+JMP @for_end_18
+@end_of_if_21:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_17
+@for_end_18:
+R_RET $-72
+JMP @end_of_gt_callsites__gtT1Find_22
+@gt_callsite__gtT1Find_16:
+GT_UNWIND MSG
+@gt_callsite__gtT1Find_19:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT1Find_22:
+FUNC_END
+FUNC_START __gtT1Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_BIN SHR 8 %t0 $-24 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_23:
+R_BRC LT 8 %v1 $-64 @for_end_24
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_24
+@end_of_if_25:
+R_BIN SHR 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 $-48 @end_of_if_26
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_24
+@end_of_if_26:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_23
+@for_end_24:
+R_RET $-56
+FUNC_END
+FUNC_START gtT1Insert
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-32 #1
+R_MOV 8 $-48 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Insert_27 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-48
+CALL gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_28:
+R_BRC LT 8 %v1 $-64 @for_end_29
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Insert_30 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_31
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Insert_32 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+R_ARG 2 8 $-40
+CALL gtStore
+CC_END sysv_x64
+JMP @for_end_29
+@end_of_if_31:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_28
+@for_end_29:
+JMP @end_of_gt_callsites__gtT1Insert_33
+@gt_callsite__gtT1Insert_27:
+GT_UNWIND MSG
+@gt_callsite__gtT1Insert_30:
+GT_UNWIND MSG
+@gt_callsite__gtT1Insert_32:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT1Insert_33:
+FUNC_END
+FUNC_START __gtT1Insert
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v1 $-56
+@for_34:
+R_BRC LT 8 %v1 $-48 @for_end_35
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_36
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+R_ARG 2 8 $-24
+CALL __gtStore
+CC_END sysv_x64
+JMP @for_end_35
+@end_of_if_36:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+R_RMW INC 8 %v1
+JMP @for_34
+@for_end_35:
+FUNC_END
+FUNC_START gtT1Rehash
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-64 #0
+R_MOV 8 %v2 $-32
+R_MOV 8 %v0 $-64
+@for_37:
+R_BRC LT 8 %v0 %v2 @for_end_38
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Rehash_39 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_40
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1Rehash_41 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-48
+R_ARG 2 8 %v1
+CALL gtT1Insert
+CC_END sysv_x64
+@end_of_if_40:
+R_RMW INC 8 %v0
+JMP @for_37
+@for_end_38:
+JMP @end_of_gt_callsites__gtT1Rehash_42
+@gt_callsite__gtT1Rehash_39:
+GT_UNWIND MSG
+@gt_callsite__gtT1Rehash_41:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT1Rehash_42:
+FUNC_END
+FUNC_START __gtT1Rehash
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 %v2 $-16
+R_MOV 8 %v0 $-48
+@for_43:
+R_BRC LT 8 %v0 %v2 @for_end_44
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_45
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+CALL __gtT1Insert
+CC_END sysv_x64
+@end_of_if_45:
+R_RMW INC 8 %v0
+JMP @for_43
+@for_end_44:
+FUNC_END
+FUNC_START gtT1RemoveAt
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-32 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %v1 $-40
+R_MOV 8 %v0 $-40
+R_MOV 8 $-80 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-80
+R_MOV 8 $-88 %t0
+@for_46:
+R_BRC LT 8 $-88 $-72 @for_end_47
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+ADDR 8 $-96
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1RemoveAt_48 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-96 #0 @for_end_47
+@end_of_if_49:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1RemoveAt_50 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-96
+R_ARG 1 8 $-48
+CALL gtHashAddr
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+R_ST 1 $-105 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_52
+R_BRC LT 8 %v1 %v2 @end_of_if_53
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_53
+R_ST 1 $-105 #1
+@end_of_if_53:
+JMP @end_of_if_51
+@if_branch_52:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_54
+R_ST 1 $-105 #1
+@end_of_if_54:
+@end_of_if_51:
+PUSH 1 $-105
+NOT 1
+CMP
+JMP @end_of_if_55
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1RemoveAt_56 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v1
+R_ARG 2 8 $-96
+CALL gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_55:
+R_RMW INC 8 $-88
+JMP @for_46
+@for_end_47:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT1RemoveAt_57 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v1
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+JMP @end_of_gt_callsites__gtT1RemoveAt_58
+@gt_callsite__gtT1RemoveAt_48:
+GT_UNWIND MSG
+@gt_callsite__gtT1RemoveAt_50:
+GT_UNWIND MSG
+@gt_callsite__gtT1RemoveAt_56:
+GT_UNWIND MSG
+@gt_callsite__gtT1RemoveAt_57:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT1RemoveAt_58:
+FUNC_END
+FUNC_START __gtT1RemoveAt
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-32 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-64 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@for_59:
+R_BRC LT 8 $-72 $-56 @for_end_60
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-32
+ADDR 8 $-80
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-80 #0 @for_end_60
+@end_of_if_61:
+CC_START sysv_x64
+R_ARG 0 8 $-80
+R_ARG 1 8 $-32
+CALL __gtHashAddr
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-89 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_63
+R_BRC LT 8 %v1 %v2 @end_of_if_64
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_64
+R_ST 1 $-89 #1
+@end_of_if_64:
+JMP @end_of_if_62
+@if_branch_63:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_65
+R_ST 1 $-89 #1
+@end_of_if_65:
+@end_of_if_62:
+PUSH 1 $-89
+NOT 1
+CMP
+JMP @end_of_if_66
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 $-80
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_66:
+R_RMW INC 8 $-72
+JMP @for_59
+@for_end_60:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 %v1
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START gtT16Find
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-32 #1
+R_MOV 8 $-56 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Find_67 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 $-40
+R_ARG 2 8 $-56
+CALL gtHashFor
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-72 %t0
+R_MOV 8 $-88 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-80 %t0
+R_MOV 8 %v1 $-88
+@for_68:
+R_BRC LT 8 %v1 $-80 @for_end_69
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Find_70 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_69
+@end_of_if_71:
+R_BRC EQ 8 %v2 $-40 @end_of_if_72
+R_MOV 8 %t0 %v0
+R_MOV 8 $-72 %t0
+JMP @for_end_69
+@end_of_if_72:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-56
+R_RMW INC 8 %v1
+JMP @for_68
+@for_end_69:
+R_RET $-72
+JMP @end_of_gt_callsites__gtT16Find_73
+@gt_callsite__gtT16Find_67:
+GT_UNWIND MSG
+@gt_callsite__gtT16Find_70:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT16Find_73:
+FUNC_END
+FUNC_START __gtT16Find
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-24
+R_ARG 2 8 $-40
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_74:
+R_BRC LT 8 %v1 $-64 @for_end_75
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC NEQ 8 %v2 #0 @for_end_75
+@end_of_if_76:
+R_BRC EQ 8 %v2 $-24 @end_of_if_77
+R_MOV 8 %t0 %v0
+R_MOV 8 $-56 %t0
+JMP @for_end_75
+@end_of_if_77:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+R_RMW INC 8 %v1
+JMP @for_74
+@for_end_75:
+R_RET $-56
+FUNC_END
+FUNC_START gtT16Insert
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-56
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-32 #1
+R_MOV 8 $-64 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Insert_78 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-56
+R_ARG 1 8 $-40
+R_ARG 2 8 $-64
+CALL gtHashFor
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v0
+R_MOV 8 $-88 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-80 %t0
+R_MOV 8 %v1 $-88
+@for_79:
+R_BRC LT 8 %v1 $-80 @for_end_80
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Insert_81 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_82
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Insert_83 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-40
+CALL gtStore
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Insert_84 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 $-48
+CALL gtStore
+CC_END sysv_x64
+JMP @for_end_80
+@end_of_if_82:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-64
+R_RMW INC 8 %v1
+JMP @for_79
+@for_end_80:
+JMP @end_of_gt_callsites__gtT16Insert_85
+@gt_callsite__gtT16Insert_78:
+GT_UNWIND MSG
+@gt_callsite__gtT16Insert_81:
+GT_UNWIND MSG
+@gt_callsite__gtT16Insert_83:
+GT_UNWIND MSG
+@gt_callsite__gtT16Insert_84:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT16Insert_85:
+FUNC_END
+FUNC_START __gtT16Insert
+ALLOC 96
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-48 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-24
+R_ARG 2 8 $-48
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %v1 $-72
+@for_86:
+R_BRC LT 8 %v1 $-64 @for_end_87
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BRC EQ 8 %v2 #0 @end_of_if_88
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-24
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 $-32
+CALL __gtStore
+CC_END sysv_x64
+JMP @for_end_87
+@end_of_if_88:
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-48
+R_RMW INC 8 %v1
+JMP @for_86
+@for_end_87:
+FUNC_END
+FUNC_START gtT16Rehash
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-56
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-64 %t0
+R_MOV 8 %v0 $-72
+@for_89:
+R_BRC LT 8 %v0 $-64 @for_end_90
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Rehash_91 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_92
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Rehash_93 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16Rehash_94 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-48
+R_ARG 2 8 %v1
+R_ARG 3 8 %v2
+R_ARG 4 8 $-56
+CALL gtT16Insert
+CC_END sysv_x64
+@end_of_if_92:
+R_RMW INC 8 %v0
+JMP @for_89
+@for_end_90:
+JMP @end_of_gt_callsites__gtT16Rehash_95
+@gt_callsite__gtT16Rehash_91:
+GT_UNWIND MSG
+@gt_callsite__gtT16Rehash_93:
+GT_UNWIND MSG
+@gt_callsite__gtT16Rehash_94:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT16Rehash_95:
+FUNC_END
+FUNC_START __gtT16Rehash
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+R_MOV 8 %v0 $-56
+@for_96:
+R_BRC LT 8 %v0 $-48 @for_end_97
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BRC NEQ 8 %v1 #0 @end_of_if_98
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v1
+R_ARG 3 8 %v2
+R_ARG 4 8 $-40
+CALL __gtT16Insert
+CC_END sysv_x64
+@end_of_if_98:
+R_RMW INC 8 %v0
+JMP @for_96
+@for_end_97:
+FUNC_END
+FUNC_START gtT16RemoveAt
+ALLOC 128
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-32 #1
+R_MOV 8 $-56 %t0
+R_MOV 8 %v1 $-40
+R_MOV 8 %v0 $-40
+R_MOV 8 $-88 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 $-88
+R_MOV 8 $-96 %t0
+@for_99:
+R_BRC LT 8 $-96 $-80 @for_end_100
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-56
+ADDR 8 $-104
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_101 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-104 #0 @for_end_100
+@end_of_if_102:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_103 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 $-104
+R_ARG 2 8 $-56
+CALL gtHashFor
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+R_ST 1 $-113 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_105
+R_BRC LT 8 %v1 %v2 @end_of_if_106
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_106
+R_ST 1 $-113 #1
+@end_of_if_106:
+JMP @end_of_if_104
+@if_branch_105:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_107
+R_ST 1 $-113 #1
+@end_of_if_107:
+@end_of_if_104:
+PUSH 1 $-113
+NOT 1
+CMP
+JMP @end_of_if_108
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_109 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v2
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_110 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-104
+CALL gtStore
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_111 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 %v2
+CALL gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_108:
+R_RMW INC 8 $-96
+JMP @for_99
+@for_end_100:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_112 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtT16RemoveAt_113 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL gtStore
+CC_END sysv_x64
+JMP @end_of_gt_callsites__gtT16RemoveAt_114
+@gt_callsite__gtT16RemoveAt_101:
+GT_UNWIND MSG
+@gt_callsite__gtT16RemoveAt_103:
+GT_UNWIND MSG
+@gt_callsite__gtT16RemoveAt_109:
+GT_UNWIND MSG
+@gt_callsite__gtT16RemoveAt_110:
+GT_UNWIND MSG
+@gt_callsite__gtT16RemoveAt_111:
+GT_UNWIND MSG
+@gt_callsite__gtT16RemoveAt_112:
+GT_UNWIND MSG
+@gt_callsite__gtT16RemoveAt_113:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtT16RemoveAt_114:
+FUNC_END
+FUNC_START __gtT16RemoveAt
+ALLOC 112
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_BIN SUB 8 %t0 $-16 #1
+R_MOV 8 $-40 %t0
+R_MOV 8 %v1 $-24
+R_MOV 8 %v0 $-24
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_115:
+R_BRC LT 8 $-80 $-64 @for_end_116
+R_BIN ADD 8 %t0 %v0 #1
+R_BIN BAND 8 %v0 %t0 $-40
+ADDR 8 $-88
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-88 #0 @for_end_116
+@end_of_if_117:
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 $-88
+R_ARG 2 8 $-40
+CALL __gtHashFor
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_ST 1 $-97 #0
+R_BRC LT_EQ 8 %v1 %v0 @if_branch_119
+R_BRC LT 8 %v1 %v2 @end_of_if_120
+R_BRC LT_EQ 8 %v2 %v0 @end_of_if_120
+R_ST 1 $-97 #1
+@end_of_if_120:
+JMP @end_of_if_118
+@if_branch_119:
+R_BIN LT 8 %t0 %v1 %v2
+R_BIN LT_EQ 8 %t1 %v2 %v0
+R_BIN OR 1 %t0 %t0 %t1
+R_BRF %t0 @end_of_if_121
+R_ST 1 $-97 #1
+@end_of_if_121:
+@end_of_if_118:
+PUSH 1 $-97
+NOT 1
+CMP
+JMP @end_of_if_122
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v0 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 $-88
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 %v2
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v1 %v0
+@end_of_if_122:
+R_RMW INC 8 $-80
+JMP @for_115
+@for_end_116:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 %v1 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+R_ARG 2 8 #0
+CALL __gtStore
+CC_END sysv_x64
+FUNC_END
+FUNC_START gtNewCap16
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-24 #0 @end_of_if_123
+R_RET #8
+@end_of_if_123:
+R_BIN MUL 8 %t0 $-24 #2
+R_RET %t0
+FUNC_END
+FUNC_START __gtNewCap16
+ALLOC 16
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_124
+R_RET #8
+@end_of_if_124:
+R_BIN MUL 8 %t0 $-8 #2
+R_RET %t0
+FUNC_END
+FUNC_START gtGrown16
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtGrown16_125 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 $-48 #16
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-56 #0 @end_of_if_126
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtGrown16_127 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-56
+R_BIN MUL 8 %t0 $-48 #2
+R_ARG 1 8 %t0
+CALL gtClear
+CC_END sysv_x64
+R_BRC NEQ 8 $-32 #0 @end_of_if_128
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtGrown16_129 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 $-48
+R_ARG 4 8 $-40
+CALL gtT16Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL free 1
+CC_END sysv_x64
+@end_of_if_128:
+@end_of_if_126:
+R_RET $-56
+JMP @end_of_gt_callsites__gtGrown16_130
+@gt_callsite__gtGrown16_125:
+GT_UNWIND MSG
+@gt_callsite__gtGrown16_127:
+GT_UNWIND MSG
+@gt_callsite__gtGrown16_129:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtGrown16_130:
+FUNC_END
+FUNC_START __gtGrown16
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+CC_START sysv_x64
+R_ARG 0 8 $-16
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+ADDR 8 $-40
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 $-32 #16
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-40 #0 @end_of_if_131
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_BIN MUL 8 %t0 $-32 #2
+R_ARG 1 8 %t0
+CALL __gtClear
+CC_END sysv_x64
+R_BRC NEQ 8 $-16 #0 @end_of_if_132
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 $-32
+R_ARG 4 8 $-24
+CALL __gtT16Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_132:
+@end_of_if_131:
+R_RET $-40
+FUNC_END
+FUNC_START gtUnlinkId
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-56
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtUnlinkId_133 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 #0
+CALL gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-64 $-32 @end_of_if_134
+ADDR 8 $-72
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtUnlinkId_135 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_BIN MUL 8 %t0 $-64 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtUnlinkId_136 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-64
+R_ARG 3 8 #0
+CALL gtT16RemoveAt
+CC_END sysv_x64
+ADDR 8 $-80
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtUnlinkId_137 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-48
+R_ARG 2 8 $-72
+R_ARG 3 8 #1
+CALL gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-80 $-48 @end_of_if_138
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__gtUnlinkId_139 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 8 $-48
+R_ARG 2 8 $-80
+R_ARG 3 8 #1
+CALL gtT16RemoveAt
+CC_END sysv_x64
+@end_of_if_138:
+@end_of_if_134:
+JMP @end_of_gt_callsites__gtUnlinkId_140
+@gt_callsite__gtUnlinkId_133:
+GT_UNWIND MSG
+@gt_callsite__gtUnlinkId_135:
+GT_UNWIND MSG
+@gt_callsite__gtUnlinkId_136:
+GT_UNWIND MSG
+@gt_callsite__gtUnlinkId_137:
+GT_UNWIND MSG
+@gt_callsite__gtUnlinkId_139:
+GT_UNWIND MSG
+@end_of_gt_callsites__gtUnlinkId_140:
+FUNC_END
+FUNC_START __gtUnlinkId
+ALLOC 64
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-16
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-24
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-40
+R_ARG 3 8 #0
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 $-16 @end_of_if_141
+ADDR 8 $-56
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 $-16
+R_ARG 2 8 $-48
+R_ARG 3 8 #0
+CALL __gtT16RemoveAt
+CC_END sysv_x64
+ADDR 8 $-64
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-56
+R_ARG 3 8 #1
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-64 $-32 @end_of_if_142
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-64
+R_ARG 3 8 #1
+CALL __gtT16RemoveAt
+CC_END sysv_x64
+@end_of_if_142:
+@end_of_if_141:
+FUNC_END
+FUNC_START gt_ref_id
+ALLOC 80
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_143
+R_RET #0
+@end_of_if_143:
+R_MOV 8 %v0 #0
+@loop_144:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_147
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_148
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-32
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BIN BAND 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 #1 @if_branch_150
+ADDR 8 $-48
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 %v1
+R_ARG 3 8 #0
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-48
+PUSH 8 ghost_table.refCap
+NEQ_INT 8
+CMP
+JMP @end_of_if_151
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+R_BIN MUL 8 %t0 $-48 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v0
+@end_of_if_151:
+JMP @end_of_if_149
+@if_branch_150:
+R_ST 1 $-49 #1
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.refCap
+GT_INT 8
+CMP
+JMP @end_of_if_152
+ADDR 8 $-64
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 #0
+CALL __gtGrown16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-64 #0 @if_branch_154
+R_ST 1 $-49 #0
+JMP @end_of_if_153
+@if_branch_154:
+R_MOV 8 %t1 $-64
+R_ST 8 &ghost_table+40 %t1
+R_LEA %t0 &ghost_table #48 1
+R_PUSH 8 %t0
+CC_START sysv_x64
+PUSH 8 ghost_table.refCap
+POP ARG0 8
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_153:
+@end_of_if_152:
+PUSH 1 $-49
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.idCap
+GT_INT 8
+AND 1
+CMP
+JMP @end_of_if_155
+ADDR 8 $-72
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 #1
+CALL __gtGrown16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-72 #0 @if_branch_157
+R_ST 1 $-49 #0
+JMP @end_of_if_156
+@if_branch_157:
+R_MOV 8 %t1 $-72
+R_ST 8 &ghost_table+64 %t1
+R_LEA %t0 &ghost_table #72 1
+R_PUSH 8 %t0
+CC_START sysv_x64
+PUSH 8 ghost_table.idCap
+POP ARG0 8
+CALL __gtNewCap16
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_156:
+@end_of_if_155:
+PUSH 1 $-49
+CMP
+JMP @end_of_if_158
+PUSH 8 ghost_table.nextId
+PUSH 8 1
+ADD_INT 8
+R_POPV 8 %v0
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+88 %t1
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+R_ARG 2 8 %v1
+R_ARG 3 8 %v0
+R_ARG 4 8 #0
+CALL __gtT16Insert
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 %v0
+R_ARG 3 8 %v1
+R_ARG 4 8 #1
+CALL __gtT16Insert
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-32
+R_BIN BOR 8 %t0 %v2 #1
+R_ARG 2 8 %t0
+CALL __gtStore
+CC_END sysv_x64
+R_MOV 8 %v0 %v0
+@end_of_if_158:
+@end_of_if_149:
+@end_of_if_148:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_145
+@if_branch_147:
+JMP @loop_144
+@end_of_if_146:
+JMP @loop_144
+@loop_end_145:
+R_RET %v0
+FUNC_END
+FUNC_START gt_ref_resolve
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #0
+R_BRC NEQ 8 $-8 #0 @end_of_if_159
+@loop_160:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_163
+PUSH 8 ghost_table.idCap
+PUSH 8 0
+NEQ_INT 8
+CMP
+JMP @end_of_if_164
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+PUSH 8 ghost_table.idCap
+POP ARG1 8
+R_ARG 2 8 $-8
+R_ARG 3 8 #1
+CALL __gtT16Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.idCap
+NEQ_INT 8
+CMP
+JMP @end_of_if_165
+ADDR 8 $-16
+CC_START sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.idBase
+POP ARG0 8
+R_BIN MUL 8 %t0 $-24 #2
+R_BIN ADD 8 %t0 %t0 #1
+R_ARG 1 8 %t0
+CALL __gtLoad
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG0 8
+CALL __gtPtrOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+@end_of_if_165:
+@end_of_if_164:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_161
+@if_branch_163:
+JMP @loop_160
+@end_of_if_162:
+JMP @loop_160
+@loop_end_161:
+@end_of_if_159:
+R_RET $-16
+FUNC_END
+FUNC_START gt_alive_check
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_166
+R_RET #0
+@end_of_if_166:
+R_SETV 1 %v0 #0
+@loop_167:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_170
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+POP ARG2 8
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_171
+R_SETV 1 %v0 #1
+@end_of_if_171:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_168
+@if_branch_170:
+JMP @loop_167
+@end_of_if_169:
+JMP @loop_167
+@loop_end_168:
+R_MOV 8 %s %v0
+R_RET %s
+FUNC_END
+FUNC_START gt_destruct
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-8 #0 @end_of_if_172
+@loop_173:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_176
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_177
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v2
+R_BIN BAND 8 %t0 %v2 #1
+R_BRC EQ 8 %t0 #1 @end_of_if_178
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+PUSH 8 ghost_table.idBase
+POP ARG2 8
+PUSH 8 ghost_table.idCap
+POP ARG3 8
+R_ARG 4 8 %v1
+CALL __gtUnlinkId
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_178:
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-24
+CALL __gtT1RemoveAt
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+PUSH 8 ghost_table.capacity
+PUSH 8 8
+GT_INT 8
+PUSH 8 ghost_table.len
+PUSH 8 8
+MUL_INT 8
+PUSH 8 ghost_table.capacity
+LT_INT 8
+AND 1
+CMP
+JMP @end_of_if_179
+PUSH 8 ghost_table.capacity
+PUSH 8 1
+SHR 8
+R_POPV 8 %v0
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 %v0 #8
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-48 #0 @end_of_if_180
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 %v0
+CALL __gtClear
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-48
+R_ARG 3 8 %v0
+CALL __gtT1Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+CALL free 1
+CC_END sysv_x64
+R_MOV 8 %t1 $-48
+R_ST 8 &ghost_table+16 %t1
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+32 %t1
+@end_of_if_180:
+@end_of_if_179:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL free 1
+CC_END sysv_x64
+@end_of_if_177:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_174
+@if_branch_176:
+JMP @loop_173
+@end_of_if_175:
+JMP @loop_173
+@loop_end_174:
+@end_of_if_172:
+FUNC_END
+EXTERN exit imut_void imut_u32
+FUNC_START gt_init
+ALLOC 16
+@loop_181:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_184
+R_MOV 8 $-8 #0
+ADDR 8 $-8
+CC_START sysv_x64
+R_ARG 0 8 #64
+CALL malloc 1
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_185
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 #1
+CALL exit 1
+CC_END sysv_x64
+@end_of_if_185:
+CC_START sysv_x64
+R_ARG 0 8 $-8
+R_ARG 1 8 #8
+CALL __gtClear
+CC_END sysv_x64
+R_MOV 8 %t1 $-8
+R_ST 8 &ghost_table+16 %t1
+R_ST 8 &ghost_table+24 #0
+R_ST 8 &ghost_table+32 #8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_182
+@if_branch_184:
+JMP @loop_181
+@end_of_if_183:
+JMP @loop_181
+@loop_end_182:
+FUNC_END
+FUNC_START gt_moved
+ALLOC 32
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC NEQ 8 $-8 #0 @end_of_if_186
+@loop_187:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_190
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v0
+ADDR 8 $-24
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v0
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-24
+PUSH 8 ghost_table.capacity
+NEQ_INT 8
+CMP
+JMP @end_of_if_191
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __gtLoad
+CC_END sysv_x64
+R_GETRET 8 %v1
+R_BIN BAND 8 %t0 %v1 #1
+R_BRC EQ 8 %t0 #1 @end_of_if_192
+CC_START sysv_x64
+PUSH 8 ghost_table.refBase
+POP ARG0 8
+PUSH 8 ghost_table.refCap
+POP ARG1 8
+PUSH 8 ghost_table.idBase
+POP ARG2 8
+PUSH 8 ghost_table.idCap
+POP ARG3 8
+R_ARG 4 8 %v0
+CALL __gtUnlinkId
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 56 8
+DOT_LHS 8
+PUSH 8 ghost_table.refLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+ADDR 96 ghost_table
+PUSH_FIELDNAME 80 8
+DOT_LHS 8
+PUSH 8 ghost_table.idLen
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_192:
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-24
+CALL __gtT1RemoveAt
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+SUB_INT 8
+ASSIGN 8 8 8
+@end_of_if_191:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_188
+@if_branch_190:
+JMP @loop_187
+@end_of_if_189:
+JMP @loop_187
+@loop_end_188:
+@end_of_if_186:
+FUNC_END
+FUNC_START gt_register
+ALLOC 48
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-8 #0 @end_of_if_193
+R_RET #1
+@end_of_if_193:
+R_ST 1 $-9 #1
+@loop_194:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 1
+ATOMIC_SWAP 8
+PUSH 8 0
+EQ_INT 8
+CMP
+JMP @if_branch_197
+CC_START sysv_x64
+R_ARG 0 8 $-8
+CALL __gtAddrOf
+CC_END sysv_x64
+R_GETRET 8 %v1
+ADDR 8 $-32
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Find
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-32
+PUSH 8 ghost_table.capacity
+EQ_INT 8
+CMP
+JMP @end_of_if_198
+PUSH 8 ghost_table.len
+PUSH 8 1
+ADD_INT 8
+PUSH 8 2
+MUL_INT 8
+PUSH 8 ghost_table.capacity
+GT_INT 8
+CMP
+JMP @end_of_if_199
+PUSH 8 ghost_table.capacity
+PUSH 8 2
+MUL_INT 8
+R_POPV 8 %v0
+R_MOV 8 $-48 #0
+ADDR 8 $-48
+CC_START sysv_x64
+R_ARG 0 8 #0
+R_BIN MUL 8 %t0 %v0 #8
+R_ARG 1 8 %t0
+CALL realloc 2
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-48 #0 @if_branch_201
+R_ST 1 $-9 #0
+JMP @end_of_if_200
+@if_branch_201:
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 %v0
+CALL __gtClear
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 $-48
+R_ARG 3 8 %v0
+CALL __gtT1Rehash
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+CALL free 1
+CC_END sysv_x64
+R_MOV 8 %t1 $-48
+R_ST 8 &ghost_table+16 %t1
+R_MOV 8 %t1 %v0
+R_ST 8 &ghost_table+32 %t1
+@end_of_if_200:
+@end_of_if_199:
+PUSH 1 $-9
+CMP
+JMP @end_of_if_202
+CC_START sysv_x64
+PUSH 8 ghost_table.base
+POP ARG0 8
+PUSH 8 ghost_table.capacity
+POP ARG1 8
+R_ARG 2 8 %v1
+CALL __gtT1Insert
+CC_END sysv_x64
+ADDR 96 ghost_table
+PUSH_FIELDNAME 24 8
+DOT_LHS 8
+PUSH 8 ghost_table.len
+PUSH 8 1
+ADD_INT 8
+ASSIGN 8 8 8
+@end_of_if_202:
+@end_of_if_198:
+ADDR 96 ghost_table
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+PUSH 8 0
+ATOMIC_ASSIGN 8 8 8
+JMP @loop_end_195
+@if_branch_197:
+JMP @loop_194
+@end_of_if_196:
+JMP @loop_194
+@loop_end_195:
+R_LD 1 %s $-9
+R_RET %s
+FUNC_END
+FUNC_START __ctor__String__sig_void
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches____ctor__String__sig_void_204
+@catch_203:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches____ctor__String__sig_void_204:
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @catch_203 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-56
+ADDR_OF RAW $-56
+POP ARG0 8
+CALL __ctor__DynamicArray_char__sig_void
+CC_END sysv_x64
+PUSH 16 $-56
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_206
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_203
+@new_ok_206:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_MOV 8 $-32 #0
+R_PUSH 8 $-24
+R_PUSH 8 #1
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START __ctor__String__sig_static_imut_string
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches____ctor__String__sig_static_imut_string_209
+@catch_207:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_208:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches____ctor__String__sig_static_imut_string_209:
+ADDR 8 $-40
+PUSH 8 $-32
+NEW_FROM_STRING
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_210
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_207
+@alloc_ok_210:
+ASSIGN 8 8 8
+ADDR 8 $-56
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite____ctor__String__sig_static_imut_string_212 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-72
+ADDR_OF RAW $-72
+POP ARG0 8
+R_ARG 1 8 $-40
+R_MOV 8 $-40 #0
+CALL __ctor__DynamicArray_char__sig_owns_some_mut_dynarray_char_
+CC_END sysv_x64
+PUSH 16 $-72
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_213
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_208
+@new_ok_213:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-56 #0
+R_PUSH 8 $-24
+R_PUSH 8 #1
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+JMP @end_of_gt_callsites____ctor__String__sig_static_imut_string_214
+@gt_callsite____ctor__String__sig_static_imut_string_212:
+GT_UNWIND MSG
+@end_of_gt_callsites____ctor__String__sig_static_imut_string_214:
+FUNC_END
+FUNC_START stringDigitValue
+ALLOC 32
+ADDR 1 $-17
+PUSH 1 ARG0
+ASSIGN 1 1 1
+PUSH 1 $-17
+PUSH 1 '0'
+EQ_INT 1
+CMP
+JMP @end_of_if_215
+R_RET #0
+@end_of_if_215:
+PUSH 1 $-17
+PUSH 1 '1'
+EQ_INT 1
+CMP
+JMP @end_of_if_216
+R_RET #1
+@end_of_if_216:
+PUSH 1 $-17
+PUSH 1 '2'
+EQ_INT 1
+CMP
+JMP @end_of_if_217
+R_RET #2
+@end_of_if_217:
+PUSH 1 $-17
+PUSH 1 '3'
+EQ_INT 1
+CMP
+JMP @end_of_if_218
+R_RET #3
+@end_of_if_218:
+PUSH 1 $-17
+PUSH 1 '4'
+EQ_INT 1
+CMP
+JMP @end_of_if_219
+R_RET #4
+@end_of_if_219:
+PUSH 1 $-17
+PUSH 1 '5'
+EQ_INT 1
+CMP
+JMP @end_of_if_220
+R_RET #5
+@end_of_if_220:
+PUSH 1 $-17
+PUSH 1 '6'
+EQ_INT 1
+CMP
+JMP @end_of_if_221
+R_RET #6
+@end_of_if_221:
+PUSH 1 $-17
+PUSH 1 '7'
+EQ_INT 1
+CMP
+JMP @end_of_if_222
+R_RET #7
+@end_of_if_222:
+PUSH 1 $-17
+PUSH 1 '8'
+EQ_INT 1
+CMP
+JMP @end_of_if_223
+R_RET #8
+@end_of_if_223:
+PUSH 1 $-17
+PUSH 1 '9'
+EQ_INT 1
+CMP
+JMP @end_of_if_224
+R_RET #9
+@end_of_if_224:
+R_RET #99
+FUNC_END
+FUNC_START stringDigitChar
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_BRC EQ 8 $-24 #0 @end_of_if_225
+PUSH 1 '0'
+RET 1
+@end_of_if_225:
+R_BRC EQ 8 $-24 #1 @end_of_if_226
+PUSH 1 '1'
+RET 1
+@end_of_if_226:
+R_BRC EQ 8 $-24 #2 @end_of_if_227
+PUSH 1 '2'
+RET 1
+@end_of_if_227:
+R_BRC EQ 8 $-24 #3 @end_of_if_228
+PUSH 1 '3'
+RET 1
+@end_of_if_228:
+R_BRC EQ 8 $-24 #4 @end_of_if_229
+PUSH 1 '4'
+RET 1
+@end_of_if_229:
+R_BRC EQ 8 $-24 #5 @end_of_if_230
+PUSH 1 '5'
+RET 1
+@end_of_if_230:
+R_BRC EQ 8 $-24 #6 @end_of_if_231
+PUSH 1 '6'
+RET 1
+@end_of_if_231:
+R_BRC EQ 8 $-24 #7 @end_of_if_232
+PUSH 1 '7'
+RET 1
+@end_of_if_232:
+R_BRC EQ 8 $-24 #8 @end_of_if_233
+PUSH 1 '8'
+RET 1
+@end_of_if_233:
+R_BRC EQ 8 $-24 #9 @end_of_if_234
+PUSH 1 '9'
+RET 1
+@end_of_if_234:
+PUSH 1 '?'
+RET 1
+FUNC_END
+FUNC_START stringLiteralLength
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-40 %t0
+PUSH 8 $-32
+ADDR_OF RAW $-32
+PUSH 8 8
+PUSH 8 $-40
+ADDR_OF RAW $-40
+MEMCOPY
+R_MOV 8 %v0 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-56 %t0
+@loop_235:
+R_MOV 8 $-64 #0
+PUSH 8 $-64
+ADDR_OF RAW $-64
+PUSH 8 1
+PUSH 8 $-56
+MEMCOPY
+R_BRC NEQ 8 $-64 #0 @loop_end_236
+@end_of_if_237:
+R_RMW ADD 8 %v0 #1
+R_UN INC 8 %t0 $-56
+R_PUSHA 8 $-56
+R_PUSH 8 %t0
+ASSIGN 8 1 1
+JMP @loop_235
+@loop_end_236:
+R_RET %v0
+FUNC_END
+FUNC_START stringLiteralByte
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-48 %t0
+PUSH 8 $-40
+ADDR_OF RAW $-40
+PUSH 8 8
+PUSH 8 $-48
+ADDR_OF RAW $-48
+MEMCOPY
+R_BIN ADD 8 %t0 $-40 $-32
+R_MOV 8 $-56 %t0
+ADDR 1 $-57
+PUSH 1 '\0'
+ASSIGN 1 1 1
+PUSH 1 $-57
+ADDR_OF RAW $-57
+PUSH 8 1
+PUSH 8 $-56
+MEMCOPY
+R_LD 1 %s $-57
+R_RET %s
+FUNC_END
+FUNC_START String_concat
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_concat_239
+@catch_238:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-80 %t0
+THROW e
+R_MOV 8 %t0 $-80
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_concat_239:
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %v3 #0
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_240
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_ST 1 $-49 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-64 %t0
+ADDR 8 $-72
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+PUSH 8 $-40
+ADD_INT 8
+PUSH 1 $-49
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_241
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_238
+@alloc_ok_241:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-72
+R_MOV 8 $-128 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-128
+ASSIGN 8 8 8
+R_MOV 8 $-72 #0
+R_MOV 8 $-96 #0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-88 %t0
+R_MOV 8 %v3 $-96
+@for_242:
+R_BRC LT 8 %v3 $-88 @for_end_243
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-152
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-160 %t0 @end_of_match_244
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_SETV 1 %v5 %t0
+R_BIN ADD 8 %v4 $-64 %v3
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-168
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-176 %t0 @end_of_match_245
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v5
+R_STI 1 %t0 %v4 1 %t1 16
+@end_of_match_245:
+@end_of_match_244:
+R_RMW INC 8 %v3
+JMP @for_242
+@for_end_243:
+@end_of_match_240:
+FUNC_END
+FUNC_START String_concat__sig_ref_some_mut_String_static_imut_string
+ALLOC 160
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_concat__sig_ref_some_mut_String_static_imut_string_248
+@catch_246:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_247:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_DESTRUCT $-40
+GT_UNWIND MSG
+@end_of_catches__String_concat__sig_ref_some_mut_String_static_imut_string_248:
+ADDR 8 $-40
+PUSH 8 $-32
+NEW_FROM_STRING
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_249
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_246
+@alloc_ok_249:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-40
+R_LD 8 %t0 %t0
+R_MOV 8 $-56 %t0
+R_MOV 8 %v3 #0
+R_MOV 8 %t0 $-40
+R_LD 8 %t0 %t0
+R_BRC LT 8 %v3 %t0 @end_of_match_250
+R_MOV 8 %t0 $-40
+R_LDI 1 %t0 %t0 %v3 1 16
+R_ST 1 $-65 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-80 %t0
+ADDR 8 $-88
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-80
+PUSH 8 $-56
+ADD_INT 8
+PUSH 1 $-65
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_251
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_247
+@alloc_ok_251:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-88
+R_MOV 8 $-136 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-136
+ASSIGN 8 8 8
+R_MOV 8 $-88 #0
+R_MOV 8 $-104 #0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-96 %t0
+R_MOV 8 %v3 $-104
+@for_252:
+R_BRC LT 8 %v3 $-96 @for_end_253
+R_MOV 8 %t0 $-40
+R_LD 8 %t0 %t0
+R_BRC LT 8 %v3 %t0 @end_of_match_254
+R_MOV 8 %t0 $-40
+R_LDI 1 %t0 %t0 %v3 1 16
+R_SETV 1 %v5 %t0
+R_BIN ADD 8 %v4 $-80 %v3
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-144
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-152 %t0 @end_of_match_255
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v5
+R_STI 1 %t0 %v4 1 %t1 16
+@end_of_match_255:
+@end_of_match_254:
+R_RMW INC 8 %v3
+JMP @for_252
+@for_end_253:
+@end_of_match_250:
+GT_DESTRUCT $-40
+R_MOV 8 $-40 #0
+FUNC_END
+FUNC_START String_appendChar
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches__String_appendChar_257
+@catch_256:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_appendChar_257:
+ADDR 8 $-8
+PUSH_LABEL @catch_256 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_ARG 0 8 %t0
+R_ARG 1 1 $-25
+CALL DynamicArray_char_pushBack
+CC_END sysv_x64
+FUNC_END
+FUNC_START String_sub
+ALLOC 208
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+JMP @end_of_catches__String_sub_260
+@catch_258:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_259:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-48 #0 @drop_skip_1
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_1:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@end_of_catches__String_sub_260:
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @catch_258 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-208
+ADDR_OF RAW $-208
+POP ARG0 8
+CALL __ctor__String__sig_void
+CC_END sysv_x64
+PUSH 16 $-208
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_262
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_258
+@new_ok_262:
+ASSIGN 8 8 8
+R_BIN ADD 8 %v5 $-40 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-72 %t0
+R_BRC GT 8 %v5 $-72 @end_of_if_263
+R_MOV 8 %v5 $-72
+@end_of_if_263:
+R_BRC GT 8 %v5 $-32 @end_of_if_264
+R_BIN SUB 8 %t0 %v5 $-32
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-152
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-160 %t0 @end_of_match_265
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 1 16
+R_LD 1 %t0 %t0
+R_ST 1 $-81 %t0
+ADDR 8 $-96
+PUSH 8 $-48
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-80
+PUSH 1 $-81
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_266
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_259
+@alloc_ok_266:
+R_MOV 8 %t0 $-48
+R_LDD 8 %t0 %t0 8
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-96
+R_MOV 8 $-144 %t0
+PUSH 8 $-48
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-144
+ASSIGN 8 8 8
+R_MOV 8 $-96 #0
+R_MOV 8 $-112 #0
+R_MOV 8 %t0 $-80
+R_MOV 8 $-104 %t0
+R_MOV 8 %v5 $-112
+@for_267:
+R_BRC LT 8 %v5 $-104 @for_end_268
+R_BIN ADD 8 %t0 $-32 %v5
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-128
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-168
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-176 %t0 @end_of_match_269
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-128 1 16
+R_LD 1 %t0 %t0
+R_ST 1 $-129 %t0
+R_MOV 8 %t0 $-48
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-184 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-192 %t0
+R_MOV 8 %t0 $-184
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-192 %t0 @end_of_match_270
+R_MOV 8 %t0 $-48
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 1 %t1 $-129
+R_STI 1 %t0 %v5 1 %t1 16
+@end_of_match_270:
+@end_of_match_269:
+R_RMW INC 8 %v5
+JMP @for_267
+@for_end_268:
+@end_of_match_265:
+@end_of_if_264:
+R_RET $-48
+FUNC_END
+FUNC_START String_firstIndexOf
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %v1 #-1
+R_MOV 8 $-64 #0
+R_MOV 8 %v2 $-40
+R_MOV 8 %v0 $-64
+@for_271:
+R_BRC LT 8 %v0 %v2 @for_end_272
+R_RMW INC 8 %v1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-80
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-88 %t0 @end_of_match_273
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_LD 1 %t1 $-25
+R_BRC EQ 1 %t0 %t1 @end_of_if_274
+R_RET %v1
+@end_of_if_274:
+@end_of_match_273:
+R_RMW INC 8 %v0
+JMP @for_271
+@for_end_272:
+R_RET #-1
+FUNC_END
+FUNC_START String_charAt
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-40
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-48 %t0 @end_of_match_275
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 1 16
+R_LD 1 %t0 %t0
+R_RET %t0
+@end_of_match_275:
+PUSH 1 '\0'
+RET 1
+FUNC_END
+FUNC_START String_setCharAt
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 1 $-33
+PUSH 1 ARG2
+ASSIGN 1 1 1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-80 %t0 @end_of_match_276
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-56 %t0
+R_LD 1 %t0 $-33
+R_ST 1 $-57 %t0
+R_MOV 8 %t0 $-48
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-56 1 16
+R_LD 1 %t1 $-57
+R_ST 1 %t0 %t1
+@end_of_match_276:
+JMP @end_of_gt_callsites__String_setCharAt_278
+@gt_callsite__String_setCharAt_277:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_setCharAt_278:
+FUNC_END
+FUNC_START String_length
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_RET %t0
+FUNC_END
+FUNC_START String_isEmpty
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_BIN EQ 8 %t0 %t0 #0
+R_RET %t0
+FUNC_END
+FUNC_START String_equals
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_BRC NEQ 8 $-40 %t0 @end_of_if_279
+R_RET #0
+@end_of_if_279:
+R_MOV 8 $-56 #0
+R_MOV 8 %v1 $-40
+R_MOV 8 %v0 $-56
+@for_280:
+R_BRC LT 8 %v0 %v1 @for_end_281
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-80 %t0 @end_of_match_282
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_283
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_MOV 8 %t1 $-32
+R_LDD 8 %t1 %t1 8
+R_LDD 8 %t1 %t1 8
+R_LDI 1 %t1 %t1 %v0 1 16
+R_BRC NEQ 1 %t0 %t1 @end_of_if_284
+R_RET #0
+@end_of_if_284:
+@end_of_match_283:
+@end_of_match_282:
+R_RMW INC 8 %v0
+JMP @for_280
+@for_end_281:
+R_RET #1
+FUNC_END
+FUNC_START String_equals__sig_ref_some_imut_String_static_imut_string
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_equals__sig_ref_some_imut_String_static_imut_string_285 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 #0
+R_ARG 3 8 #1
+CALL String_litWalk
+CC_END sysv_x64
+PUSH_RET_INT 1
+RET 1
+JMP @end_of_gt_callsites__String_equals__sig_ref_some_imut_String_static_imut_string_286
+@gt_callsite__String_equals__sig_ref_some_imut_String_static_imut_string_285:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_equals__sig_ref_some_imut_String_static_imut_string_286:
+FUNC_END
+FUNC_START String_startsWith
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_BRC GT 8 $-40 %t0 @end_of_if_287
+R_RET #0
+@end_of_if_287:
+R_MOV 8 $-56 #0
+R_MOV 8 %v1 $-40
+R_MOV 8 %v0 $-56
+@for_288:
+R_BRC LT 8 %v0 %v1 @for_end_289
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-72 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 $-72
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-80 %t0 @end_of_match_290
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_291
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_MOV 8 %t1 $-32
+R_LDD 8 %t1 %t1 8
+R_LDD 8 %t1 %t1 8
+R_LDI 1 %t1 %t1 %v0 1 16
+R_BRC NEQ 1 %t0 %t1 @end_of_if_292
+R_RET #0
+@end_of_if_292:
+@end_of_match_291:
+@end_of_match_290:
+R_RMW INC 8 %v0
+JMP @for_288
+@for_end_289:
+R_RET #1
+FUNC_END
+FUNC_START String_startsWith__sig_ref_some_imut_String_static_imut_string
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_startsWith__sig_ref_some_imut_String_static_imut_string_293 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 #0
+R_ARG 3 8 #0
+CALL String_litWalk
+CC_END sysv_x64
+PUSH_RET_INT 1
+RET 1
+JMP @end_of_gt_callsites__String_startsWith__sig_ref_some_imut_String_static_imut_string_294
+@gt_callsite__String_startsWith__sig_ref_some_imut_String_static_imut_string_293:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_startsWith__sig_ref_some_imut_String_static_imut_string_294:
+FUNC_END
+FUNC_START String_endsWith
+ALLOC 128
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+R_BRC GT 8 $-40 $-48 @end_of_if_295
+R_RET #0
+@end_of_if_295:
+R_BIN SUB 8 %v0 $-48 $-40
+R_MOV 8 $-72 #0
+R_MOV 8 %v5 $-40
+R_MOV 8 %v3 $-72
+@for_296:
+R_BRC LT 8 %v3 %v5 @for_end_297
+R_BIN ADD 8 %v4 %v0 %v3
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 $-96
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-104 %t0 @end_of_match_298
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 $-112
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-120 %t0 @end_of_match_299
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v4 1 16
+R_MOV 8 %t1 $-32
+R_LDD 8 %t1 %t1 8
+R_LDD 8 %t1 %t1 8
+R_LDI 1 %t1 %t1 %v3 1 16
+R_BRC NEQ 1 %t0 %t1 @end_of_if_300
+R_RET #0
+@end_of_if_300:
+@end_of_match_299:
+@end_of_match_298:
+R_RMW INC 8 %v3
+JMP @for_296
+@for_end_297:
+R_RET #1
+FUNC_END
+FUNC_START String_endsWith__sig_ref_some_imut_String_static_imut_string
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_endsWith__sig_ref_some_imut_String_static_imut_string_301 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL stringLiteralLength
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+R_BRC GT 8 $-40 $-48 @end_of_if_302
+R_RET #0
+@end_of_if_302:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_endsWith__sig_ref_some_imut_String_static_imut_string_303 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_BIN SUB 8 %t0 $-48 $-40
+R_ARG 2 8 %t0
+R_ARG 3 8 #1
+CALL String_litWalk
+CC_END sysv_x64
+PUSH_RET_INT 1
+RET 1
+JMP @end_of_gt_callsites__String_endsWith__sig_ref_some_imut_String_static_imut_string_304
+@gt_callsite__String_endsWith__sig_ref_some_imut_String_static_imut_string_301:
+GT_UNWIND MSG
+@gt_callsite__String_endsWith__sig_ref_some_imut_String_static_imut_string_303:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_endsWith__sig_ref_some_imut_String_static_imut_string_304:
+FUNC_END
+FUNC_START String_litWalk
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 1 $-41
+PUSH 1 ARG3
+ASSIGN 1 1 1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v2 %t0
+R_MOV 8 $-64 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-72 %t0
+PUSH 8 $-64
+ADDR_OF RAW $-64
+PUSH 8 8
+PUSH 8 $-72
+ADDR_OF RAW $-72
+MEMCOPY
+R_BIN ADD 8 %v0 $-40 #0
+R_BIN ADD 8 %t0 %v2 #1
+R_MOV 8 $-88 %t0
+R_MOV 8 $-104 #0
+R_MOV 8 %t0 $-88
+R_MOV 8 $-96 %t0
+R_MOV 8 %v1 $-104
+@for_305:
+R_BRC LT 8 %v1 $-96 @for_end_306
+R_BIN SUB 8 %t0 %v0 $-40
+R_BIN ADD 8 %t0 $-64 %t0
+R_MOV 8 $-120 %t0
+ADDR 1 $-121
+PUSH 1 '\0'
+ASSIGN 1 1 1
+PUSH 1 $-121
+ADDR_OF RAW $-121
+PUSH 8 1
+PUSH 8 $-120
+MEMCOPY
+PUSH 1 $-121
+PUSH 1 '\0'
+EQ_INT 1
+CMP
+JMP @end_of_if_307
+PUSH 1 $-41
+CMP
+JMP @end_of_if_308
+R_BIN EQ 8 %t0 %v0 %v2
+R_RET %t0
+@end_of_if_308:
+R_RET #1
+@end_of_if_307:
+R_BRC GT_EQ 8 %v0 %v2 @end_of_if_309
+R_RET #0
+@end_of_if_309:
+R_SETV 1 %v5 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_310
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_LD 1 %t1 $-121
+R_BIN EQ 1 %t0 %t0 %t1
+R_SETV 1 %v5 %t0
+@end_of_match_310:
+R_MOV 8 %t0 %v5
+R_BRC EQ 1 %t0 #0 @end_of_if_311
+R_RET #0
+@end_of_if_311:
+R_RMW ADD 8 %v0 #1
+R_RMW INC 8 %v1
+JMP @for_305
+@for_end_306:
+R_RET #0
+FUNC_END
+FUNC_START String_litAt
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+R_MOV 8 $-64 #0
+R_MOV 8 %v1 $-40
+R_MOV 8 %v0 $-64
+@for_312:
+R_BRC LT 8 %v0 %v1 @for_end_313
+R_BIN ADD 8 %t0 $-48 %v0
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-80
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_314
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-80
+LOOKUP_DYN 1
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_litAt_316 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 %v0
+CALL stringLiteralByte
+CC_END sysv_x64
+PUSH_RET_INT 1
+NEQ_INT 1
+CMP
+JMP @end_of_if_315
+R_RET #0
+@end_of_if_315:
+@end_of_match_314:
+R_RMW INC 8 %v0
+JMP @for_312
+@for_end_313:
+R_RET #1
+JMP @end_of_gt_callsites__String_litAt_317
+@gt_callsite__String_litAt_316:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_litAt_317:
+FUNC_END
+FUNC_START String_strAt
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+R_MOV 8 $-64 #0
+R_MOV 8 %v2 $-48
+R_MOV 8 %v0 $-64
+@for_318:
+R_BRC LT 8 %v0 %v2 @for_end_319
+R_BIN ADD 8 %v1 $-40 %v0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 %v1
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_320
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 $-104
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-112 %t0 @end_of_match_321
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v1 1 16
+R_MOV 8 %t1 $-32
+R_LDD 8 %t1 %t1 8
+R_LDD 8 %t1 %t1 8
+R_LDI 1 %t1 %t1 %v0 1 16
+R_BRC NEQ 1 %t0 %t1 @end_of_if_322
+R_RET #0
+@end_of_if_322:
+@end_of_match_321:
+@end_of_match_320:
+R_RMW INC 8 %v0
+JMP @for_318
+@for_end_319:
+R_RET #1
+FUNC_END
+FUNC_START String_indexOf
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+R_MOV 8 $-64 #0
+R_MOV 8 %v1 $-48
+R_MOV 8 %v0 $-64
+@for_323:
+R_BRC LT 8 %v0 %v1 @for_end_324
+R_BRC GT_EQ 8 %v0 $-40 @end_of_if_325
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-80 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-80
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-88 %t0 @end_of_match_326
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_LD 1 %t1 $-25
+R_BRC EQ 1 %t0 %t1 @end_of_if_327
+R_RET %v0
+@end_of_if_327:
+@end_of_match_326:
+@end_of_if_325:
+R_RMW INC 8 %v0
+JMP @for_323
+@for_end_324:
+R_RET #-1
+FUNC_END
+FUNC_START String_indexOf__sig_ref_some_imut_String_mut_char
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_mut_char_328 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 1 $-25
+R_ARG 2 8 #0
+CALL String_indexOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+JMP @end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_mut_char_329
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_mut_char_328:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_mut_char_329:
+FUNC_END
+FUNC_START String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64
+ALLOC 160
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-56 %t0
+R_BRC EQ 8 $-56 #0 @end_of_if_330
+R_BRC LT 8 $-40 $-48 @end_of_if_331
+R_RET $-40
+@end_of_if_331:
+R_RET $-48
+@end_of_if_330:
+R_BRC GT 8 $-56 $-48 @end_of_if_332
+R_RET #-1
+@end_of_if_332:
+R_BIN SUB 8 %t0 $-48 $-56
+R_BIN ADD 8 %t0 %t0 #1
+R_MOV 8 $-64 %t0
+R_BRC GT_EQ 8 $-40 $-64 @end_of_if_333
+R_RET #-1
+@end_of_if_333:
+R_BIN SUB 8 %t0 $-64 $-40
+R_MOV 8 $-72 %t0
+PUSH 1 '\0'
+R_POPV 1 %v2
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-128 %t0
+R_MOV 8 $-136 #0
+R_MOV 8 %t0 $-128
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-136 %t0 @end_of_match_334
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDD 1 %t0 %t0 16
+R_SETV 1 %v2 %t0
+@end_of_match_334:
+R_MOV 8 $-96 #0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-88 %t0
+R_MOV 8 %v1 $-96
+@for_335:
+R_BRC LT 8 %v1 $-88 @for_end_336
+R_BIN ADD 8 %v0 $-40 %v1
+R_ST 1 $-113 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-144
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-152 %t0 @end_of_match_337
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_MOV 8 %t1 %v2
+R_BIN EQ 1 %t0 %t0 %t1
+R_ST 1 $-113 %t0
+@end_of_match_337:
+PUSH 1 $-113
+CMP
+JMP @end_of_if_338
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64_340 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v0
+CALL String_strAt
+CC_END sysv_x64
+PUSH_RET_INT 1
+CMP
+JMP @end_of_if_339
+R_RET %v0
+@end_of_if_339:
+@end_of_if_338:
+R_RMW INC 8 %v1
+JMP @for_335
+@for_end_336:
+R_RET #-1
+JMP @end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64_341
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64_340:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64_341:
+FUNC_END
+FUNC_START String_indexOf__sig_ref_some_imut_String_ref_some_imut_String
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_342 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 #0
+CALL String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+JMP @end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_343
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_342:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_343:
+FUNC_END
+FUNC_START String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+ADDR 8 $-56
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_344 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL stringLiteralLength
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC EQ 8 $-56 #0 @end_of_if_345
+R_BRC LT 8 $-40 $-48 @end_of_if_346
+R_RET $-40
+@end_of_if_346:
+R_RET $-48
+@end_of_if_345:
+R_BRC GT 8 $-56 $-48 @end_of_if_347
+R_RET #-1
+@end_of_if_347:
+R_BIN SUB 8 %t0 $-48 $-56
+R_BIN ADD 8 %t0 %t0 #1
+R_MOV 8 $-64 %t0
+R_BRC GT_EQ 8 $-40 $-64 @end_of_if_348
+R_RET #-1
+@end_of_if_348:
+R_BIN SUB 8 %t0 $-64 $-40
+R_MOV 8 $-72 %t0
+ADDR 1 $-73
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_349 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 #0
+CALL stringLiteralByte
+CC_END sysv_x64
+PUSH_RET_INT 1
+ASSIGN 1 1 1
+R_MOV 8 $-96 #0
+R_MOV 8 %v2 $-72
+R_MOV 8 %v1 $-96
+@for_350:
+R_BRC LT 8 %v1 %v2 @for_end_351
+R_BIN ADD 8 %v0 $-40 %v1
+R_ST 1 $-113 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 $-128
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-136 %t0 @end_of_match_352
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_LD 1 %t1 $-73
+R_BIN EQ 1 %t0 %t0 %t1
+R_ST 1 $-113 %t0
+@end_of_match_352:
+PUSH 1 $-113
+CMP
+JMP @end_of_if_353
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_355 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 %v0
+R_ARG 3 8 #0
+CALL String_litWalk
+CC_END sysv_x64
+PUSH_RET_INT 1
+CMP
+JMP @end_of_if_354
+R_RET %v0
+@end_of_if_354:
+@end_of_if_353:
+R_RMW INC 8 %v1
+JMP @for_350
+@for_end_351:
+R_RET #-1
+JMP @end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_356
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_344:
+GT_UNWIND MSG
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_349:
+GT_UNWIND MSG
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_355:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64_356:
+FUNC_END
+FUNC_START String_indexOf__sig_ref_some_imut_String_static_imut_string
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_357 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 #0
+CALL String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+RET 8
+JMP @end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_static_imut_string_358
+@gt_callsite__String_indexOf__sig_ref_some_imut_String_static_imut_string_357:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_indexOf__sig_ref_some_imut_String_static_imut_string_358:
+FUNC_END
+FUNC_START String_contains
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_contains_359 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 #0
+CALL String_indexOf__sig_ref_some_imut_String_ref_some_imut_String_imut_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 0
+SGT_EQ_INT 8
+RET 1
+JMP @end_of_gt_callsites__String_contains_360
+@gt_callsite__String_contains_359:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_contains_360:
+FUNC_END
+FUNC_START String_contains__sig_ref_some_imut_String_static_imut_string
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_contains__sig_ref_some_imut_String_static_imut_string_361 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 #0
+CALL String_indexOf__sig_ref_some_imut_String_static_imut_string_imut_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 0
+SGT_EQ_INT 8
+RET 1
+JMP @end_of_gt_callsites__String_contains__sig_ref_some_imut_String_static_imut_string_362
+@gt_callsite__String_contains__sig_ref_some_imut_String_static_imut_string_361:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_contains__sig_ref_some_imut_String_static_imut_string_362:
+FUNC_END
+FUNC_START String_substring
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_substring_364
+@catch_363:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_substring_364:
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @catch_363 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_ARG 2 8 %t0
+CALL String_sub
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-40
+FUNC_END
+FUNC_START String_substring__sig_ref_some_imut_String_imut_u64_imut_u64
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+JMP @end_of_catches__String_substring__sig_ref_some_imut_String_imut_u64_imut_u64_366
+@catch_365:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_substring__sig_ref_some_imut_String_imut_u64_imut_u64_366:
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @catch_365 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-40
+CALL String_sub
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-48
+FUNC_END
+FUNC_START String_trim
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_trim_368
+@catch_367:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-112 %t0
+THROW e
+R_MOV 8 %t0 $-112
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_trim_368:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v1 %t0
+R_MOV 8 %v2 %v1
+R_MOV 8 $-56 #0
+R_MOV 8 %v0 %v1
+R_MOV 8 %t0 $-56
+R_MOV 8 $-64 %t0
+@for_369:
+R_BRC LT 8 $-64 %v0 @for_end_370
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-120
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-128 %t0 @end_of_match_371
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+LOOKUP_DYN 1
+PUSH 1 ' '
+GT_INT 1
+CMP
+JMP @end_of_if_372
+R_MOV 8 %v2 $-64
+JMP @for_end_370
+@end_of_if_372:
+@end_of_match_371:
+R_RMW INC 8 $-64
+JMP @for_369
+@for_end_370:
+R_MOV 8 %t0 %v2
+R_MOV 8 $-72 %t0
+R_MOV 8 $-88 #0
+R_MOV 8 %t0 %v1
+R_MOV 8 $-80 %t0
+R_MOV 8 %v0 $-88
+@for_373:
+R_BRC LT 8 %v0 $-80 @for_end_374
+R_BIN SUB 8 %t0 %v1 #1
+R_BIN SUB 8 %t0 %t0 %v0
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_375
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+LOOKUP_DYN 1
+PUSH 1 ' '
+GT_INT 1
+CMP
+JMP @end_of_if_376
+R_BIN ADD 8 %t0 $-64 #1
+R_MOV 8 $-72 %t0
+JMP @for_end_374
+@end_of_if_376:
+@end_of_match_375:
+R_RMW INC 8 %v0
+JMP @for_373
+@for_end_374:
+ADDR 8 $-104
+ADDR 8 $-8
+PUSH_LABEL @catch_367 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v2
+R_ARG 2 8 $-72
+CALL String_sub
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-104
+FUNC_END
+FUNC_START String_replace
+ALLOC 128
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+ADDR 1 $-26
+PUSH 1 ARG2
+ASSIGN 1 1 1
+JMP @end_of_catches__String_replace_380
+@catch_377:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_378:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-40 #0 @drop_skip_2
+PUSH 8 $-40
+CALL __drop_String
+@drop_skip_2:
+GT_DESTRUCT $-40
+GT_UNWIND MSG
+@catch_379:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-40 #0 @drop_skip_3
+PUSH 8 $-40
+CALL __drop_String
+@drop_skip_3:
+GT_DESTRUCT $-40
+GT_UNWIND MSG
+@end_of_catches__String_replace_380:
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @catch_377 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-120
+ADDR_OF RAW $-120
+POP ARG0 8
+CALL __ctor__String__sig_void
+CC_END sysv_x64
+PUSH 16 $-120
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_382
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_377
+@new_ok_382:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-56 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-72
+R_MOV 8 $-80 %t0
+@for_383:
+R_BRC LT 8 $-80 $-64 @for_end_384
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-80
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 $-96
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-104 %t0 @end_of_match_385
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-80 1 16
+R_LD 1 %t0 %t0
+R_ST 1 $-81 %t0
+R_LD 1 %t0 $-81
+R_LD 1 %t1 $-25
+R_BRC EQ 1 %t0 %t1 @if_branch_387
+ADDR 8 $-8
+PUSH_LABEL @catch_378 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 1 $-26
+CALL String_appendChar
+CC_END sysv_x64
+JMP @end_of_if_386
+@if_branch_387:
+ADDR 8 $-8
+PUSH_LABEL @catch_379 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-40
+R_ARG 1 1 $-81
+CALL String_appendChar
+CC_END sysv_x64
+@end_of_if_386:
+@end_of_match_385:
+R_RMW INC 8 $-80
+JMP @for_383
+@for_end_384:
+R_RET $-40
+FUNC_END
+FUNC_START String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+JMP @end_of_catches__String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String_391
+@catch_388:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_389:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-48 #0 @drop_skip_4
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_4:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@catch_390:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-48 #0 @drop_skip_5
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_5:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@end_of_catches__String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String_391:
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @catch_388 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-144
+ADDR_OF RAW $-144
+POP ARG0 8
+CALL __ctor__String__sig_void
+CC_END sysv_x64
+PUSH 16 $-144
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_393
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_388
+@new_ok_393:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-32
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-72 %t0
+R_MOV 8 $-80 #0
+R_MOV 8 $-96 #0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-96
+R_MOV 8 $-104 %t0
+@for_394:
+R_BRC LT 8 $-104 $-88 @for_end_395
+R_BRC GT 8 $-80 #0 @end_of_if_396
+R_RMW SUB 8 $-80 #1
+JMP @for_cont_397
+@end_of_if_396:
+R_ST 1 $-105 #0
+R_BRC GT 8 $-72 #0 @end_of_if_398
+R_BIN ADD 8 %t0 $-104 $-72
+R_BRC LT_EQ 8 %t0 $-64 @end_of_if_399
+ADDR 1 $-105
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String_400 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-104
+CALL String_strAt
+CC_END sysv_x64
+PUSH_RET_INT 1
+ASSIGN 1 1 1
+@end_of_if_399:
+@end_of_if_398:
+PUSH 1 $-105
+CMP
+JMP @if_branch_402
+ADDR 8 $-8
+PUSH_LABEL @catch_389 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 $-40
+CALL String_concat
+CC_END sysv_x64
+R_BIN SUB 8 %t0 $-72 #1
+R_MOV 8 $-80 %t0
+JMP @end_of_if_401
+@if_branch_402:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 $-104
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-120
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-128 %t0 @end_of_match_403
+ADDR 8 $-8
+PUSH_LABEL @catch_390 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-104 1 16
+R_LD 1 %t0 %t0
+R_ARG 1 8 %t0
+CALL String_appendChar
+CC_END sysv_x64
+@end_of_match_403:
+@end_of_if_401:
+@for_cont_397:
+R_RMW INC 8 $-104
+JMP @for_394
+@for_end_395:
+R_RET $-48
+JMP @end_of_gt_callsites__String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String_404
+@gt_callsite__String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String_400:
+R_BRC NEQ 8 $-48 #0 @drop_skip_6
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_6:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@end_of_gt_callsites__String_replace__sig_ref_some_imut_String_ref_some_imut_String_ref_some_imut_String_404:
+FUNC_END
+FUNC_START String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+JMP @end_of_catches__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_408
+@catch_405:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_406:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-48 #0 @drop_skip_7
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_7:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@catch_407:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-48 #0 @drop_skip_8
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_8:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@end_of_catches__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_408:
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @catch_405 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-144
+ADDR_OF RAW $-144
+POP ARG0 8
+CALL __ctor__String__sig_void
+CC_END sysv_x64
+PUSH 16 $-144
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_410
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_405
+@new_ok_410:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-64 %t0
+ADDR 8 $-72
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_411 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL stringLiteralLength
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-80 #0
+R_MOV 8 $-96 #0
+R_MOV 8 %t0 $-64
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-96
+R_MOV 8 $-104 %t0
+@for_412:
+R_BRC LT 8 $-104 $-88 @for_end_413
+R_BRC GT 8 $-80 #0 @end_of_if_414
+R_RMW SUB 8 $-80 #1
+JMP @for_cont_415
+@end_of_if_414:
+R_ST 1 $-105 #0
+R_BRC GT 8 $-72 #0 @end_of_if_416
+R_BIN ADD 8 %t0 $-104 $-72
+R_BRC LT_EQ 8 %t0 $-64 @end_of_if_417
+ADDR 1 $-105
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_418 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-72
+R_ARG 3 8 $-104
+CALL String_litAt
+CC_END sysv_x64
+PUSH_RET_INT 1
+ASSIGN 1 1 1
+@end_of_if_417:
+@end_of_if_416:
+PUSH 1 $-105
+CMP
+JMP @if_branch_420
+ADDR 8 $-8
+PUSH_LABEL @catch_406 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_ARG 1 8 $-40
+CALL String_concat__sig_ref_some_mut_String_static_imut_string
+CC_END sysv_x64
+R_BIN SUB 8 %t0 $-72 #1
+R_MOV 8 $-80 %t0
+JMP @end_of_if_419
+@if_branch_420:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 $-104
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-120
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-128 %t0 @end_of_match_421
+ADDR 8 $-8
+PUSH_LABEL @catch_407 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-48
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-104 1 16
+R_LD 1 %t0 %t0
+R_ARG 1 8 %t0
+CALL String_appendChar
+CC_END sysv_x64
+@end_of_match_421:
+@end_of_if_419:
+@for_cont_415:
+R_RMW INC 8 $-104
+JMP @for_412
+@for_end_413:
+R_RET $-48
+JMP @end_of_gt_callsites__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_422
+@gt_callsite__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_411:
+R_BRC NEQ 8 $-48 #0 @drop_skip_9
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_9:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@gt_callsite__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_418:
+R_BRC NEQ 8 $-48 #0 @drop_skip_10
+PUSH 8 $-48
+CALL __drop_String
+@drop_skip_10:
+GT_DESTRUCT $-48
+GT_UNWIND MSG
+@end_of_gt_callsites__String_replace__sig_ref_some_imut_String_static_imut_string_static_imut_string_422:
+FUNC_END
+FUNC_START String_spliceBytes
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+ADDR 8 $-56
+PUSH 8 ARG4
+ASSIGN 8 8 8
+ADDR 8 $-64
+PUSH 8 ARG5
+ASSIGN 8 8 8
+R_MOV 8 $-72 #0
+R_MOV 8 $-80 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-56
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-96 %t0
+PUSH 8 $-88
+GT_ALIVE_CHECK
+CMP
+JMP @end_of_match_423
+PUSH 8 $-96
+GT_ALIVE_CHECK
+CMP
+JMP @end_of_match_424
+PUSH 8 $-72
+ADDR_OF RAW $-72
+PUSH 8 8
+PUSH 8 $-88
+ADDR_OF RAW $-88
+MEMCOPY
+PUSH 8 $-80
+ADDR_OF RAW $-80
+PUSH 8 8
+PUSH 8 $-96
+ADDR_OF RAW $-96
+MEMCOPY
+@end_of_match_424:
+@end_of_match_423:
+R_BIN ADD 8 %t0 $-72 #16
+R_BIN ADD 8 %t0 %t0 $-32
+R_BIN ADD 8 %t0 %t0 $-64
+R_MOV 8 $-104 %t0
+R_BIN ADD 8 %t0 $-72 #16
+R_BIN ADD 8 %t0 %t0 $-40
+R_MOV 8 $-112 %t0
+R_BIN ADD 8 %t0 $-48 #0
+R_MOV 8 $-120 %t0
+R_BIN ADD 8 %t0 $-72 #16
+R_BIN ADD 8 %t0 %t0 $-32
+R_MOV 8 $-128 %t0
+R_BIN ADD 8 %t0 $-80 #16
+R_MOV 8 $-136 %t0
+R_BIN ADD 8 %t0 $-64 #0
+R_MOV 8 $-144 %t0
+CC_START sysv_x64
+R_ARG 0 8 $-104
+R_ARG 1 8 $-112
+R_ARG 2 8 $-120
+CALL memmove 3
+CC_END sysv_x64
+CC_START sysv_x64
+R_ARG 0 8 $-128
+R_ARG 1 8 $-136
+R_ARG 2 8 $-144
+CALL memmove 3
+CC_END sysv_x64
+FUNC_END
+FUNC_START String_replaceRange
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+JMP @end_of_catches__String_replaceRange_427
+@catch_425:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-112 %t0
+THROW e
+R_MOV 8 %t0 $-112
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_426:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-112 %t0
+THROW e
+R_MOV 8 %t0 $-112
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_replaceRange_427:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-56 %t0
+R_BIN ADD 8 %t0 $-32 #0
+R_MOV 8 $-64 %t0
+R_BRC GT 8 $-64 $-56 @end_of_if_428
+R_MOV 8 %t0 $-56
+R_MOV 8 $-64 %t0
+@end_of_if_428:
+R_BIN ADD 8 %t0 $-40 #0
+R_MOV 8 $-72 %t0
+R_BRC GT 8 $-72 $-56 @end_of_if_429
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+@end_of_if_429:
+R_BRC LT 8 $-72 $-64 @end_of_if_430
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@end_of_if_430:
+R_MOV 8 %t0 $-48
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-80 %t0
+R_BIN SUB 8 %t0 $-56 $-72
+R_MOV 8 $-88 %t0
+R_BIN ADD 8 %t0 $-64 $-80
+R_BIN ADD 8 %t0 %t0 $-88
+R_MOV 8 $-96 %t0
+R_BRC GT 8 $-96 $-56 @end_of_if_431
+ADDR 8 $-104
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-96
+PUSH 1 '\0'
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_432
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_425
+@alloc_ok_432:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-104
+R_MOV 8 $-128 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-128
+ASSIGN 8 8 8
+R_MOV 8 $-104 #0
+@end_of_if_431:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_replaceRange_433 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-64
+R_ARG 2 8 $-72
+R_ARG 3 8 $-88
+R_ARG 4 8 $-48
+R_ARG 5 8 $-80
+CALL String_spliceBytes
+CC_END sysv_x64
+R_BRC LT 8 $-96 $-56 @end_of_if_434
+PUSH 8 $-24
+GT_ALIVE_CHECK
+CMP
+JMP @end_of_match_435
+ADDR 8 $-120
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-96
+PUSH 1 '\0'
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_436
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_426
+@alloc_ok_436:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-120
+R_MOV 8 $-136 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-136
+ASSIGN 8 8 8
+R_MOV 8 $-120 #0
+@end_of_match_435:
+@end_of_if_434:
+JMP @end_of_gt_callsites__String_replaceRange_437
+@gt_callsite__String_replaceRange_433:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_replaceRange_437:
+FUNC_END
+FUNC_START String_append
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_append_439
+@catch_438:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_append_439:
+ADDR 8 $-8
+PUSH_LABEL @catch_438 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL String_concat
+CC_END sysv_x64
+FUNC_END
+FUNC_START String_append__sig_ref_some_mut_String_static_imut_string
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_append__sig_ref_some_mut_String_static_imut_string_441
+@catch_440:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_append__sig_ref_some_mut_String_static_imut_string_441:
+ADDR 8 $-8
+PUSH_LABEL @catch_440 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+CALL String_concat__sig_ref_some_mut_String_static_imut_string
+CC_END sysv_x64
+FUNC_END
+FUNC_START String_append__sig_ref_some_mut_String_mut_char
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches__String_append__sig_ref_some_mut_String_mut_char_443
+@catch_442:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_append__sig_ref_some_mut_String_mut_char_443:
+ADDR 8 $-8
+PUSH_LABEL @catch_442 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 1 $-25
+CALL String_appendChar
+CC_END sysv_x64
+FUNC_END
+FUNC_START String_appendS64
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_appendS64_446
+@catch_444:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_445:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-40 #0 @drop_skip_11
+PUSH 8 $-40
+CALL __drop_String
+@drop_skip_11:
+GT_DESTRUCT $-40
+GT_UNWIND MSG
+@end_of_catches__String_appendS64_446:
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @catch_444 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL String_static_fromS64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+GT_ALIVE_CHECK
+CMP
+JMP @end_of_match_447
+ADDR 8 $-8
+PUSH_LABEL @catch_445 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-40
+CALL String_concat
+CC_END sysv_x64
+@end_of_match_447:
+R_BRC NEQ 8 $-40 #0 @drop_skip_12
+PUSH 8 $-40
+CALL __drop_String
+@drop_skip_12:
+GT_DESTRUCT $-40
+R_MOV 8 $-40 #0
+FUNC_END
+FUNC_START String_appendU64
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__String_appendU64_450
+@catch_448:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_449:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-40 #0 @drop_skip_13
+PUSH 8 $-40
+CALL __drop_String
+@drop_skip_13:
+GT_DESTRUCT $-40
+GT_UNWIND MSG
+@end_of_catches__String_appendU64_450:
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @catch_448 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL String_static_fromU64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+GT_ALIVE_CHECK
+CMP
+JMP @end_of_match_451
+ADDR 8 $-8
+PUSH_LABEL @catch_449 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-40
+CALL String_concat
+CC_END sysv_x64
+@end_of_match_451:
+R_BRC NEQ 8 $-40 #0 @drop_skip_14
+PUSH 8 $-40
+CALL __drop_String
+@drop_skip_14:
+GT_DESTRUCT $-40
+R_MOV 8 $-40 #0
+FUNC_END
+FUNC_START String_static_fromU64
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_static_fromU64_455
+@catch_452:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_453:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-32 #0 @drop_skip_15
+PUSH 8 $-32
+CALL __drop_String
+@drop_skip_15:
+GT_DESTRUCT $-32
+GT_UNWIND MSG
+@catch_454:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-32 #0 @drop_skip_16
+PUSH 8 $-32
+CALL __drop_String
+@drop_skip_16:
+GT_DESTRUCT $-32
+GT_UNWIND MSG
+@end_of_catches__String_static_fromU64_455:
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @catch_452 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-96
+ADDR_OF RAW $-96
+POP ARG0 8
+CALL __ctor__String__sig_void
+CC_END sysv_x64
+PUSH 16 $-96
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_457
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_452
+@new_ok_457:
+ASSIGN 8 8 8
+R_BIN ADD 8 %t0 $-24 #0
+R_MOV 8 $-48 %t0
+R_BRC EQ 8 $-48 #0 @end_of_if_458
+ADDR 8 $-8
+PUSH_LABEL @catch_453 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+PUSH 1 '0'
+POP ARG1 1
+CALL String_appendChar
+CC_END sysv_x64
+R_RET $-32
+@end_of_if_458:
+R_MOV 8 $-64 #0
+R_MOV 8 $-56 #20
+R_MOV 8 %t0 $-64
+R_MOV 8 $-72 %t0
+@for_459:
+R_BRC LT 8 $-72 $-56 @for_end_460
+R_BRC NEQ 8 $-48 #0 @for_end_460
+@end_of_if_461:
+R_DIVC MOD 8 %t0 $-48 #10
+R_MOV 8 $-80 %t0
+ADDR 8 $-8
+PUSH_LABEL @catch_454 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_fromU64_462 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-80
+CALL stringDigitChar
+CC_END sysv_x64
+PUSH_RET_INT 1
+POP ARG1 1
+CALL String_appendChar
+CC_END sysv_x64
+R_DIVC DIV 8 %t0 $-48 #10
+R_MOV 8 $-48 %t0
+R_RMW INC 8 $-72
+JMP @for_459
+@for_end_460:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_fromU64_463 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL String_reverseInPlace
+CC_END sysv_x64
+R_RET $-32
+JMP @end_of_gt_callsites__String_static_fromU64_464
+@gt_callsite__String_static_fromU64_462:
+R_BRC NEQ 8 $-32 #0 @drop_skip_17
+PUSH 8 $-32
+CALL __drop_String
+@drop_skip_17:
+GT_DESTRUCT $-32
+GT_UNWIND MSG
+@gt_callsite__String_static_fromU64_463:
+R_BRC NEQ 8 $-32 #0 @drop_skip_18
+PUSH 8 $-32
+CALL __drop_String
+@drop_skip_18:
+GT_DESTRUCT $-32
+GT_UNWIND MSG
+@end_of_gt_callsites__String_static_fromU64_464:
+FUNC_END
+FUNC_START String_static_fromS64
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_static_fromS64_469
+@catch_465:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_466:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_467:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-64 #0 @drop_skip_19
+PUSH 8 $-64
+CALL __drop_String
+@drop_skip_19:
+GT_DESTRUCT $-64
+GT_UNWIND MSG
+@catch_468:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+R_BRC NEQ 8 $-64 #0 @drop_skip_20
+PUSH 8 $-64
+CALL __drop_String
+@drop_skip_20:
+GT_DESTRUCT $-64
+GT_UNWIND MSG
+@end_of_catches__String_static_fromS64_469:
+R_BRC SGT_EQ 8 $-24 #0 @end_of_if_470
+R_MOV 8 %t0 $-24
+R_MOV 8 $-32 %t0
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @catch_465 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL String_static_fromU64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-40
+@end_of_if_470:
+R_UN BNOT 8 %t0 $-24
+R_BIN ADD 8 %t0 %t0 #1
+R_MOV 8 $-56 %t0
+ADDR 8 $-64
+ADDR 8 $-8
+PUSH_LABEL @catch_466 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-112
+ADDR_OF RAW $-112
+POP ARG0 8
+CALL __ctor__String__sig_void
+CC_END sysv_x64
+PUSH 16 $-112
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_472
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_466
+@new_ok_472:
+ASSIGN 8 8 8
+R_MOV 8 $-80 #0
+R_MOV 8 $-72 #20
+R_MOV 8 %t0 $-80
+R_MOV 8 $-88 %t0
+@for_473:
+R_BRC LT 8 $-88 $-72 @for_end_474
+R_BRC NEQ 8 $-56 #0 @for_end_474
+@end_of_if_475:
+R_DIVC MOD 8 %t0 $-56 #10
+R_MOV 8 $-96 %t0
+ADDR 8 $-8
+PUSH_LABEL @catch_467 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_fromS64_476 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-96
+CALL stringDigitChar
+CC_END sysv_x64
+PUSH_RET_INT 1
+POP ARG1 1
+CALL String_appendChar
+CC_END sysv_x64
+R_DIVC DIV 8 %t0 $-56 #10
+R_MOV 8 $-56 %t0
+R_RMW INC 8 $-88
+JMP @for_473
+@for_end_474:
+ADDR 8 $-8
+PUSH_LABEL @catch_468 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-64
+PUSH 1 '-'
+POP ARG1 1
+CALL String_appendChar
+CC_END sysv_x64
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_fromS64_477 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-64
+CALL String_reverseInPlace
+CC_END sysv_x64
+R_RET $-64
+JMP @end_of_gt_callsites__String_static_fromS64_478
+@gt_callsite__String_static_fromS64_476:
+R_BRC NEQ 8 $-64 #0 @drop_skip_21
+PUSH 8 $-64
+CALL __drop_String
+@drop_skip_21:
+GT_DESTRUCT $-64
+GT_UNWIND MSG
+@gt_callsite__String_static_fromS64_477:
+R_BRC NEQ 8 $-64 #0 @drop_skip_22
+PUSH 8 $-64
+CALL __drop_String
+@drop_skip_22:
+GT_DESTRUCT $-64
+GT_UNWIND MSG
+@end_of_gt_callsites__String_static_fromS64_478:
+FUNC_END
+FUNC_START String_reverseInPlace
+ALLOC 288
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-32 %t0
+R_BIN SHR 8 %t0 $-32 #1
+R_MOV 8 $-40 %t0
+R_MOV 8 $-56 #0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-48 %t0
+R_MOV 8 %v0 $-56
+@for_479:
+R_BRC LT 8 %v0 $-48 @for_end_480
+R_BIN SUB 8 %t0 $-32 #1
+R_BIN SUB 8 %v2 %t0 %v0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-88 %t0
+R_MOV 8 %v3 %v0
+R_MOV 8 %t0 $-88
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-232 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-240 %t0
+R_MOV 8 %t0 $-232
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-240 %t0 @end_of_match_793
+R_MOV 8 %t0 $-88
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_SETV 1 %v1 %t0
+JMP @inl_end_794
+@end_of_match_793:
+PUSH 1 '\0'
+R_POPV 1 %v1
+@inl_end_794:
+R_MOV 8 %t0 %v1
+R_ST 1 $-73 %t0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-112 %t0
+R_MOV 8 %v3 %v2
+R_MOV 8 %t0 $-112
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-248 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-256 %t0
+R_MOV 8 %t0 $-248
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-256 %t0 @end_of_match_796
+R_MOV 8 %t0 $-112
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_SETV 1 %v1 %t0
+JMP @inl_end_797
+@end_of_match_796:
+PUSH 1 '\0'
+R_POPV 1 %v1
+@inl_end_797:
+R_MOV 8 %t0 %v1
+R_SETV 1 %v4 %t0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-136 %t0
+R_MOV 8 %v3 %v0
+R_MOV 8 %t0 %v4
+R_SETV 1 %v5 %t0
+R_MOV 8 %t0 $-136
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-264 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-272 %t0
+R_MOV 8 %t0 $-264
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-272 %t0 @end_of_match_799
+R_MOV 8 %t0 $-136
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-184 %t0
+R_MOV 8 %v4 %v3
+R_MOV 8 %t0 %v5
+R_SETV 1 %v3 %t0
+R_MOV 8 %t0 $-184
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v3
+R_STI 1 %t0 %v4 1 %t1 16
+@end_of_match_799:
+JMP @end_of_gt_callsites__String_setCharAt_801
+@gt_callsite__String_setCharAt_800:
+JMP @gt_callsite__String_reverseInPlace_483
+@end_of_gt_callsites__String_setCharAt_801:
+R_MOV 8 %t0 $-24
+R_MOV 8 $-160 %t0
+R_MOV 8 %v3 %v2
+R_LD 1 %t0 $-73
+R_SETV 1 %v5 %t0
+R_MOV 8 %t0 $-160
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-280 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-288 %t0
+R_MOV 8 %t0 $-280
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-288 %t0 @end_of_match_804
+R_MOV 8 %t0 $-160
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-208 %t0
+R_MOV 8 %v4 %v3
+R_MOV 8 %t0 %v5
+R_SETV 1 %v3 %t0
+R_MOV 8 %t0 $-208
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v3
+R_STI 1 %t0 %v4 1 %t1 16
+@end_of_match_804:
+JMP @end_of_gt_callsites__String_setCharAt_806
+@gt_callsite__String_setCharAt_805:
+JMP @gt_callsite__String_reverseInPlace_484
+@end_of_gt_callsites__String_setCharAt_806:
+R_RMW INC 8 %v0
+JMP @for_479
+@for_end_480:
+JMP @end_of_gt_callsites__String_reverseInPlace_485
+@gt_callsite__String_reverseInPlace_481:
+GT_UNWIND MSG
+@gt_callsite__String_reverseInPlace_482:
+GT_UNWIND MSG
+@gt_callsite__String_reverseInPlace_483:
+GT_UNWIND MSG
+@gt_callsite__String_reverseInPlace_484:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_reverseInPlace_485:
+FUNC_END
+FUNC_START String_hashCode
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #14695981039346656037
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 $-56 #0
+R_MOV 8 %v2 $-40
+R_MOV 8 %v0 $-56
+@for_486:
+R_BRC LT 8 %v0 %v2 @for_end_487
+R_MOV 8 %t0 $-24
+R_MOV 8 $-80 %t0
+R_MOV 8 %v3 %v0
+R_MOV 8 %t0 $-80
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 $-104
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-112 %t0 @end_of_match_809
+R_MOV 8 %t0 $-80
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_SETV 1 %v1 %t0
+JMP @inl_end_810
+@end_of_match_809:
+PUSH 1 '\0'
+R_POPV 1 %v1
+@inl_end_810:
+R_MOV 8 %t0 %v1
+R_SETV 1 %v1 %t0
+ADDR 8 $-32
+PUSH 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_hashCode_489 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 1 %v1
+CALL String_static_charCode
+CC_END sysv_x64
+PUSH_RET_INT 8
+BITS_XOR 8
+PUSH 8 1099511628211
+MUL_INT 8
+ASSIGN 8 8 8
+R_RMW INC 8 %v0
+JMP @for_486
+@for_end_487:
+R_BIN SHR 8 %t0 $-32 #32
+R_BIN BXOR 8 %t0 $-32 %t0
+R_RET %t0
+JMP @end_of_gt_callsites__String_hashCode_490
+@gt_callsite__String_hashCode_488:
+GT_UNWIND MSG
+@gt_callsite__String_hashCode_489:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_hashCode_490:
+FUNC_END
+FUNC_START String_static_hashLiteral
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #14695981039346656037
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_hashLiteral_491 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL stringLiteralLength
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 %v2 $-40
+R_MOV 8 %v0 $-56
+@for_492:
+R_BRC LT 8 %v0 %v2 @for_end_493
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_hashLiteral_494 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+CALL stringLiteralByte
+CC_END sysv_x64
+PUSH_RET_INT 1
+R_POPV 1 %v1
+ADDR 8 $-32
+PUSH 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_hashLiteral_495 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 1 %v1
+CALL String_static_charCode
+CC_END sysv_x64
+PUSH_RET_INT 8
+BITS_XOR 8
+PUSH 8 1099511628211
+MUL_INT 8
+ASSIGN 8 8 8
+R_RMW INC 8 %v0
+JMP @for_492
+@for_end_493:
+R_BIN SHR 8 %t0 $-32 #32
+R_BIN BXOR 8 %t0 $-32 %t0
+R_RET %t0
+JMP @end_of_gt_callsites__String_static_hashLiteral_496
+@gt_callsite__String_static_hashLiteral_491:
+GT_UNWIND MSG
+@gt_callsite__String_static_hashLiteral_494:
+GT_UNWIND MSG
+@gt_callsite__String_static_hashLiteral_495:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_static_hashLiteral_496:
+FUNC_END
+FUNC_START String_static_literalByteAt
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 $-40 #0
+R_MOV 8 %t0 $-24
+R_MOV 8 $-48 %t0
+PUSH 8 $-40
+ADDR_OF RAW $-40
+PUSH 8 8
+PUSH 8 $-48
+ADDR_OF RAW $-48
+MEMCOPY
+ADDR 1 $-49
+PUSH 1 '\0'
+ASSIGN 1 1 1
+R_BIN ADD 8 %t0 $-32 #1
+R_MOV 8 $-64 %t0
+R_MOV 8 $-80 #0
+R_MOV 8 %v1 $-64
+R_MOV 8 %v0 $-80
+@for_497:
+R_BRC LT 8 %v0 %v1 @for_end_498
+R_BIN ADD 8 %t0 $-40 %v0
+R_MOV 8 $-96 %t0
+PUSH 1 $-49
+ADDR_OF RAW $-49
+PUSH 8 1
+PUSH 8 $-96
+MEMCOPY
+PUSH 1 $-49
+PUSH 1 '\0'
+EQ_INT 1
+CMP
+JMP @end_of_if_499
+JMP @for_end_498
+@end_of_if_499:
+R_RMW INC 8 %v0
+JMP @for_497
+@for_end_498:
+R_LD 1 %s $-49
+R_RET %s
+FUNC_END
+FUNC_START String_static_charCode
+ALLOC 32
+ADDR 1 $-17
+PUSH 1 ARG0
+ASSIGN 1 1 1
+R_ST 1 $-18 #0
+PUSH 1 $-18
+ADDR_OF RAW $-18
+PUSH 8 1
+PUSH 1 $-17
+ADDR_OF RAW $-17
+MEMCOPY
+R_LD 1 %t0 $-18
+R_MOV 8 $-32 %t0
+R_RET $-32
+FUNC_END
+FUNC_START String_static_isDigit
+ALLOC 32
+ADDR 1 $-17
+PUSH 1 ARG0
+ASSIGN 1 1 1
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_isDigit_500 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 1 $-17
+CALL stringDigitValue
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 10
+LT_INT 8
+RET 1
+JMP @end_of_gt_callsites__String_static_isDigit_501
+@gt_callsite__String_static_isDigit_500:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_static_isDigit_501:
+FUNC_END
+FUNC_START String_parseDigits
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_BRC GT_EQ 8 $-32 $-40 @end_of_if_502
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_502:
+R_MOV 8 %v2 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-64 %t0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-56 %t0
+R_MOV 8 %v0 $-64
+@for_503:
+R_BRC LT 8 %v0 $-56 @for_end_504
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_505
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_parseDigits_506 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v0 1 16
+R_ARG 0 8 %t0
+CALL stringDigitValue
+CC_END sysv_x64
+PUSH_RET_INT 8
+R_POPV 8 %v1
+R_BRC GT 8 %v1 #9 @end_of_if_507
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_507:
+R_BIN SUB 8 %t0 #18446744073709551615 %v1
+R_DIVC DIV 8 %t0 %t0 #10
+R_BRC GT 8 %v2 %t0 @end_of_if_508
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_508:
+R_BIN MUL 8 %t0 %v2 #10
+R_BIN ADD 8 %v2 %t0 %v1
+@end_of_match_505:
+R_RMW INC 8 %v0
+JMP @for_503
+@for_end_504:
+R_RET %v2
+JMP @end_of_gt_callsites__String_parseDigits_509
+@gt_callsite__String_parseDigits_506:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_parseDigits_509:
+FUNC_END
+FUNC_START String_parseS64
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_parseS64_511
+@catch_510:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-72 %t0
+THROW e
+R_MOV 8 %t0 $-72
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_parseS64_511:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-32 %t0
+R_BRC EQ 8 $-32 #0 @end_of_if_512
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_512:
+R_ST 1 $-33 #0
+R_MOV 8 $-48 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-80 %t0
+R_MOV 8 $-88 #0
+R_MOV 8 %t0 $-80
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-88 %t0 @end_of_match_513
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LDD 1 %t0 %t0 16
+R_ST 1 $-49 %t0
+PUSH 1 $-49
+PUSH 1 '-'
+EQ_INT 1
+CMP
+JMP @if_branch_515
+R_ST 1 $-33 #1
+R_MOV 8 $-48 #1
+JMP @end_of_if_514
+@if_branch_515:
+PUSH 1 $-49
+PUSH 1 '+'
+EQ_INT 1
+CMP
+JMP @end_of_if_516
+R_MOV 8 $-48 #1
+@end_of_if_516:
+@end_of_if_514:
+@end_of_match_513:
+ADDR 8 $-64
+ADDR 8 $-8
+PUSH_LABEL @catch_510 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-48
+CALL String_parseDigits
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 1 $-33
+CMP
+JMP @end_of_if_517
+R_BRC GT 8 $-64 #9223372036854775808 @end_of_if_518
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_518:
+R_BRC EQ 8 $-64 #0 @end_of_if_519
+R_RET #0
+@end_of_if_519:
+R_UN BNOT 8 %t0 $-64
+R_BIN ADD 8 %t0 %t0 #1
+R_RET %t0
+@end_of_if_517:
+R_BRC GT 8 $-64 #9223372036854775807 @end_of_if_520
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_520:
+R_RET $-64
+FUNC_END
+FUNC_START String_parseU64
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_parseU64_522
+@catch_521:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_parseU64_522:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-32 %t0
+R_BRC EQ 8 $-32 #0 @end_of_if_523
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_523:
+R_MOV 8 $-40 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-64 %t0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-64
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-72 %t0 @end_of_match_524
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 0
+LOOKUP_DYN 1
+PUSH 1 '+'
+EQ_INT 1
+CMP
+JMP @end_of_if_525
+R_MOV 8 $-40 #1
+@end_of_if_525:
+@end_of_match_524:
+ADDR 8 $-48
+ADDR 8 $-8
+PUSH_LABEL @catch_521 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-40
+CALL String_parseDigits
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_RET $-48
+FUNC_END
+FUNC_START String_parseS32
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_parseS32_527
+@catch_526:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_parseS32_527:
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @catch_526 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL String_parseS64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_BRC SLT 8 $-32 #-2147483648 @end_of_if_528
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_528:
+R_BRC SGT 8 $-32 #2147483647 @end_of_if_529
+THROW string_id3
+ADDR 8 $-16
+PUSH 8 string_id3
+ASSIGN 8 8 8
+GT_UNWIND MSG
+@end_of_if_529:
+R_LD 4 %s $-32
+R_RET %s
+FUNC_END
+FUNC_START String_static_from
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__String_static_from_531
+@catch_530:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__String_static_from_531:
+ADDR 8 $-32
+ADDR 8 $-8
+PUSH_LABEL @catch_530 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-56
+ADDR_OF RAW $-56
+POP ARG0 8
+R_ARG 1 8 $-24
+CALL __ctor__String__sig_static_imut_string
+CC_END sysv_x64
+PUSH 16 $-56
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_533
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_530
+@new_ok_533:
+ASSIGN 8 8 8
+R_RET $-32
+FUNC_END
+FUNC_START String_static_literalsEqual
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_literalsEqual_534 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL stringLiteralLength
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+PUSH 8 $-40
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_literalsEqual_536 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL stringLiteralLength
+CC_END sysv_x64
+PUSH_RET_INT 8
+NEQ_INT 8
+CMP
+JMP @end_of_if_535
+R_RET #0
+@end_of_if_535:
+R_MOV 8 $-56 #0
+R_MOV 8 %v1 $-40
+R_MOV 8 %v0 $-56
+@for_537:
+R_BRC LT 8 %v0 %v1 @for_end_538
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_literalsEqual_540 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 %v0
+CALL stringLiteralByte
+CC_END sysv_x64
+PUSH_RET_INT 1
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__String_static_literalsEqual_541 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+R_ARG 1 8 %v0
+CALL stringLiteralByte
+CC_END sysv_x64
+PUSH_RET_INT 1
+NEQ_INT 1
+CMP
+JMP @end_of_if_539
+R_RET #0
+@end_of_if_539:
+R_RMW INC 8 %v0
+JMP @for_537
+@for_end_538:
+R_RET #1
+JMP @end_of_gt_callsites__String_static_literalsEqual_542
+@gt_callsite__String_static_literalsEqual_534:
+GT_UNWIND MSG
+@gt_callsite__String_static_literalsEqual_536:
+GT_UNWIND MSG
+@gt_callsite__String_static_literalsEqual_540:
+GT_UNWIND MSG
+@gt_callsite__String_static_literalsEqual_541:
+GT_UNWIND MSG
+@end_of_gt_callsites__String_static_literalsEqual_542:
+FUNC_END
+FUNC_START insecure_fnv1a64Bytes
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-56 #0
+R_MOV 8 %v0 $-32
+R_MOV 8 %v4 $-56
+@for_543:
+R_BRC LT 8 %v4 %v0 @for_end_544
+R_BIN ADD 8 %t0 $-24 %v4
+R_LD 1 %v5 %t0
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_543
+@for_end_544:
+R_RET %v3
+FUNC_END
+FUNC_START main
+ALLOC 576
+JMP @end_of_catches__main_552
+@catch_545:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+RET 0
+@catch_546:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+R_BRC NEQ 8 $-24 #0 @drop_skip_23
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_23:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+RET 0
+@catch_547:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+R_BRC NEQ 8 $-24 #0 @drop_skip_24
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_24:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+RET 0
+@catch_548:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+R_BRC NEQ 8 $-24 #0 @drop_skip_25
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_25:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+RET 0
+@catch_549:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+R_BRC NEQ 8 $-176 #0 @drop_skip_26
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_26:
+GT_DESTRUCT $-176
+R_MOV 8 $-176 #0
+R_BRC NEQ 8 $-24 #0 @drop_skip_27
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_27:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+RET 0
+@catch_550:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+R_BRC NEQ 8 $-248 #0 @drop_skip_28
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_28:
+GT_DESTRUCT $-248
+R_MOV 8 $-248 #0
+R_BRC NEQ 8 $-176 #0 @drop_skip_29
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_29:
+GT_DESTRUCT $-176
+R_MOV 8 $-176 #0
+R_BRC NEQ 8 $-24 #0 @drop_skip_30
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_30:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+RET 0
+@catch_551:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-32 %t0
+R_BRC NEQ 8 $-248 #0 @drop_skip_31
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_31:
+GT_DESTRUCT $-248
+R_MOV 8 $-248 #0
+R_BRC NEQ 8 $-176 #0 @drop_skip_32
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_32:
+GT_DESTRUCT $-176
+R_MOV 8 $-176 #0
+R_BRC NEQ 8 $-24 #0 @drop_skip_33
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_33:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+RET 0
+@end_of_catches__main_552:
+GT_INIT
+ADDR 8 $-24
+ADDR 8 $-8
+PUSH_LABEL @catch_545 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-512
+ADDR_OF RAW $-512
+POP ARG0 8
+CALL __ctor__DynamicArray_u64__sig_void
+CC_END sysv_x64
+PUSH 16 $-512
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_554
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_545
+@new_ok_554:
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 $-40 #6
+R_MOV 8 %t0 $-48
+R_MOV 8 $-56 %t0
+@for_555:
+R_BRC LT 8 $-56 $-40 @for_end_556
+R_BIN MUL 8 %t0 $-56 $-56
+R_MOV 8 $-64 %t0
+ADDR 8 $-8
+PUSH_LABEL @catch_546 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-64
+CALL DynamicArray_u64_pushBack
+CC_END sysv_x64
+R_RMW INC 8 $-56
+JMP @for_555
+@for_end_556:
+R_MOV 8 $-72 #0
+R_MOV 8 $-88 #0
+R_MOV 8 %v4 #6
+R_MOV 8 %t0 $-88
+R_MOV 8 $-56 %t0
+@for_557:
+R_BRC LT 8 $-56 %v4 @for_end_558
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-416 %t0
+R_MOV 8 %t0 $-56
+R_MOV 8 $-424 %t0
+R_MOV 8 %t0 $-416
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-424 %t0 @end_of_match_559
+R_MOV 8 %t0 $-24
+R_MOV 8 $-336 %t0
+R_MOV 8 %v3 $-56
+R_MOV 8 %t0 $-336
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v3 8 16
+R_RMW ADD 8 $-72 %t0
+@end_of_match_559:
+R_RMW INC 8 $-56
+JMP @for_557
+@for_end_558:
+ADDR 8 $-96
+ADDR 8 $-8
+PUSH_LABEL @catch_547 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 #999
+CALL DynamicArray_u64_popBack
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 %v3 #2
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-432 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-440 %t0
+R_MOV 8 %t0 $-432
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-440 %t0 @end_of_match_561
+R_MOV 8 %t0 $-24
+R_MOV 8 $-352 %t0
+R_MOV 8 %v5 %v3
+R_MOV 8 %v4 #100
+R_MOV 8 %t0 $-352
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v4
+R_STI 8 %t0 %v5 8 %t1 16
+@end_of_match_561:
+R_MOV 8 $-112 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-448 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-456 %t0
+R_MOV 8 %t0 $-448
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-456 %t0 @end_of_match_563
+R_MOV 8 %t0 $-24
+R_MOV 8 $-376 %t0
+R_MOV 8 %v3 %v3
+R_MOV 8 %t0 $-376
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v3 8 16
+R_MOV 8 $-112 %t0
+@end_of_match_563:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-120 %t0
+CC_START sysv_x64
+PUSH 8 string_id4
+POP ARG0 8
+R_ARG 1 8 $-72
+R_ARG 2 8 $-96
+R_ARG 3 8 $-120
+R_ARG 4 8 $-112
+VARARGS_XMM_COUNT 0
+CALL printf 5
+CC_END sysv_x64
+ADDR 48 $-168
+PUSH 8 3
+PUSH 8 1
+PUSH 8 3
+PUSH 8 3
+PUSH 8 2
+PUSH 8 1
+ASSIGN 48 48 48
+ADDR 8 $-176
+ADDR 8 $-8
+PUSH_LABEL @catch_548 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 40 $-552
+ADDR_OF RAW $-552
+POP ARG0 8
+R_ARG 1 8 #0
+R_ARG 2 8 #0
+R_ARG 3 8 #64
+CALL __ctor__HashMap_u64_u64
+CC_END sysv_x64
+PUSH 40 $-552
+NEW 40 m8 m8 m8 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_566
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_548
+@new_ok_566:
+ASSIGN 8 8 8
+R_MOV 8 $-192 #0
+R_MOV 8 $-184 #6
+R_MOV 8 %t0 $-192
+R_MOV 8 $-56 %t0
+@for_567:
+R_BRC LT 8 $-56 $-184 @for_end_568
+R_BRC LT 8 $-56 #6 @end_of_match_569
+R_LEA %t0 $-168 $-56 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-200 %t0
+ADDR 8 $-208
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_570 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+R_ARG 1 8 $-200
+R_ARG 2 8 #0
+CALL HashMap_u64_u64_get
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_571 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+R_ARG 1 8 $-200
+R_BIN ADD 8 %t0 $-208 #1
+R_ARG 2 8 %t0
+CALL HashMap_u64_u64_set
+CC_END sysv_x64
+@end_of_match_569:
+R_RMW INC 8 $-56
+JMP @for_567
+@for_end_568:
+ADDR 8 $-216
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_572 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+R_ARG 1 8 #3
+R_ARG 2 8 #999
+CALL HashMap_u64_u64_get
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-224
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_573 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+R_ARG 1 8 #1
+R_ARG 2 8 #999
+CALL HashMap_u64_u64_get
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-232
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_574 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+R_ARG 1 8 #2
+R_ARG 2 8 #999
+CALL HashMap_u64_u64_get
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-240
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_575 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+R_ARG 1 8 #9
+R_ARG 2 8 #999
+CALL HashMap_u64_u64_get
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id5
+POP ARG0 8
+R_ARG 1 8 $-216
+R_ARG 2 8 $-224
+R_ARG 3 8 $-232
+R_ARG 4 8 $-240
+R_MOV 8 %t0 $-176
+R_LDD 8 %t0 %t0 32
+R_ARG 5 8 %t0
+VARARGS_XMM_COUNT 0
+CALL printf 6
+CC_END sysv_x64
+ADDR 8 $-248
+ADDR 8 $-8
+PUSH_LABEL @catch_549 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 16 $-568
+ADDR_OF RAW $-568
+POP ARG0 8
+PUSH 8 string_id6
+POP ARG1 8
+CALL __ctor__String__sig_static_imut_string
+CC_END sysv_x64
+PUSH 16 $-568
+NEW 16 m8 m8
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @new_ok_577
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_549
+@new_ok_577:
+ASSIGN 8 8 8
+ADDR 8 $-8
+PUSH_LABEL @catch_550 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-248
+PUSH 8 string_id7
+POP ARG1 8
+CALL String_concat__sig_ref_some_mut_String_static_imut_string
+CC_END sysv_x64
+R_MOV 8 %t0 $-248
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-256 %t0
+R_MOV 8 %t0 $-248
+R_MOV 8 $-392 %t0
+R_MOV 8 $-400 #0
+R_MOV 8 %t0 $-392
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-488 %t0
+R_MOV 8 %t0 $-400
+R_MOV 8 $-496 %t0
+R_MOV 8 %t0 $-488
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-496 %t0 @end_of_match_818
+R_MOV 8 %t0 $-392
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-400 1 16
+R_LD 1 %t0 %t0
+R_ST 1 $-401 %t0
+JMP @inl_end_819
+@end_of_match_818:
+ADDR 1 $-401
+PUSH 1 '\0'
+ASSIGN 1 1 1
+@inl_end_819:
+R_LD 1 %t0 $-401
+R_ST 1 $-257 %t0
+ADDR 8 $-272
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_579 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-248
+PUSH 1 'l'
+POP ARG1 1
+CALL String_firstIndexOf
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-280
+ADDR 8 $-8
+PUSH_LABEL @catch_551 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-248
+R_ARG 1 8 #0
+R_ARG 2 8 #7
+CALL String_sub
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-288 #0
+PUSH 8 $-280
+GT_ALIVE_CHECK
+CMP
+JMP @end_of_match_580
+R_MOV 8 %t0 $-280
+R_LDD 8 %t0 %t0 8
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-288 %t0
+@end_of_match_580:
+CC_START sysv_x64
+PUSH 8 string_id8
+POP ARG0 8
+R_ARG 1 8 $-256
+R_ARG 2 1 $-257
+R_ARG 3 8 $-272
+R_ARG 4 8 $-288
+VARARGS_XMM_COUNT 0
+CALL printf 5
+CC_END sysv_x64
+ADDR 8 $-296
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_581 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #42
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-304
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_582 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #42
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-312
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__main_583 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 #43
+CALL insecure_hashOf_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+R_MOV 8 $-320 #0
+R_BRC EQ 8 $-296 $-304 @end_of_if_584
+R_MOV 8 $-320 #1
+@end_of_if_584:
+R_MOV 8 $-328 #0
+R_BRC NEQ 8 $-296 $-312 @end_of_if_585
+R_MOV 8 $-328 #1
+@end_of_if_585:
+CC_START sysv_x64
+PUSH 8 string_id9
+POP ARG0 8
+R_ARG 1 8 $-320
+R_ARG 2 8 $-328
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+R_BRC NEQ 8 $-280 #0 @drop_skip_34
+PUSH 8 $-280
+CALL __drop_String
+@drop_skip_34:
+GT_DESTRUCT $-280
+R_MOV 8 $-280 #0
+R_BRC NEQ 8 $-248 #0 @drop_skip_35
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_35:
+GT_DESTRUCT $-248
+R_MOV 8 $-248 #0
+R_BRC NEQ 8 $-176 #0 @drop_skip_36
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_36:
+GT_DESTRUCT $-176
+R_MOV 8 $-176 #0
+R_BRC NEQ 8 $-24 #0 @drop_skip_37
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_37:
+GT_DESTRUCT $-24
+R_MOV 8 $-24 #0
+JMP @end_of_gt_callsites__main_586
+@gt_callsite__main_560:
+R_BRC NEQ 8 $-24 #0 @drop_skip_38
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_38:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_562:
+R_BRC NEQ 8 $-24 #0 @drop_skip_39
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_39:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_564:
+R_BRC NEQ 8 $-24 #0 @drop_skip_40
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_40:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_570:
+R_BRC NEQ 8 $-176 #0 @drop_skip_41
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_41:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_42
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_42:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_571:
+R_BRC NEQ 8 $-176 #0 @drop_skip_43
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_43:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_44
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_44:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_572:
+R_BRC NEQ 8 $-176 #0 @drop_skip_45
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_45:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_46
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_46:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_573:
+R_BRC NEQ 8 $-176 #0 @drop_skip_47
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_47:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_48
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_48:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_574:
+R_BRC NEQ 8 $-176 #0 @drop_skip_49
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_49:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_50
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_50:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_575:
+R_BRC NEQ 8 $-176 #0 @drop_skip_51
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_51:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_52
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_52:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_578:
+R_BRC NEQ 8 $-248 #0 @drop_skip_53
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_53:
+GT_DESTRUCT $-248
+R_BRC NEQ 8 $-176 #0 @drop_skip_54
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_54:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_55
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_55:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_579:
+R_BRC NEQ 8 $-248 #0 @drop_skip_56
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_56:
+GT_DESTRUCT $-248
+R_BRC NEQ 8 $-176 #0 @drop_skip_57
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_57:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_58
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_58:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_581:
+R_BRC NEQ 8 $-280 #0 @drop_skip_59
+PUSH 8 $-280
+CALL __drop_String
+@drop_skip_59:
+GT_DESTRUCT $-280
+R_BRC NEQ 8 $-248 #0 @drop_skip_60
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_60:
+GT_DESTRUCT $-248
+R_BRC NEQ 8 $-176 #0 @drop_skip_61
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_61:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_62
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_62:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_582:
+R_BRC NEQ 8 $-280 #0 @drop_skip_63
+PUSH 8 $-280
+CALL __drop_String
+@drop_skip_63:
+GT_DESTRUCT $-280
+R_BRC NEQ 8 $-248 #0 @drop_skip_64
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_64:
+GT_DESTRUCT $-248
+R_BRC NEQ 8 $-176 #0 @drop_skip_65
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_65:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_66
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_66:
+GT_DESTRUCT $-24
+EXIT
+@gt_callsite__main_583:
+R_BRC NEQ 8 $-280 #0 @drop_skip_67
+PUSH 8 $-280
+CALL __drop_String
+@drop_skip_67:
+GT_DESTRUCT $-280
+R_BRC NEQ 8 $-248 #0 @drop_skip_68
+PUSH 8 $-248
+CALL __drop_String
+@drop_skip_68:
+GT_DESTRUCT $-248
+R_BRC NEQ 8 $-176 #0 @drop_skip_69
+PUSH 8 $-176
+CALL __drop_HashMap_u64_u64
+@drop_skip_69:
+GT_DESTRUCT $-176
+R_BRC NEQ 8 $-24 #0 @drop_skip_70
+PUSH 8 $-24
+CALL __drop_DynamicArray_u64
+@drop_skip_70:
+GT_DESTRUCT $-24
+EXIT
+@end_of_gt_callsites__main_586:
+FUNC_END
+FUNC_START __ctor__DynamicArray_char__sig_void
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches____ctor__DynamicArray_char__sig_void_588
+@catch_587:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches____ctor__DynamicArray_char__sig_void_588:
+ADDR 8 $-32
+NEW_DYN 0 0
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_589
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_587
+@alloc_ok_589:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_MOV 8 $-32 #0
+R_PUSH 8 $-24
+R_PUSH 8 #2
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START __ctor__DynamicArray_char__sig_mut_char
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches____ctor__DynamicArray_char__sig_mut_char_591
+@catch_590:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches____ctor__DynamicArray_char__sig_mut_char_591:
+ADDR 8 $-40
+PUSH 1 $-25
+NEW_DYN 1 1
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_592
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_590
+@alloc_ok_592:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-40
+R_MOV 8 $-40 #0
+R_PUSH 8 $-24
+R_PUSH 8 #2
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START __ctor__DynamicArray_char__sig_owns_some_mut_dynarray_char_
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_MOV 8 $-32 #0
+R_PUSH 8 $-24
+R_PUSH 8 #2
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START DynamicArray_char_get
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 1 16
+R_LD 1 %t0 %t0
+R_RET %t0
+FUNC_END
+FUNC_START DynamicArray_char_set
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 1 $-33
+PUSH 1 ARG2
+ASSIGN 1 1 1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 1 16
+R_LD 1 %t1 $-33
+R_ST 1 %t0 %t1
+FUNC_END
+FUNC_START DynamicArray_char_pushBack
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches__DynamicArray_char_pushBack_594
+@catch_593:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_pushBack_594:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+ADDR 8 $-48
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 1 $-25
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_595
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_593
+@alloc_ok_595:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-48
+R_MOV 8 $-64 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-64
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+FUNC_END
+FUNC_START DynamicArray_char_popBack
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches__DynamicArray_char_popBack_597
+@catch_596:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-72 %t0
+THROW e
+R_MOV 8 %t0 $-72
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_popBack_597:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v3 %t0
+R_BRC NEQ 8 %v3 #0 @end_of_match_598
+R_BIN SUB 8 %t0 %v3 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_599
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-48 1 16
+R_LD 1 %t0 %t0
+R_ST 1 $-49 %t0
+ADDR 8 $-64
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-48
+PUSH 1 $-49
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_600
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_596
+@alloc_ok_600:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-64
+R_MOV 8 $-80 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-80
+ASSIGN 8 8 8
+R_MOV 8 $-64 #0
+R_LD 1 %s $-49
+R_RET %s
+@end_of_match_599:
+@end_of_match_598:
+R_LD 1 %s $-25
+R_RET %s
+FUNC_END
+FUNC_START DynamicArray_char_pushFront
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches__DynamicArray_char_pushFront_602
+@catch_601:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_pushFront_602:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+ADDR 8 $-48
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 1 $-25
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_603
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_601
+@alloc_ok_603:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-48
+R_MOV 8 $-120 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-120
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-64 %t0
+R_MOV 8 %v3 $-72
+@for_604:
+R_BRC LT 8 %v3 $-64 @for_end_605
+R_BIN SUB 8 %v4 $-40 %v3
+R_BIN SUB 8 %v5 %v4 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 $-128
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-136 %t0 @end_of_match_606
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v5 1 16
+R_SETV 1 %v5 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-144
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-152 %t0 @end_of_match_607
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v5
+R_STI 1 %t0 %v4 1 %t1 16
+@end_of_match_607:
+@end_of_match_606:
+R_RMW INC 8 %v3
+JMP @for_604
+@for_end_605:
+R_MOV 8 $-112 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-112
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-160
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-168 %t0 @end_of_match_608
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-112 1 16
+R_LD 1 %t1 $-25
+R_ST 1 %t0 %t1
+@end_of_match_608:
+FUNC_END
+FUNC_START DynamicArray_char_popFront
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 1 $-25
+PUSH 1 ARG1
+ASSIGN 1 1 1
+JMP @end_of_catches__DynamicArray_char_popFront_610
+@catch_609:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_popFront_610:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v4 %t0
+R_BRC NEQ 8 %v4 #0 @end_of_match_611
+R_MOV 8 %v3 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_612
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_ST 1 $-49 %t0
+R_BIN SUB 8 %t0 %v4 #1
+R_MOV 8 $-64 %t0
+R_MOV 8 $-80 #0
+R_MOV 8 %v5 $-64
+R_MOV 8 %v3 $-80
+@for_613:
+R_BRC LT 8 %v3 %v5 @for_end_614
+R_BIN ADD 8 %v4 %v3 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-152
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-160 %t0 @end_of_match_615
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v4 1 16
+R_SETV 1 %v4 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-168
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-176 %t0 @end_of_match_616
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v4
+R_STI 1 %t0 %v3 1 %t1 16
+@end_of_match_616:
+@end_of_match_615:
+R_RMW INC 8 %v3
+JMP @for_613
+@for_end_614:
+ADDR 8 $-112
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+PUSH 1 $-49
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_617
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_609
+@alloc_ok_617:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-112
+R_MOV 8 $-128 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-128
+ASSIGN 8 8 8
+R_MOV 8 $-112 #0
+R_LD 1 %s $-49
+R_RET %s
+@end_of_match_612:
+@end_of_match_611:
+R_LD 1 %s $-25
+R_RET %s
+FUNC_END
+FUNC_START DynamicArray_char_setPtr
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-40
+R_LD 1 %t0 %t0
+R_ST 1 $-41 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 1 16
+R_LD 1 %t1 $-41
+R_ST 1 %t0 %t1
+FUNC_END
+FUNC_START DynamicArray_char_pushBackPtr
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_char_pushBackPtr_619
+@catch_618:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+THROW e
+R_MOV 8 %t0 $-64
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_pushBackPtr_619:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_LD 1 %t0 %t0
+R_ST 1 $-41 %t0
+ADDR 8 $-56
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 1 $-41
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_620
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_618
+@alloc_ok_620:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-72
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+FUNC_END
+FUNC_START DynamicArray_char_popBackPtr
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_char_popBackPtr_622
+@catch_621:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-72 %t0
+THROW e
+R_MOV 8 %t0 $-72
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_popBackPtr_622:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v3 %t0
+R_BRC NEQ 8 %v3 #0 @end_of_match_623
+R_BIN SUB 8 %t0 %v3 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 $-96
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-104 %t0 @end_of_match_624
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-48 1 16
+R_LD 1 %t0 %t0
+R_ST 1 $-49 %t0
+ADDR 8 $-64
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-48
+PUSH 1 $-49
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_625
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_621
+@alloc_ok_625:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-64
+R_MOV 8 $-88 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-88
+ASSIGN 8 8 8
+R_MOV 8 $-64 #0
+R_LD 1 %s $-49
+R_RET %s
+@end_of_match_624:
+@end_of_match_623:
+R_MOV 8 %t0 $-32
+R_LD 1 %t0 %t0
+R_ST 1 $-73 %t0
+R_LD 1 %s $-73
+R_RET %s
+FUNC_END
+FUNC_START DynamicArray_char_pushFrontPtr
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_char_pushFrontPtr_627
+@catch_626:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+THROW e
+R_MOV 8 %t0 $-64
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_pushFrontPtr_627:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_LD 1 %t0 %t0
+R_ST 1 $-41 %t0
+ADDR 8 $-56
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 1 $-41
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_628
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_626
+@alloc_ok_628:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-128 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-128
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 $-80 #0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-72 %t0
+R_MOV 8 %v3 $-80
+@for_629:
+R_BRC LT 8 %v3 $-72 @for_end_630
+R_BIN SUB 8 %v4 $-40 %v3
+R_BIN SUB 8 %v5 %v4 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_631
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v5 1 16
+R_SETV 1 %v5 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-152
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-160 %t0 @end_of_match_632
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v5
+R_STI 1 %t0 %v4 1 %t1 16
+@end_of_match_632:
+@end_of_match_631:
+R_RMW INC 8 %v3
+JMP @for_629
+@for_end_630:
+R_MOV 8 $-120 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-120
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-168
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-176 %t0 @end_of_match_633
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-120 1 16
+R_LD 1 %t1 $-41
+R_ST 1 %t0 %t1
+@end_of_match_633:
+FUNC_END
+FUNC_START DynamicArray_char_popFrontPtr
+ALLOC 192
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_char_popFrontPtr_635
+@catch_634:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_char_popFrontPtr_635:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v4 %t0
+R_BRC NEQ 8 %v4 #0 @end_of_match_636
+R_MOV 8 %v3 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-144
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-152 %t0 @end_of_match_637
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v3 1 16
+R_ST 1 $-49 %t0
+R_BIN SUB 8 %t0 %v4 #1
+R_MOV 8 $-64 %t0
+R_MOV 8 $-80 #0
+R_MOV 8 %v5 $-64
+R_MOV 8 %v3 $-80
+@for_638:
+R_BRC LT 8 %v3 %v5 @for_end_639
+R_BIN ADD 8 %v4 %v3 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-160
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-168 %t0 @end_of_match_640
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 1 %t0 %t0 %v4 1 16
+R_SETV 1 %v4 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-184 %t0
+R_MOV 8 %t0 $-176
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-184 %t0 @end_of_match_641
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v4
+R_STI 1 %t0 %v3 1 %t1 16
+@end_of_match_641:
+@end_of_match_640:
+R_RMW INC 8 %v3
+JMP @for_638
+@for_end_639:
+ADDR 8 $-112
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+PUSH 1 $-49
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_642
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_634
+@alloc_ok_642:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-112
+R_MOV 8 $-136 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(char)
+PUSH 8 $-136
+ASSIGN 8 8 8
+R_MOV 8 $-112 #0
+R_LD 1 %s $-49
+R_RET %s
+@end_of_match_637:
+@end_of_match_636:
+R_MOV 8 %t0 $-32
+R_LD 1 %t0 %t0
+R_ST 1 $-121 %t0
+R_LD 1 %s $-121
+R_RET %s
+FUNC_END
+FUNC_START __ctor__DynamicArray_u64__sig_void
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches____ctor__DynamicArray_u64__sig_void_644
+@catch_643:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-40 %t0
+THROW e
+R_MOV 8 %t0 $-40
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches____ctor__DynamicArray_u64__sig_void_644:
+ADDR 8 $-32
+NEW_DYN 0 0
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_645
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_643
+@alloc_ok_645:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_MOV 8 $-32 #0
+R_PUSH 8 $-24
+R_PUSH 8 #3
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START __ctor__DynamicArray_u64__sig_mut_u64
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches____ctor__DynamicArray_u64__sig_mut_u64_647
+@catch_646:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-48 %t0
+THROW e
+R_MOV 8 %t0 $-48
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches____ctor__DynamicArray_u64__sig_mut_u64_647:
+ADDR 8 $-40
+PUSH 8 $-32
+NEW_DYN 8 1
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_648
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_646
+@alloc_ok_648:
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-40
+R_MOV 8 $-40 #0
+R_PUSH 8 $-24
+R_PUSH 8 #3
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START __ctor__DynamicArray_u64__sig_owns_some_mut_dynarray_u64_
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-32
+R_MOV 8 $-32 #0
+R_PUSH 8 $-24
+R_PUSH 8 #3
+R_PUSH 8 %t0
+ASSIGN 16 16 16 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START DynamicArray_u64_get
+ALLOC 32
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 8 16
+R_LD 8 %t0 %t0
+R_RET %t0
+FUNC_END
+FUNC_START DynamicArray_u64_set
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 8 16
+R_MOV 8 %t1 $-40
+R_ST 8 %t0 %t1
+FUNC_END
+FUNC_START DynamicArray_u64_pushBack
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_pushBack_650
+@catch_649:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_pushBack_650:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+ADDR 8 $-48
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 8 $-32
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_651
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_649
+@alloc_ok_651:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-48
+R_MOV 8 $-64 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-64
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+FUNC_END
+FUNC_START DynamicArray_u64_popBack
+ALLOC 96
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_popBack_653
+@catch_652:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-72 %t0
+THROW e
+R_MOV 8 %t0 $-72
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_popBack_653:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v3 %t0
+R_BRC NEQ 8 %v3 #0 @end_of_match_654
+R_BIN SUB 8 %t0 %v3 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-88 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-88
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-96 %t0 @end_of_match_655
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-48 8 16
+R_LD 8 %t0 %t0
+R_MOV 8 $-56 %t0
+ADDR 8 $-64
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-48
+PUSH 8 $-56
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_656
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_652
+@alloc_ok_656:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-64
+R_MOV 8 $-80 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-80
+ASSIGN 8 8 8
+R_MOV 8 $-64 #0
+R_RET $-56
+@end_of_match_655:
+@end_of_match_654:
+R_RET $-32
+FUNC_END
+FUNC_START DynamicArray_u64_pushFront
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_pushFront_658
+@catch_657:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+THROW e
+R_MOV 8 %t0 $-56
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_pushFront_658:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+ADDR 8 $-48
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 8 $-32
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_659
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_657
+@alloc_ok_659:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-48
+R_MOV 8 $-120 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-120
+ASSIGN 8 8 8
+R_MOV 8 $-48 #0
+R_MOV 8 $-72 #0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-64 %t0
+R_MOV 8 %v3 $-72
+@for_660:
+R_BRC LT 8 %v3 $-64 @for_end_661
+R_BIN SUB 8 %v4 $-40 %v3
+R_BIN SUB 8 %v5 %v4 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 $-128
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-136 %t0 @end_of_match_662
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %v5 %t0 %v5 8 16
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-144
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-152 %t0 @end_of_match_663
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v5
+R_STI 8 %t0 %v4 8 %t1 16
+@end_of_match_663:
+@end_of_match_662:
+R_RMW INC 8 %v3
+JMP @for_660
+@for_end_661:
+R_MOV 8 $-112 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-112
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-160
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-168 %t0 @end_of_match_664
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-112 8 16
+R_MOV 8 %t1 $-32
+R_ST 8 %t0 %t1
+@end_of_match_664:
+FUNC_END
+FUNC_START DynamicArray_u64_popFront
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_popFront_666
+@catch_665:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_popFront_666:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v4 %t0
+R_BRC NEQ 8 %v4 #0 @end_of_match_667
+R_MOV 8 %v3 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_668
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v3 8 16
+R_MOV 8 $-56 %t0
+R_BIN SUB 8 %t0 %v4 #1
+R_MOV 8 $-64 %t0
+R_MOV 8 $-80 #0
+R_MOV 8 %v5 $-64
+R_MOV 8 %v3 $-80
+@for_669:
+R_BRC LT 8 %v3 %v5 @for_end_670
+R_BIN ADD 8 %v4 %v3 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-152
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-160 %t0 @end_of_match_671
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %v4 %t0 %v4 8 16
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-168
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-176 %t0 @end_of_match_672
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v4
+R_STI 8 %t0 %v3 8 %t1 16
+@end_of_match_672:
+@end_of_match_671:
+R_RMW INC 8 %v3
+JMP @for_669
+@for_end_670:
+ADDR 8 $-112
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+PUSH 8 $-56
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_673
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_665
+@alloc_ok_673:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-112
+R_MOV 8 $-128 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-128
+ASSIGN 8 8 8
+R_MOV 8 $-112 #0
+R_RET $-56
+@end_of_match_668:
+@end_of_match_667:
+R_RET $-32
+FUNC_END
+FUNC_START DynamicArray_u64_setPtr
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-40
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-32 8 16
+R_MOV 8 %t1 $-48
+R_ST 8 %t0 %t1
+FUNC_END
+FUNC_START DynamicArray_u64_pushBackPtr
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_pushBackPtr_675
+@catch_674:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+THROW e
+R_MOV 8 %t0 $-64
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_pushBackPtr_675:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+ADDR 8 $-56
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 8 $-48
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_676
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_674
+@alloc_ok_676:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-72 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-72
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+FUNC_END
+FUNC_START DynamicArray_u64_popBackPtr
+ALLOC 112
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_popBackPtr_678
+@catch_677:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-72 %t0
+THROW e
+R_MOV 8 %t0 $-72
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_popBackPtr_678:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v3 %t0
+R_BRC NEQ 8 %v3 #0 @end_of_match_679
+R_BIN SUB 8 %t0 %v3 #1
+R_MOV 8 $-48 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 $-96
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-104 %t0 @end_of_match_680
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-48 8 16
+R_LD 8 %t0 %t0
+R_MOV 8 $-56 %t0
+ADDR 8 $-64
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-48
+PUSH 8 $-56
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_681
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_677
+@alloc_ok_681:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-64
+R_MOV 8 $-88 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-88
+ASSIGN 8 8 8
+R_MOV 8 $-64 #0
+R_RET $-56
+@end_of_match_680:
+@end_of_match_679:
+R_MOV 8 %t0 $-32
+R_LD 8 %t0 %t0
+R_MOV 8 $-80 %t0
+R_RET $-80
+FUNC_END
+FUNC_START DynamicArray_u64_pushFrontPtr
+ALLOC 176
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_pushFrontPtr_683
+@catch_682:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-64 %t0
+THROW e
+R_MOV 8 %t0 $-64
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_pushFrontPtr_683:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %t0 %t0
+R_MOV 8 $-40 %t0
+R_MOV 8 %t0 $-32
+R_LD 8 %t0 %t0
+R_MOV 8 $-48 %t0
+ADDR 8 $-56
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-40
+PUSH 8 1
+ADD_INT 8
+PUSH 8 $-48
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_684
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_682
+@alloc_ok_684:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-56
+R_MOV 8 $-128 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-128
+ASSIGN 8 8 8
+R_MOV 8 $-56 #0
+R_MOV 8 $-80 #0
+R_MOV 8 %t0 $-40
+R_MOV 8 $-72 %t0
+R_MOV 8 %v3 $-80
+@for_685:
+R_BRC LT 8 %v3 $-72 @for_end_686
+R_BIN SUB 8 %v4 $-40 %v3
+R_BIN SUB 8 %v5 %v4 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_687
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %v5 %t0 %v5 8 16
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 $-152
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-160 %t0 @end_of_match_688
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v5
+R_STI 8 %t0 %v4 8 %t1 16
+@end_of_match_688:
+@end_of_match_687:
+R_RMW INC 8 %v3
+JMP @for_685
+@for_end_686:
+R_MOV 8 $-120 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-120
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-168
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-176 %t0 @end_of_match_689
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 $-120 8 16
+R_MOV 8 %t1 $-48
+R_ST 8 %t0 %t1
+@end_of_match_689:
+FUNC_END
+FUNC_START DynamicArray_u64_popFrontPtr
+ALLOC 192
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+JMP @end_of_catches__DynamicArray_u64_popFrontPtr_691
+@catch_690:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@end_of_catches__DynamicArray_u64_popFrontPtr_691:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LD 8 %v4 %t0
+R_BRC NEQ 8 %v4 #0 @end_of_match_692
+R_MOV 8 %v3 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-144
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-152 %t0 @end_of_match_693
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v3 8 16
+R_MOV 8 $-56 %t0
+R_BIN SUB 8 %t0 %v4 #1
+R_MOV 8 $-64 %t0
+R_MOV 8 $-80 #0
+R_MOV 8 %v5 $-64
+R_MOV 8 %v3 $-80
+@for_694:
+R_BRC LT 8 %v3 %v5 @for_end_695
+R_BIN ADD 8 %v4 %v3 #1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-160 %t0
+R_MOV 8 %t0 %v4
+R_MOV 8 $-168 %t0
+R_MOV 8 %t0 $-160
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-168 %t0 @end_of_match_696
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %v4 %t0 %v4 8 16
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-184 %t0
+R_MOV 8 %t0 $-176
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-184 %t0 @end_of_match_697
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 %t1 %v4
+R_STI 8 %t0 %v3 8 %t1 16
+@end_of_match_697:
+@end_of_match_696:
+R_RMW INC 8 %v3
+JMP @for_694
+@for_end_695:
+ADDR 8 $-112
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-64
+PUSH 8 $-56
+RESIZE 8
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_698
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_690
+@alloc_ok_698:
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-112
+R_MOV 8 $-136 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u64)
+PUSH 8 $-136
+ASSIGN 8 8 8
+R_MOV 8 $-112 #0
+R_RET $-56
+@end_of_match_693:
+@end_of_match_692:
+R_MOV 8 %t0 $-32
+R_LD 8 %t0 %t0
+R_MOV 8 $-128 %t0
+R_RET $-128
+FUNC_END
+FUNC_START __ctor__HashMap_u64_u64
+ALLOC 160
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+ADDR 8 $-48
+PUSH 8 ARG3
+ASSIGN 8 8 8
+JMP @end_of_catches____ctor__HashMap_u64_u64_703
+@catch_699:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_700:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_701:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_DESTRUCT $-128
+GT_UNWIND MSG
+@catch_702:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-120 %t0
+THROW e
+R_MOV 8 %t0 $-120
+R_MOV 8 $-16 %t0
+GT_DESTRUCT $-128
+GT_UNWIND MSG
+@end_of_catches____ctor__HashMap_u64_u64_703:
+R_MOV 8 $-56 #0
+R_BRC NEQ 8 $-48 #0 @end_of_match_704
+R_MOV 8 $-56 #1
+R_MOV 8 $-72 #0
+R_MOV 8 $-64 #63
+R_MOV 8 %v5 $-72
+@for_705:
+R_BRC LT 8 %v5 $-64 @for_end_706
+R_BRC LT 8 $-56 $-48 @end_of_if_707
+R_BIN MUL 8 %t0 $-56 #2
+R_MOV 8 $-56 %t0
+@end_of_if_707:
+R_RMW INC 8 %v5
+JMP @for_705
+@for_end_706:
+@end_of_match_704:
+ADDR 24 $-104
+PUSH 8 5
+PUSH 8 $-32
+PUSH 8 $-40
+ASSIGN 24 24 24 m8 m8 m8
+ADDR 8 $-112
+NEW_DYN 0 0
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_708
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_699
+@alloc_ok_708:
+ASSIGN 8 8 8
+ADDR 8 $-128
+PUSH 8 $-112
+PUSH 8 $-56
+PUSH 24 $-104
+RESIZE 24
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_709
+GT_DESTRUCT $-112
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_700
+@alloc_ok_709:
+R_MOV 8 $-112 #0
+ASSIGN 8 8 8
+ADDR 8 $-136
+NEW_DYN 0 0
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_710
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_701
+@alloc_ok_710:
+ASSIGN 8 8 8
+R_ST 1 $-137 #0
+ADDR 8 $-152
+PUSH 8 $-136
+PUSH 8 $-56
+PUSH 1 $-137
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_711
+GT_DESTRUCT $-136
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_702
+@alloc_ok_711:
+R_MOV 8 $-136 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-128
+R_MOV 8 $-128 #0
+R_MOV 8 %t1 $-152
+R_MOV 8 $-152 #0
+R_PUSH 8 $-24
+R_PUSH 8 #4
+R_PUSH 8 %t0
+R_PUSH 8 %t1
+PUSH 8 $-56
+PUSH 8 0
+ASSIGN 40 40 40 m8 m8 m8 m8 m8
+R_RET $-24
+FUNC_END
+FUNC_START HashMap_u64_u64_grow
+ALLOC 256
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+JMP @end_of_catches__HashMap_u64_u64_grow_716
+@catch_712:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-96 %t0
+THROW e
+R_MOV 8 %t0 $-96
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_713:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-96 %t0
+THROW e
+R_MOV 8 %t0 $-96
+R_MOV 8 $-16 %t0
+GT_UNWIND MSG
+@catch_714:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-96 %t0
+THROW e
+R_MOV 8 %t0 $-96
+R_MOV 8 $-16 %t0
+GT_DESTRUCT $-104
+GT_UNWIND MSG
+@catch_715:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-96 %t0
+THROW e
+R_MOV 8 %t0 $-96
+R_MOV 8 $-16 %t0
+GT_DESTRUCT $-104
+GT_UNWIND MSG
+@end_of_catches__HashMap_u64_u64_grow_716:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 24
+R_MOV 8 $-32 %t0
+R_BIN MUL 8 %t0 $-32 #2
+R_MOV 8 $-40 %t0
+R_MOV 8 $-48 #0
+R_ST 1 $-49 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-248 %t0
+R_MOV 8 %t0 $-48
+R_MOV 8 $-256 %t0
+R_MOV 8 %t0 $-248
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-256 %t0 @end_of_match_717
+ADDR 24 $-80
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DEREF 8
+PUSH 8 $-48
+LOOKUP_DYN 24
+ASSIGN 24 24 24
+ADDR 8 $-88
+NEW_DYN 0 0
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_718
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_712
+@alloc_ok_718:
+ASSIGN 8 8 8
+ADDR 8 $-104
+PUSH 8 $-88
+PUSH 8 $-40
+PUSH 24 $-80
+RESIZE 24
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_719
+GT_DESTRUCT $-88
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_713
+@alloc_ok_719:
+R_MOV 8 $-88 #0
+ASSIGN 8 8 8
+ADDR 8 $-112
+NEW_DYN 0 0
+GT_REGISTER
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_720
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_714
+@alloc_ok_720:
+ASSIGN 8 8 8
+ADDR 8 $-120
+PUSH 8 $-112
+PUSH 8 $-40
+PUSH 1 $-49
+RESIZE 1
+DUP_TOP
+PUSH 8 null
+EQ_INT 8
+CMP
+JMP @alloc_ok_721
+GT_DESTRUCT $-112
+ADDR 8 $-16
+PUSH 8 string_id2
+ASSIGN 8 8 8
+JMP @catch_715
+@alloc_ok_721:
+R_MOV 8 $-112 #0
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 8 #0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 $-24
+R_STD 8 %t0 16 #0
+R_BIN SUB 8 %t0 $-40 #1
+R_MOV 8 $-144 %t0
+R_MOV 8 $-160 #0
+R_MOV 8 %t0 $-32
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-160
+R_MOV 8 $-168 %t0
+@for_722:
+R_BRC LT 8 $-168 $-152 @for_end_723
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-168 %t0 @end_of_match_724
+R_MOV 8 %t0 $-136
+R_LEA %t0 %t0 $-168 1 16
+R_LD 1 %t0 %t0
+R_BRC NEQ 1 %t0 #0 @end_of_if_725
+R_MOV 8 %t0 $-128
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-168 %t0 @end_of_match_726
+R_MOV 8 %t0 $-128
+R_LEA %t0 %t0 $-168 24 24
+R_LD 8 %t0 %t0
+R_MOV 8 $-176 %t0
+R_MOV 8 %t0 $-128
+R_LEA %t0 %t0 $-168 24 32
+R_LD 8 %t0 %t0
+R_MOV 8 $-184 %t0
+ADDR 8 $-192
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_grow_727 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-176
+CALL hashKey_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-144
+BITS_AND 8
+ASSIGN 8 8 8
+R_MOV 8 $-208 #0
+R_MOV 8 %v5 $-40
+R_MOV 8 %v4 $-208
+@for_728:
+R_BRC LT 8 %v4 %v5 @for_end_729
+R_BIN ADD 8 %t0 $-192 %v4
+R_BIN BAND 8 %v3 %t0 $-144
+R_MOV 8 %t0 $-120
+R_LD 8 %t0 %t0
+R_BRC LT 8 %v3 %t0 @end_of_match_730
+R_MOV 8 %t0 $-120
+R_LDI 1 %t0 %t0 %v3 1 16
+R_BRC EQ 1 %t0 #0 @end_of_if_731
+R_MOV 8 %t0 $-120
+R_STI 1 %t0 %v3 1 #1 16
+R_MOV 8 %t0 $-104
+R_LD 8 %t0 %t0
+R_BRC LT 8 %v3 %t0 @end_of_match_732
+R_MOV 8 %t0 $-104
+R_LEA %t0 %t0 %v3 24 16
+R_MOV 8 %t1 $-176
+R_STD 8 %t0 8 %t1
+R_MOV 8 %t0 $-104
+R_LEA %t0 %t0 %v3 24 16
+R_MOV 8 %t1 $-184
+R_STD 8 %t0 16 %t1
+@end_of_match_732:
+JMP @for_end_729
+@end_of_if_731:
+@end_of_match_730:
+R_RMW INC 8 %v4
+JMP @for_728
+@for_end_729:
+@end_of_match_726:
+@end_of_if_725:
+@end_of_match_724:
+R_RMW INC 8 $-168
+JMP @for_722
+@for_end_723:
+R_MOV 8 %t0 $-104
+R_MOV 8 $-232 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 8 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(HashMapEntry_u64_u64)
+PUSH 8 $-232
+ASSIGN 8 8 8
+R_MOV 8 $-104 #0
+R_MOV 8 %t0 $-120
+R_MOV 8 $-240 %t0
+PUSH 8 $-24
+PUSH_FIELDNAME 16 8
+DOT_LHS 8
+DUP_TOP
+GT_DESTRUCT_ADDR owns_some_mut_dynarray(u8)
+PUSH 8 $-240
+ASSIGN 8 8 8
+R_MOV 8 $-120 #0
+R_MOV 8 %t0 $-24
+R_MOV 8 %t1 $-40
+R_STD 8 %t0 24 %t1
+GT_DESTRUCT $-136
+R_MOV 8 $-136 #0
+GT_DESTRUCT $-128
+R_MOV 8 $-128 #0
+@end_of_match_717:
+JMP @end_of_gt_callsites__HashMap_u64_u64_grow_733
+@gt_callsite__HashMap_u64_u64_grow_727:
+GT_DESTRUCT $-136
+GT_DESTRUCT $-128
+GT_DESTRUCT $-120
+GT_DESTRUCT $-104
+GT_UNWIND MSG
+@end_of_gt_callsites__HashMap_u64_u64_grow_733:
+FUNC_END
+FUNC_START HashMap_u64_u64_insert
+ALLOC 144
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 24
+R_MOV 8 $-48 %t0
+R_BRC NEQ 8 $-48 #0 @end_of_match_734
+R_BIN SUB 8 %t0 $-48 #1
+R_MOV 8 $-56 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_insert_735 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL hashKey_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-56
+BITS_AND 8
+R_POPV 8 %v2
+R_MOV 8 $-80 #0
+R_MOV 8 %v1 $-48
+R_MOV 8 %v0 $-80
+@for_736:
+R_BRC LT 8 %v0 %v1 @for_end_737
+R_BIN ADD 8 %t0 %v2 %v0
+R_BIN BAND 8 %v5 %t0 $-56
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 $-104
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-112 %t0 @end_of_match_738
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_LDI 1 %t0 %t0 %v5 1 16
+R_BRC EQ 1 %t0 #0 @end_of_if_739
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-120
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-128 %t0 @end_of_match_740
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 %v5 24 16
+R_MOV 8 %t1 $-32
+R_STD 8 %t0 8 %t1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 %v5 24 16
+R_MOV 8 %t1 $-40
+R_STD 8 %t0 16 %t1
+@end_of_match_740:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_STI 1 %t0 %v5 1 #1 16
+R_MOV 8 %t0 $-24
+R_MOV 8 %t1 $-24
+R_LDD 8 %t1 %t1 32
+R_BIN ADD 8 %t1 %t1 #1
+R_STD 8 %t0 32 %t1
+JMP @for_end_737
+@end_of_if_739:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-136 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-144 %t0
+R_MOV 8 %t0 $-136
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-144 %t0 @end_of_match_741
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v5 24 24
+R_BRC EQ 8 %t0 $-32 @end_of_if_742
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 %v5 24 16
+R_MOV 8 %t1 $-40
+R_STD 8 %t0 16 %t1
+JMP @for_end_737
+@end_of_if_742:
+@end_of_match_741:
+@end_of_match_738:
+R_RMW INC 8 %v0
+JMP @for_736
+@for_end_737:
+@end_of_match_734:
+JMP @end_of_gt_callsites__HashMap_u64_u64_insert_743
+@gt_callsite__HashMap_u64_u64_insert_735:
+GT_UNWIND MSG
+@end_of_gt_callsites__HashMap_u64_u64_insert_743:
+FUNC_END
+FUNC_START HashMap_u64_u64_set
+ALLOC 64
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+JMP @end_of_catches__HashMap_u64_u64_set_745
+@catch_744:
+R_MOV 8 %t0 $-16
+R_MOV 8 $-56 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_set_746 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-40
+CALL HashMap_u64_u64_insert
+CC_END sysv_x64
+RET 0
+@end_of_catches__HashMap_u64_u64_set_745:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 24
+R_MOV 8 $-48 %t0
+R_BRC NEQ 8 $-48 #0 @end_of_match_747
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 32
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN MUL 8 %t0 %t0 #10
+R_BIN MUL 8 %t1 $-48 #7
+R_BRC GT 8 %t0 %t1 @end_of_if_748
+ADDR 8 $-8
+PUSH_LABEL @catch_744 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+CALL HashMap_u64_u64_grow
+CC_END sysv_x64
+@end_of_if_748:
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_set_749 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-24
+R_ARG 1 8 $-32
+R_ARG 2 8 $-40
+CALL HashMap_u64_u64_insert
+CC_END sysv_x64
+@end_of_match_747:
+JMP @end_of_gt_callsites__HashMap_u64_u64_set_750
+@gt_callsite__HashMap_u64_u64_set_746:
+GT_UNWIND MSG
+@gt_callsite__HashMap_u64_u64_set_749:
+GT_UNWIND MSG
+@end_of_gt_callsites__HashMap_u64_u64_set_750:
+FUNC_END
+FUNC_START HashMap_u64_u64_get
+ALLOC 128
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+ADDR 8 $-40
+PUSH 8 ARG2
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 24
+R_MOV 8 $-48 %t0
+R_BRC NEQ 8 $-48 #0 @end_of_match_751
+R_BIN SUB 8 %t0 $-48 #1
+R_MOV 8 $-56 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_get_752 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL hashKey_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-56
+BITS_AND 8
+R_POPV 8 %v2
+R_MOV 8 $-80 #0
+R_MOV 8 %v1 $-48
+R_MOV 8 %v0 $-80
+@for_753:
+R_BRC LT 8 %v0 %v1 @for_end_754
+R_BIN ADD 8 %t0 %v2 %v0
+R_BIN BAND 8 %v5 %t0 $-56
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 $-104
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-112 %t0 @end_of_match_755
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_LDI 1 %t0 %t0 %v5 1 16
+R_BRC EQ 1 %t0 #0 @end_of_if_756
+R_RET $-40
+@end_of_if_756:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 %v5
+R_MOV 8 $-128 %t0
+R_MOV 8 %t0 $-120
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-128 %t0 @end_of_match_757
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v5 24 24
+R_BRC EQ 8 %t0 $-32 @end_of_if_758
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v5 24 32
+R_RET %t0
+@end_of_if_758:
+@end_of_match_757:
+@end_of_match_755:
+R_RMW INC 8 %v0
+JMP @for_753
+@for_end_754:
+R_RET $-40
+@end_of_match_751:
+R_RET $-40
+JMP @end_of_gt_callsites__HashMap_u64_u64_get_759
+@gt_callsite__HashMap_u64_u64_get_752:
+GT_UNWIND MSG
+@end_of_gt_callsites__HashMap_u64_u64_get_759:
+FUNC_END
+FUNC_START HashMap_u64_u64_contains
+ALLOC 128
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 24
+R_MOV 8 $-40 %t0
+R_BRC NEQ 8 $-40 #0 @end_of_match_760
+R_BIN SUB 8 %t0 $-40 #1
+R_MOV 8 $-48 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_contains_761 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL hashKey_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-48
+BITS_AND 8
+R_POPV 8 %v0
+R_MOV 8 $-72 #0
+R_MOV 8 %v5 $-40
+R_MOV 8 %v4 $-72
+@for_762:
+R_BRC LT 8 %v4 %v5 @for_end_763
+R_BIN ADD 8 %t0 %v0 %v4
+R_BIN BAND 8 %v3 %t0 $-48
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-96 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-104 %t0
+R_MOV 8 %t0 $-96
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-104 %t0 @end_of_match_764
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_LDI 1 %t0 %t0 %v3 1 16
+R_BRC EQ 1 %t0 #0 @end_of_if_765
+R_RET #0
+@end_of_if_765:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-120 %t0
+R_MOV 8 %t0 $-112
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-120 %t0 @end_of_match_766
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v3 24 24
+R_BRC EQ 8 %t0 $-32 @end_of_if_767
+R_RET #1
+@end_of_if_767:
+@end_of_match_766:
+@end_of_match_764:
+R_RMW INC 8 %v4
+JMP @for_762
+@for_end_763:
+R_RET #0
+@end_of_match_760:
+R_RET #0
+JMP @end_of_gt_callsites__HashMap_u64_u64_contains_768
+@gt_callsite__HashMap_u64_u64_contains_761:
+GT_UNWIND MSG
+@end_of_gt_callsites__HashMap_u64_u64_contains_768:
+FUNC_END
+FUNC_START HashMap_u64_u64_remove
+ALLOC 288
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+ADDR 8 $-32
+PUSH 8 ARG1
+ASSIGN 8 8 8
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 24
+R_MOV 8 $-40 %t0
+R_BRC NEQ 8 $-40 #0 @end_of_match_769
+R_BIN SUB 8 %t0 $-40 #1
+R_MOV 8 $-48 %t0
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_remove_770 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-32
+CALL hashKey_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-48
+BITS_AND 8
+R_POPV 8 %v0
+R_MOV 8 $-64 #0
+R_ST 1 $-65 #0
+R_MOV 8 $-88 #0
+R_MOV 8 %v5 $-40
+R_MOV 8 %v4 $-88
+@for_771:
+R_BRC LT 8 %v4 %v5 @for_end_772
+R_BIN ADD 8 %t0 %v0 %v4
+R_BIN BAND 8 %v3 %t0 $-48
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-192 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-200 %t0
+R_MOV 8 %t0 $-192
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-200 %t0 @end_of_match_773
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_LDI 1 %t0 %t0 %v3 1 16
+R_BRC NEQ 1 %t0 #0 @for_end_772
+@end_of_if_774:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-208 %t0
+R_MOV 8 %t0 %v3
+R_MOV 8 $-216 %t0
+R_MOV 8 %t0 $-208
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-216 %t0 @end_of_match_775
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v3 24 24
+R_BRC EQ 8 %t0 $-32 @end_of_if_776
+R_MOV 8 %t0 %v3
+R_MOV 8 $-64 %t0
+R_ST 1 $-65 #1
+JMP @for_end_772
+@end_of_if_776:
+@end_of_match_775:
+@end_of_match_773:
+R_RMW INC 8 %v4
+JMP @for_771
+@for_end_772:
+PUSH 1 $-65
+CMP
+JMP @end_of_if_777
+R_MOV 8 %v1 $-64
+R_MOV 8 $-128 #1
+R_MOV 8 %t0 $-40
+R_MOV 8 $-120 %t0
+R_MOV 8 %v2 $-128
+@for_778:
+R_BRC LT 8 %v2 $-120 @for_end_779
+R_BIN ADD 8 %t0 $-64 %v2
+R_BIN BAND 8 %v0 %t0 $-48
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-224 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-232 %t0
+R_MOV 8 %t0 $-224
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-232 %t0 @end_of_match_780
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_LDI 1 %t0 %t0 %v0 1 16
+R_BRC NEQ 1 %t0 #0 @for_end_779
+@end_of_if_781:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-240 %t0
+R_MOV 8 %t0 %v0
+R_MOV 8 $-248 %t0
+R_MOV 8 %t0 $-240
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-248 %t0 @end_of_match_782
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v0 24 24
+R_MOV 8 $-152 %t0
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LDI 8 %t0 %t0 %v0 24 32
+R_MOV 8 $-160 %t0
+ADDR 8 $-168
+ADDR 8 $-8
+PUSH_LABEL @gt_callsite__HashMap_u64_u64_remove_783 code_addr
+ASSIGN 8 8 8
+CC_START sysv_x64
+R_ARG 0 8 $-152
+CALL hashKey_u64
+CC_END sysv_x64
+PUSH_RET_INT 8
+PUSH 8 $-48
+BITS_AND 8
+ASSIGN 8 8 8
+R_BIN ADD 8 %t0 %v0 $-40
+R_BIN SUB 8 %t0 %t0 %v1
+R_BIN BAND 8 %v4 %t0 $-48
+R_BIN ADD 8 %t0 %v0 $-40
+R_BIN SUB 8 %t0 %t0 $-168
+R_BIN BAND 8 %v3 %t0 $-48
+R_BRC GT_EQ 8 %v3 %v4 @end_of_if_784
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_MOV 8 $-256 %t0
+R_MOV 8 %t0 %v1
+R_MOV 8 $-264 %t0
+R_MOV 8 %t0 $-256
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-264 %t0 @end_of_match_785
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 %v1 24 16
+R_MOV 8 %t1 $-152
+R_STD 8 %t0 8 %t1
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 8
+R_LEA %t0 %t0 %v1 24 16
+R_MOV 8 %t1 $-160
+R_STD 8 %t0 16 %t1
+@end_of_match_785:
+R_MOV 8 %v1 %v0
+@end_of_if_784:
+@end_of_match_782:
+@end_of_match_780:
+R_RMW INC 8 %v2
+JMP @for_778
+@for_end_779:
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_MOV 8 $-272 %t0
+R_MOV 8 %t0 %v1
+R_MOV 8 $-280 %t0
+R_MOV 8 %t0 $-272
+R_LD 8 %t0 %t0
+R_BRC LT 8 $-280 %t0 @end_of_match_786
+R_MOV 8 %t0 $-24
+R_LDD 8 %t0 %t0 16
+R_STI 1 %t0 %v1 1 #0 16
+@end_of_match_786:
+R_MOV 8 %t0 $-24
+R_MOV 8 %t1 $-24
+R_LDD 8 %t1 %t1 32
+R_BIN SUB 8 %t1 %t1 #1
+R_STD 8 %t0 32 %t1
+R_RET #1
+@end_of_if_777:
+@end_of_match_769:
+R_RET #0
+JMP @end_of_gt_callsites__HashMap_u64_u64_remove_787
+@gt_callsite__HashMap_u64_u64_remove_770:
+GT_UNWIND MSG
+@gt_callsite__HashMap_u64_u64_remove_783:
+GT_UNWIND MSG
+@end_of_gt_callsites__HashMap_u64_u64_remove_787:
+FUNC_END
+FUNC_START hashKey_u64
+ALLOC 48
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #8
+R_MOV 8 $-40 #0
+PUSH 8 $-40
+ADDR_OF RAW $-40
+PUSH 8 $-32
+PUSH 8 $-24
+ADDR_OF RAW $-24
+MEMCOPY
+R_BIN MUL 8 %t0 $-40 #11400714819323198485
+R_MOV 8 $-48 %t0
+R_BIN SHR 8 %t0 $-48 #32
+R_BIN BXOR 8 %t0 $-48 %t0
+R_RET %t0
+FUNC_END
+FUNC_START insecure_hashOf_u64
+ALLOC 80
+ADDR 8 $-24
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-32 #8
+R_MOV 8 $-40 #0
+PUSH 8 $-40
+ADDR_OF RAW $-40
+PUSH 8 $-32
+PUSH 8 $-24
+ADDR_OF RAW $-24
+MEMCOPY
+R_MOV 8 %v3 #14695981039346656037
+R_MOV 8 $-64 #0
+R_MOV 8 %v0 $-32
+R_MOV 8 %v4 $-64
+@for_788:
+R_BRC LT 8 %v4 %v0 @for_end_789
+R_BIN MUL 8 %t0 %v4 #8
+R_BIN SHR 8 %t0 $-40 %t0
+R_BIN BAND 8 %v5 %t0 #255
+R_BIN BXOR 8 %v3 %v3 %v5
+R_BIN MUL 8 %v3 %v3 #1099511628211
+R_RMW INC 8 %v4
+JMP @for_788
+@for_end_789:
+R_RET %v3
+FUNC_END
+FUNC_START __drop_String
+ALLOC 32
+R_MOV 8 %t0 $16
+R_MOV 8 $-8 %t0
+PUSH 8 $-8
+DEREF 16
+POP $-24 16
+R_BRC NEQ 8 $-16 #0 @drop_skip_71
+PUSH 8 $-16
+CALL __drop_DynamicArray_char
+@drop_skip_71:
+GT_DESTRUCT $-16
+RET 0
+FUNC_END
+FUNC_START __drop_DynamicArray_u64
+ALLOC 32
+R_MOV 8 %t0 $16
+R_MOV 8 $-8 %t0
+PUSH 8 $-8
+DEREF 16
+POP $-24 16
+R_BRC NEQ 8 $-16 #0 @drop_skip_72
+@drop_skip_72:
+GT_DESTRUCT $-16
+RET 0
+FUNC_END
+FUNC_START __drop_HashMap_u64_u64
+ALLOC 48
+R_MOV 8 %t0 $16
+R_MOV 8 $-8 %t0
+PUSH 8 $-8
+DEREF 40
+POP $-48 40
+R_BRC NEQ 8 $-40 #0 @drop_skip_73
+@drop_skip_73:
+GT_DESTRUCT $-40
+R_BRC NEQ 8 $-32 #0 @drop_skip_74
+@drop_skip_74:
+GT_DESTRUCT $-32
+RET 0
+FUNC_END
+FUNC_START __drop_DynamicArray_char
+ALLOC 32
+R_MOV 8 %t0 $16
+R_MOV 8 $-8 %t0
+PUSH 8 $-8
+DEREF 16
+POP $-24 16
+R_BRC NEQ 8 $-16 #0 @drop_skip_75
+@drop_skip_75:
+GT_DESTRUCT $-16
+RET 0
+FUNC_END

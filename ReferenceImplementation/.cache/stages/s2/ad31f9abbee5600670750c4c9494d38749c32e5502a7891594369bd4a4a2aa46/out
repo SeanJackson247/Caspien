@@ -1,0 +1,1387 @@
+STRING string_id1 "PASS %s\n"
+STRING string_id2 "FAIL %s\n"
+STRING string_id3 "float arithmetic"
+STRING string_id4 "float compares"
+STRING string_id5 "float args and return"
+STRING string_id6 "float select"
+STRING string_id7 "sqrtf of an expression"
+STRING string_id8 "u8 wraps on store"
+STRING string_id9 "u8 compare"
+STRING string_id10 "u16 wraps on store"
+STRING string_id11 "u32 wraps on store"
+STRING string_id12 "u32 compare with wrapped sum"
+STRING string_id13 "s8 signed compare"
+STRING string_id14 "s8 sum"
+STRING string_id15 "s32 signed compares"
+STRING string_id16 "narrow return value"
+STRING string_id17 "u32 loop counter"
+STRING string_id18 "read-modify-write"
+STRING string_id19 "register arguments"
+STRING string_id20 "nested argument expressions"
+STRING string_id21 "static u64 array read/write"
+STRING string_id22 "static f32 array read/write"
+STRING string_id23 "static scalar update"
+STRING string_id24 "static float update"
+STRING string_id25 "struct u64 field"
+STRING string_id26 "struct u32 field wraps"
+STRING string_id27 "struct u8 field wraps"
+STRING string_id28 "struct f32 field"
+GLOBAL ga mut_u64[5]
+GLOBAL ga.0 mut_u64 1
+GLOBAL ga.1 mut_u64 2
+GLOBAL ga.2 mut_u64 3
+GLOBAL ga.3 mut_u64 4
+GLOBAL ga.4 mut_u64 5
+GLOBAL gf mut_f32[4]
+GLOBAL gf.0 mut_f32 1.5
+GLOBAL gf.1 mut_f32 2.5
+GLOBAL gf.2 mut_f32 3.5
+GLOBAL gf.3 mut_f32 4.5
+GLOBAL gs mut_u64 0
+GLOBAL gg mut_f32 0.5
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN sqrtf mut_f32 mut_f32
+STRUCT_START Pt
+STRUCT_MEMBER ___type imut_u64
+STRUCT_MEMBER x mut_u64
+STRUCT_MEMBER y mut_u32
+STRUCT_MEMBER w mut_f32
+STRUCT_MEMBER b mut_u8
+STRUCT_PADDING 7
+STRUCT_END
+FUNC_START bump
+RETURNS imut_void
+ARG p auto_mut_Pt
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME x mut_u64
+DOT_LHS auto_mut_Pt mut_u64 mut_u64
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME x mut_u64
+DOT_LHS auto_mut_Pt mut_u64 mut_u64
+DEREF mut_u64
+PUSH 5 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME y mut_u32
+DOT_LHS auto_mut_Pt mut_u32 mut_u32
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME y mut_u32
+DOT_LHS auto_mut_Pt mut_u32 mut_u32
+DEREF mut_u32
+PUSH 7 indeterminate_u32
+ADD mut_u32 indeterminate_u32 indeterminate_u32
+ASSIGN mut_u32 indeterminate_u32 mut_u32
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME b mut_u8
+DOT_LHS auto_mut_Pt mut_u8 mut_u8
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME b mut_u8
+DOT_LHS auto_mut_Pt mut_u8 mut_u8
+DEREF mut_u8
+PUSH 1 indeterminate_u8
+ADD mut_u8 indeterminate_u8 mut_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME w mut_f32
+DOT_LHS auto_mut_Pt mut_f32 mut_f32
+PUSH p auto_mut_Pt
+PUSH_FIELDNAME w mut_f32
+DOT_LHS auto_mut_Pt mut_f32 mut_f32
+DEREF mut_f32
+PUSH 2.0 indeterminate_f32
+MUL mut_f32 indeterminate_f32 indeterminate_f32
+PUSH 1.0 indeterminate_f32
+ADD indeterminate_f32 indeterminate_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+RET imut_void
+FUNC_END
+FUNC_START main
+RETURNS imut_void
+ALLOC fc mut_u64
+ALLOC ok mut_bool
+ALLOC g2 mut_f32
+ALLOC g3 mut_f32
+ALLOC u8c mut_u8
+ALLOC u16c mut_u16
+ALLOC u32c mut_u32
+ALLOC s8a mut_s8
+ALLOC s8c mut_s8
+ALLOC s32a mut_s32
+ALLOC cnt mut_u32
+ALLOC n32 mut_u32
+ALLOC x mut_u64
+ALLOC s mut_u64
+ALLOC fs mut_f32
+ALLOC $for_range_1 imut_range(0,5)
+ALLOC i mut_u64
+ALLOC $for_range_2 imut_range(0,5)
+ALLOC j mut_u64
+ALLOC $for_range_3 imut_range(0,4)
+ALLOC k mut_u64
+ALLOC $for_range_4 imut_range(0,4)
+ALLOC m mut_u64
+ALLOC pt mut_Pt
+ALLOC name__i21 static_imut_string
+ALLOC ok__i21 mut_bool
+ALLOC name__i25 static_imut_string
+ALLOC ok__i25 mut_bool
+ALLOC name__i37 static_imut_string
+ALLOC ok__i37 mut_bool
+ALLOC name__i41 static_imut_string
+ALLOC ok__i41 mut_bool
+ALLOC name__i45 static_imut_string
+ALLOC ok__i45 mut_bool
+ALLOC name__i49 static_imut_string
+ALLOC ok__i49 mut_bool
+ALLOC name__i53 static_imut_string
+ALLOC name__i57 static_imut_string
+ALLOC ok__i57 mut_bool
+ALLOC name__i61 static_imut_string
+ALLOC ok__i61 mut_bool
+ALLOC name__i65 static_imut_string
+ALLOC ok__i65 mut_bool
+ALLOC name__i69 static_imut_string
+ALLOC ok__i69 mut_bool
+ALLOC name__i73 static_imut_string
+ALLOC ok__i73 mut_bool
+ALLOC name__i77 static_imut_string
+ALLOC ok__i77 mut_bool
+ALLOC name__i81 static_imut_string
+ALLOC ok__i81 mut_bool
+ALLOC name__i85 static_imut_string
+ALLOC ok__i85 mut_bool
+ALLOC name__i89 static_imut_string
+ALLOC ok__i89 mut_bool
+ALLOC name__i93 static_imut_string
+ALLOC ok__i93 mut_bool
+ALLOC name__i97 static_imut_string
+ALLOC name__i101 static_imut_string
+ALLOC ok__i101 mut_bool
+ALLOC name__i105 static_imut_string
+ALLOC ok__i105 mut_bool
+ALLOC name__i109 static_imut_string
+ALLOC ok__i109 mut_bool
+ALLOC name__i113 static_imut_string
+ALLOC ok__i113 mut_bool
+ALLOC name__i117 static_imut_string
+ALLOC ok__i117 mut_bool
+ALLOC name__i121 static_imut_string
+ALLOC ok__i121 mut_bool
+ALLOC name__i125 static_imut_string
+ALLOC ok__i125 mut_bool
+ALLOC name__i129 static_imut_string
+ALLOC ok__i129 mut_bool
+ALLOC a__i135 mut_u64
+ALLOC c__i135 mut_u64
+REGVAR cnt 18
+REGVAR fc 10
+REGVAR fs 10 f
+REGVAR n32 33
+REGVAR ok 17
+REGVAR s 12
+REGVAR x 16
+ADDR fc mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR fc mut_u64
+PUSH fc mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@end_of_if_4:
+@end_of_if_5:
+ADDR fc mut_u64
+PUSH fc mut_u64
+PUSH 4 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@end_of_if_6:
+@end_of_if_7:
+ADDR fc mut_u64
+PUSH fc mut_u64
+PUSH 16 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@end_of_if_8:
+ADDR fc mut_u64
+PUSH fc mut_u64
+PUSH 32 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@end_of_if_9:
+ADDR ok mut_bool
+PUSH false indeterminate_bool
+ASSIGN mut_bool mut_bool mut_bool
+ADDR ok mut_bool
+PUSH true indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i21 static_imut_string
+PUSH string_id3 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i21 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i21 mut_bool
+CMP
+JMP @if_branch_22
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i21 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_23
+@if_branch_22:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i21 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_23:
+ADDR name__i25 static_imut_string
+PUSH string_id4 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i25 mut_bool
+PUSH fc mut_u64
+PUSH 53 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i25 mut_bool
+CMP
+JMP @if_branch_26
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i25 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_27
+@if_branch_26:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i25 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_27:
+ADDR g2 mut_f32
+PUSH 0.0 indeterminate_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+ADDR g3 mut_f32
+PUSH 0.0 indeterminate_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+@inl_end_33:
+ADDR g2 mut_f32
+PUSH 0.75 mut_f32
+@end_of_if_35:
+@inl_end_36:
+PUSH 0.75 mut_f32
+ADD mut_f32 mut_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+ADDR g3 mut_f32
+CC_START sysv_x64
+PUSH 16.0 indeterminate_f32
+POP FARG0 indeterminate_f32
+EXTERN_CALL sqrtf 1
+CC_END sysv_x64
+PUSH_RET mut_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+ADDR ok mut_bool
+PUSH true indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i37 static_imut_string
+PUSH string_id5 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i37 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i37 mut_bool
+CMP
+JMP @if_branch_38
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i37 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_39
+@if_branch_38:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i37 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_39:
+ADDR ok mut_bool
+PUSH g2 mut_f32
+PUSH 1.5 indeterminate_f32
+EQ mut_f32 indeterminate_f32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i41 static_imut_string
+PUSH string_id6 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i41 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i41 mut_bool
+CMP
+JMP @if_branch_42
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i41 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_43
+@if_branch_42:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i41 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_43:
+ADDR ok mut_bool
+PUSH g3 mut_f32
+PUSH 4.0 indeterminate_f32
+EQ mut_f32 indeterminate_f32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i45 static_imut_string
+PUSH string_id7 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i45 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i45 mut_bool
+CMP
+JMP @if_branch_46
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i45 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_47
+@if_branch_46:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i45 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_47:
+ADDR u8c mut_u8
+PUSH 0 indeterminate_u8
+ASSIGN mut_u8 mut_u8 mut_u8
+ADDR u8c mut_u8
+PUSH 200 mut_u8
+PUSH 100 mut_u8
+ADD mut_u8 mut_u8 indeterminate_u8
+ASSIGN mut_u8 indeterminate_u8 mut_u8
+ADDR name__i49 static_imut_string
+PUSH string_id8 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i49 mut_bool
+PUSH u8c mut_u8
+PUSH 44 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i49 mut_bool
+CMP
+JMP @if_branch_50
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i49 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_51
+@if_branch_50:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i49 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_51:
+ADDR name__i53 static_imut_string
+PUSH string_id9 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i53 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_55:
+ADDR u16c mut_u16
+PUSH 0 indeterminate_u16
+ASSIGN mut_u16 mut_u16 mut_u16
+ADDR u16c mut_u16
+PUSH 65000 mut_u16
+PUSH 1000 mut_u16
+ADD mut_u16 mut_u16 indeterminate_u16
+ASSIGN mut_u16 indeterminate_u16 mut_u16
+ADDR name__i57 static_imut_string
+PUSH string_id10 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i57 mut_bool
+PUSH u16c mut_u16
+PUSH 464 indeterminate_u16
+EQ mut_u16 indeterminate_u16 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i57 mut_bool
+CMP
+JMP @if_branch_58
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i57 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_59
+@if_branch_58:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i57 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_59:
+ADDR u32c mut_u32
+PUSH 0 indeterminate_u32
+ASSIGN mut_u32 mut_u32 mut_u32
+ADDR u32c mut_u32
+PUSH 4000000000 mut_u32
+PUSH 500000000 mut_u32
+ADD mut_u32 mut_u32 indeterminate_u32
+ASSIGN mut_u32 indeterminate_u32 mut_u32
+ADDR name__i61 static_imut_string
+PUSH string_id11 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i61 mut_bool
+PUSH u32c mut_u32
+PUSH 205032704 indeterminate_u32
+EQ mut_u32 indeterminate_u32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i61 mut_bool
+CMP
+JMP @if_branch_62
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i61 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_63
+@if_branch_62:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i61 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_63:
+ADDR name__i65 static_imut_string
+PUSH string_id12 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i65 mut_bool
+PUSH 4000000000 mut_u32
+PUSH 500000000 mut_u32
+ADD mut_u32 mut_u32 indeterminate_u32
+PUSH 205032704 indeterminate_u32
+EQ indeterminate_u32 indeterminate_u32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i65 mut_bool
+CMP
+JMP @if_branch_66
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i65 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_67
+@if_branch_66:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i65 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_67:
+ADDR s8a mut_s8
+PUSH -100 indeterminate_s8
+ASSIGN mut_s8 mut_s8 mut_s8
+ADDR s8c mut_s8
+PUSH 0 indeterminate_s8
+ASSIGN mut_s8 mut_s8 mut_s8
+ADDR s8c mut_s8
+PUSH s8a mut_s8
+PUSH 50 mut_s8
+ADD mut_s8 mut_s8 indeterminate_s8
+ASSIGN mut_s8 indeterminate_s8 mut_s8
+ADDR name__i69 static_imut_string
+PUSH string_id13 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i69 mut_bool
+PUSH s8a mut_s8
+PUSH 50 mut_s8
+LT mut_s8 mut_s8 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i69 mut_bool
+CMP
+JMP @if_branch_70
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i69 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_71
+@if_branch_70:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i69 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_71:
+ADDR name__i73 static_imut_string
+PUSH string_id14 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i73 mut_bool
+PUSH s8c mut_s8
+PUSH -50 indeterminate_s8
+EQ mut_s8 indeterminate_s8 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i73 mut_bool
+CMP
+JMP @if_branch_74
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i73 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_75
+@if_branch_74:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i73 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_75:
+ADDR s32a mut_s32
+PUSH -5 indeterminate_s32
+ASSIGN mut_s32 mut_s32 mut_s32
+ADDR name__i77 static_imut_string
+PUSH string_id15 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i77 mut_bool
+PUSH s32a mut_s32
+PUSH 3 mut_s32
+LT mut_s32 mut_s32 indeterminate_bool
+PUSH 3 mut_s32
+PUSH s32a mut_s32
+GT mut_s32 mut_s32 indeterminate_bool
+AND indeterminate_bool indeterminate_bool indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i77 mut_bool
+CMP
+JMP @if_branch_78
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i77 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_79
+@if_branch_78:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i77 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_79:
+ADDR name__i81 static_imut_string
+PUSH string_id16 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i81 mut_bool
+PUSH 200 mut_u8
+PUSH 100 mut_u8
+ADD mut_u8 mut_u8 indeterminate_u8
+PUSH 44 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i81 mut_bool
+CMP
+JMP @if_branch_82
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i81 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_83
+@if_branch_82:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i81 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_83:
+ADDR cnt mut_u32
+PUSH 0 indeterminate_u32
+ASSIGN mut_u32 mut_u32 mut_u32
+ADDR n32 mut_u32
+PUSH 0 indeterminate_u32
+ASSIGN mut_u32 mut_u32 mut_u32
+@loop_10:
+ADDR n32 mut_u32
+PUSH n32 mut_u32
+PUSH 1 indeterminate_u32
+ADD mut_u32 indeterminate_u32 mut_u32
+ASSIGN mut_u32 mut_u32 mut_u32
+PUSH n32 mut_u32
+PUSH 10 indeterminate_u32
+GT mut_u32 indeterminate_u32 indeterminate_bool
+CMP
+JMP @end_of_if_12
+JMP @loop_end_11
+@end_of_if_12:
+ADDR cnt mut_u32
+PUSH cnt mut_u32
+PUSH n32 mut_u32
+ADD mut_u32 mut_u32 mut_u32
+ASSIGN mut_u32 mut_u32 mut_u32
+JMP @loop_10
+@loop_end_11:
+ADDR name__i85 static_imut_string
+PUSH string_id17 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i85 mut_bool
+PUSH cnt mut_u32
+PUSH 55 indeterminate_u32
+EQ mut_u32 indeterminate_u32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i85 mut_bool
+CMP
+JMP @if_branch_86
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i85 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_87
+@if_branch_86:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i85 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_87:
+ADDR x mut_u64
+PUSH 10 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR x mut_u64
+PUSH x mut_u64
+PUSH 5 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR x mut_u64
+PUSH x mut_u64
+PUSH 3 mut_u64
+SUB mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR x mut_u64
+PUSH x mut_u64
+PUSH 6 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR x mut_u64
+PUSH x mut_u64
+INC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+ADDR x mut_u64
+PUSH x mut_u64
+DEC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+ADDR x mut_u64
+PUSH x mut_u64
+INC mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 indeterminate_u64
+ADDR name__i89 static_imut_string
+PUSH string_id18 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i89 mut_bool
+PUSH x mut_u64
+PUSH 19 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i89 mut_bool
+CMP
+JMP @if_branch_90
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i89 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_91
+@if_branch_90:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i89 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_91:
+ADDR name__i93 static_imut_string
+PUSH string_id19 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i93 mut_bool
+ADDR a__i135 mut_u64
+PUSH x mut_u64
+PUSH 18 indeterminate_u64
+SUB mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR c__i135 mut_u64
+PUSH x mut_u64
+PUSH 14 indeterminate_u64
+SUB mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+PUSH a__i135 mut_u64
+PUSH 100 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 40 indeterminate_u64
+ADD indeterminate_u64 indeterminate_u64 indeterminate_u64
+PUSH c__i135 mut_u64
+ADD indeterminate_u64 mut_u64 indeterminate_u64
+PUSH 145 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i93 mut_bool
+CMP
+JMP @if_branch_94
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i93 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_95
+@if_branch_94:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i93 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_95:
+ADDR name__i97 static_imut_string
+PUSH string_id20 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i97 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_99:
+ADDR s mut_u64
+PUSH 0 indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR fs mut_f32
+PUSH 0.0 indeterminate_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+ADDR $for_range_1 imut_range(0,5)
+PUSH 0 imut_u64
+PUSH 5 imut_u64
+ASSIGN imut_range(0,5) imut_range(0,5) imut_range(0,5)
+ADDR i mut_u64
+PUSH $for_range_1.start indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+PUSH 2 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 0 mut_u64
+ADD indeterminate_u64 mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+PUSH 2 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 1 mut_u64
+ADD indeterminate_u64 mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+PUSH 2 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 2 mut_u64
+ADD indeterminate_u64 mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+PUSH 2 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 3 mut_u64
+ADD indeterminate_u64 mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 4 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+ADDR ga mut_u64[5]
+PUSH 4 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+PUSH 2 indeterminate_u64
+MUL mut_u64 indeterminate_u64 indeterminate_u64
+PUSH 4 mut_u64
+ADD indeterminate_u64 mut_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+@for_end_14:
+ADDR $for_range_2 imut_range(0,5)
+PUSH 0 imut_u64
+PUSH 5 imut_u64
+ASSIGN imut_range(0,5) imut_range(0,5) imut_range(0,5)
+ADDR j mut_u64
+PUSH $for_range_2.start indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR s mut_u64
+PUSH s mut_u64
+ADDR ga mut_u64[5]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR s mut_u64
+PUSH s mut_u64
+ADDR ga mut_u64[5]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR s mut_u64
+PUSH s mut_u64
+ADDR ga mut_u64[5]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR s mut_u64
+PUSH s mut_u64
+ADDR ga mut_u64[5]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR s mut_u64
+PUSH s mut_u64
+ADDR ga mut_u64[5]
+PUSH 4 mut_u64
+LOOKUP_LHS mut_u64[5] mut_u64 mut_u64
+DEREF mut_u64
+ADD mut_u64 mut_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+@for_end_16:
+ADDR $for_range_3 imut_range(0,4)
+PUSH 0 imut_u64
+PUSH 4 imut_u64
+ASSIGN imut_range(0,4) imut_range(0,4) imut_range(0,4)
+ADDR k mut_u64
+PUSH $for_range_3.start indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR gf mut_f32[4]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+ADDR gf mut_f32[4]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADDR gf mut_f32[4]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+PUSH 0.5 indeterminate_f32
+MUL mut_f32 indeterminate_f32 indeterminate_f32
+ADD mut_f32 indeterminate_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+ADDR gf mut_f32[4]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+ADDR gf mut_f32[4]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADDR gf mut_f32[4]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+PUSH 0.5 indeterminate_f32
+MUL mut_f32 indeterminate_f32 indeterminate_f32
+ADD mut_f32 indeterminate_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+ADDR gf mut_f32[4]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+ADDR gf mut_f32[4]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADDR gf mut_f32[4]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+PUSH 0.5 indeterminate_f32
+MUL mut_f32 indeterminate_f32 indeterminate_f32
+ADD mut_f32 indeterminate_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+ADDR gf mut_f32[4]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+ADDR gf mut_f32[4]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADDR gf mut_f32[4]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+PUSH 0.5 indeterminate_f32
+MUL mut_f32 indeterminate_f32 indeterminate_f32
+ADD mut_f32 indeterminate_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+@for_end_18:
+ADDR $for_range_4 imut_range(0,4)
+PUSH 0 imut_u64
+PUSH 4 imut_u64
+ASSIGN imut_range(0,4) imut_range(0,4) imut_range(0,4)
+ADDR m mut_u64
+PUSH $for_range_4.start indeterminate_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR fs mut_f32
+PUSH fs mut_f32
+ADDR gf mut_f32[4]
+PUSH 0 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADD mut_f32 mut_f32 mut_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+ADDR fs mut_f32
+PUSH fs mut_f32
+ADDR gf mut_f32[4]
+PUSH 1 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADD mut_f32 mut_f32 mut_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+ADDR fs mut_f32
+PUSH fs mut_f32
+ADDR gf mut_f32[4]
+PUSH 2 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADD mut_f32 mut_f32 mut_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+ADDR fs mut_f32
+PUSH fs mut_f32
+ADDR gf mut_f32[4]
+PUSH 3 mut_u64
+LOOKUP_LHS mut_f32[4] mut_u64 mut_f32
+DEREF mut_f32
+ADD mut_f32 mut_f32 mut_f32
+ASSIGN mut_f32 mut_f32 mut_f32
+@for_end_20:
+ADDR gs mut_u64
+PUSH gs mut_u64
+PUSH 7 indeterminate_u64
+ADD mut_u64 indeterminate_u64 indeterminate_u64
+ASSIGN mut_u64 indeterminate_u64 mut_u64
+ADDR gs mut_u64
+PUSH gs mut_u64
+PUSH 1 indeterminate_u64
+ADD mut_u64 indeterminate_u64 mut_u64
+ASSIGN mut_u64 mut_u64 mut_u64
+ADDR gg mut_f32
+PUSH gg mut_f32
+PUSH 4.0 indeterminate_f32
+MUL mut_f32 indeterminate_f32 indeterminate_f32
+ASSIGN mut_f32 indeterminate_f32 mut_f32
+ADDR name__i101 static_imut_string
+PUSH string_id21 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i101 mut_bool
+PUSH s mut_u64
+PUSH 40 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i101 mut_bool
+CMP
+JMP @if_branch_102
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i101 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_103
+@if_branch_102:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i101 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_103:
+ADDR ok mut_bool
+PUSH fs mut_f32
+PUSH 18.0 indeterminate_f32
+EQ mut_f32 indeterminate_f32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i105 static_imut_string
+PUSH string_id22 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i105 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i105 mut_bool
+CMP
+JMP @if_branch_106
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i105 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_107
+@if_branch_106:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i105 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_107:
+ADDR ok mut_bool
+PUSH gs mut_u64
+PUSH 8 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i109 static_imut_string
+PUSH string_id23 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i109 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i109 mut_bool
+CMP
+JMP @if_branch_110
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i109 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_111
+@if_branch_110:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i109 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_111:
+ADDR ok mut_bool
+PUSH gg mut_f32
+PUSH 2.0 indeterminate_f32
+EQ mut_f32 indeterminate_f32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i113 static_imut_string
+PUSH string_id24 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i113 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i113 mut_bool
+CMP
+JMP @if_branch_114
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i113 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_115
+@if_branch_114:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i113 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_115:
+ADDR pt mut_Pt
+PUSH 0 imut_u64
+PUSH 100 indeterminate_u64
+PUSH 4000000000 indeterminate_u32
+PUSH 1.5 indeterminate_f32
+PUSH 255 indeterminate_u8
+STACK_LOCK 7
+ASSIGN mut_Pt mut_Pt mut_Pt
+CC_START sysv_x64
+PUSH pt mut_Pt
+ADDR_OF AUTO mut_Pt auto_indeterminate_Pt
+POP ARG0 auto_indeterminate_Pt
+CALL bump
+CC_END sysv_x64
+CC_START sysv_x64
+PUSH pt mut_Pt
+ADDR_OF AUTO mut_Pt auto_indeterminate_Pt
+POP ARG0 auto_indeterminate_Pt
+CALL bump
+CC_END sysv_x64
+ADDR name__i117 static_imut_string
+PUSH string_id25 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i117 mut_bool
+PUSH pt.x mut_u64
+PUSH 110 indeterminate_u64
+EQ mut_u64 indeterminate_u64 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i117 mut_bool
+CMP
+JMP @if_branch_118
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i117 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_119
+@if_branch_118:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i117 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_119:
+ADDR name__i121 static_imut_string
+PUSH string_id26 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i121 mut_bool
+PUSH pt.y mut_u32
+PUSH 4000000014 indeterminate_u32
+EQ mut_u32 indeterminate_u32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i121 mut_bool
+CMP
+JMP @if_branch_122
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i121 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_123
+@if_branch_122:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i121 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_123:
+ADDR name__i125 static_imut_string
+PUSH string_id27 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i125 mut_bool
+PUSH pt.b mut_u8
+PUSH 1 indeterminate_u8
+EQ mut_u8 indeterminate_u8 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+PUSH ok__i125 mut_bool
+CMP
+JMP @if_branch_126
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i125 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_127
+@if_branch_126:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i125 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_127:
+ADDR ok mut_bool
+PUSH pt.w mut_f32
+PUSH 9.0 indeterminate_f32
+EQ mut_f32 indeterminate_f32 indeterminate_bool
+ASSIGN mut_bool indeterminate_bool mut_bool
+ADDR name__i129 static_imut_string
+PUSH string_id28 static_some_imut_string
+ASSIGN static_imut_string static_some_imut_string static_imut_string
+ADDR ok__i129 mut_bool
+PUSH ok mut_bool
+ASSIGN mut_bool mut_bool mut_bool
+PUSH ok__i129 mut_bool
+CMP
+JMP @if_branch_130
+CC_START sysv_x64
+PUSH string_id1 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i129 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+JMP @end_of_if_131
+@if_branch_130:
+CC_START sysv_x64
+PUSH string_id2 static_some_imut_string
+POP ARG0 static_some_imut_string
+PUSH name__i129 static_imut_string
+POP ARG1 static_imut_string
+VARARGS_XMM_COUNT 0
+EXTERN_CALL printf 2
+CC_END sysv_x64
+@end_of_if_131:
+RET imut_void
+FUNC_END
+ENUM Class Pt 0

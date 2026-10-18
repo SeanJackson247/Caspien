@@ -1,0 +1,433 @@
+STRING string_id1 ""
+STRING string_id2 "%llu %llu\n"
+EXTERN printf imut_void static_imut_string VARARGS
+EXTERN putchar mut_u64 mut_u64
+EXTERN getchar mut_u64
+EXTERN strlen mut_u64 static_imut_string
+EXTERN write mut_u64 mut_u64 static_imut_string mut_u64
+EXTERN malloc raw_mut_u8 mut_u64
+EXTERN realloc raw_mut_u8 raw_mut_u8 mut_u64
+EXTERN free imut_void raw_imut_u8
+EXTERN abort imut_void
+EXTERN memmove raw_mut_u8 raw_mut_u8 raw_imut_u8 mut_u64
+EXTERN clock mut_u64
+EXTERN sleep mut_u64 mut_u64
+EXTERN popen raw_mut_u8 static_imut_string static_imut_string
+EXTERN pclose mut_u64 raw_mut_u8
+EXTERN fgets static_imut_string raw_mut_u8 mut_u64 raw_mut_u8
+EXTERN fputs mut_u64 static_imut_string raw_mut_u8
+EXTERN pthread_create mut_u32 raw_mut_u64 raw_mut_u8 raw_imut_u8 raw_mut_u8
+EXTERN pthread_join mut_u32 mut_u64 raw_mut_u8
+EXTERN pthread_detach mut_u32 mut_u64
+FUNC_START pressure
+ALLOC 144
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #14
+R_MOV 8 $-24 #933
+R_MOV 8 $-32 #852
+R_MOV 8 $-40 #771
+R_MOV 8 $-48 #690
+R_MOV 8 $-56 #609
+R_MOV 8 %v2 #528
+R_MOV 8 %v1 #447
+R_MOV 8 %v0 #366
+R_MOV 8 %v5 #285
+R_MOV 8 %v4 #204
+R_MOV 8 %v3 #123
+R_MOV 8 $-120 #0
+R_MOV 8 %t0 $-8
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 $-120
+R_MOV 8 $-128 %t0
+@for_1:
+R_BRC LT 8 $-128 $-112 @for_end_2
+R_BIN MUL 8 %t0 $-24 #3
+R_BIN ADD 8 %t0 $-16 %t0
+R_DIVC MOD 8 %t1 $-56 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-16 %t0
+R_BIN MUL 8 %t0 $-32 #4
+R_BIN ADD 8 %t0 $-24 %t0
+R_DIVC MOD 8 %t1 %v2 #7
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-24 %t0
+R_BIN MUL 8 %t0 $-40 #5
+R_BIN ADD 8 %t0 $-32 %t0
+R_DIVC MOD 8 %t1 %v1 #1000
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-32 %t0
+R_BIN MUL 8 %t0 $-48 #6
+R_BIN ADD 8 %t0 $-40 %t0
+R_DIVC MOD 8 %t1 %v0 #6
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-40 %t0
+R_BIN MUL 8 %t0 $-56 #7
+R_BIN ADD 8 %t0 $-48 %t0
+R_DIVC MOD 8 %t1 %v5 #13
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-48 %t0
+R_BIN MUL 8 %t0 %v2 #8
+R_BIN ADD 8 %t0 $-56 %t0
+R_DIVC MOD 8 %t1 %v4 #24
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-56 %t0
+R_BIN MUL 8 %t0 %v1 #9
+R_BIN ADD 8 %t0 %v2 %t0
+R_DIVC MOD 8 %t1 %v3 #10
+R_BIN ADD 8 %v2 %t0 %t1
+R_BIN MUL 8 %t0 %v0 #10
+R_BIN ADD 8 %t0 %v1 %t0
+R_DIVC MOD 8 %t1 $-16 #7
+R_BIN ADD 8 %v1 %t0 %t1
+R_BIN MUL 8 %t0 %v5 #11
+R_BIN ADD 8 %t0 %v0 %t0
+R_DIVC MOD 8 %t1 $-24 #1000
+R_BIN ADD 8 %v0 %t0 %t1
+R_BIN MUL 8 %t0 %v4 #12
+R_BIN ADD 8 %t0 %v5 %t0
+R_DIVC MOD 8 %t1 $-32 #6
+R_BIN ADD 8 %v5 %t0 %t1
+R_BIN MUL 8 %t0 %v3 #13
+R_BIN ADD 8 %t0 %v4 %t0
+R_DIVC MOD 8 %t1 $-40 #13
+R_BIN ADD 8 %v4 %t0 %t1
+R_BIN MUL 8 %t0 $-16 #14
+R_BIN ADD 8 %t0 %v3 %t0
+R_DIVC MOD 8 %t1 $-48 #24
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v3 %t0
+R_DIVC MOD 8 %t0 $-32 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-40 %t0
+R_BIN BXOR 8 %t0 $-16 %t0
+R_MOV 8 $-16 %t0
+R_BIN BAND 8 %t0 $-16 #4294967295
+R_DIVC MOD 8 %t1 $-24 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-40 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-48 #3
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-16 %t0
+R_DIVC MOD 8 %t0 $-40 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-48 %t0
+R_BIN BXOR 8 %t0 $-24 %t0
+R_MOV 8 $-24 %t0
+R_BIN BAND 8 %t0 $-24 #4294967295
+R_DIVC MOD 8 %t1 $-32 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-48 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-56 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-24 %t0
+R_DIVC MOD 8 %t0 $-48 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-56 %t0
+R_BIN BXOR 8 %t0 $-32 %t0
+R_MOV 8 $-32 %t0
+R_BIN BAND 8 %t0 $-32 #4294967295
+R_DIVC MOD 8 %t1 $-40 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-56 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v2 #12
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-32 %t0
+R_DIVC MOD 8 %t0 $-56 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v2 %t0
+R_BIN BXOR 8 %t0 $-40 %t0
+R_MOV 8 $-40 %t0
+R_BIN BAND 8 %t0 $-40 #4294967295
+R_DIVC MOD 8 %t1 $-48 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v2 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v1 #100
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-40 %t0
+R_DIVC MOD 8 %t0 %v2 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v1 %t0
+R_BIN BXOR 8 %t0 $-48 %t0
+R_MOV 8 $-48 %t0
+R_BIN BAND 8 %t0 $-48 #4294967295
+R_DIVC MOD 8 %t1 $-56 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v1 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v0 #6
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-48 %t0
+R_DIVC MOD 8 %t0 %v1 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v0 %t0
+R_BIN BXOR 8 %t0 $-56 %t0
+R_MOV 8 $-56 %t0
+R_BIN BAND 8 %t0 $-56 #4294967295
+R_DIVC MOD 8 %t1 %v2 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v0 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v5 #20
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-56 %t0
+R_DIVC MOD 8 %t0 %v0 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v5 %t0
+R_BIN BXOR 8 %v2 %v2 %t0
+R_BIN BAND 8 %t0 %v2 #4294967295
+R_DIVC MOD 8 %t1 %v1 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v5 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v4 #3
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v2 %t0
+R_DIVC MOD 8 %t0 %v5 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v4 %t0
+R_BIN BXOR 8 %v1 %v1 %t0
+R_BIN BAND 8 %t0 %v1 #4294967295
+R_DIVC MOD 8 %t1 %v0 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v4 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v3 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v1 %t0
+R_DIVC MOD 8 %t0 %v4 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v3 %t0
+R_BIN BXOR 8 %v0 %v0 %t0
+R_BIN BAND 8 %t0 %v0 #4294967295
+R_DIVC MOD 8 %t1 %v5 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v3 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-16 #12
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v0 %t0
+R_DIVC MOD 8 %t0 %v3 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-16 %t0
+R_BIN BXOR 8 %v5 %v5 %t0
+R_BIN BAND 8 %t0 %v5 #4294967295
+R_DIVC MOD 8 %t1 %v4 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-16 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-24 #100
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v5 %t0
+R_DIVC MOD 8 %t0 $-16 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-24 %t0
+R_BIN BXOR 8 %v4 %v4 %t0
+R_BIN BAND 8 %t0 %v4 #4294967295
+R_DIVC MOD 8 %t1 %v3 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-24 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-32 #6
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v4 %t0
+R_DIVC MOD 8 %t0 $-24 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-32 %t0
+R_BIN BXOR 8 %v3 %v3 %t0
+R_BIN BAND 8 %t0 %v3 #4294967295
+R_DIVC MOD 8 %t1 $-16 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-32 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-40 #20
+R_BIN ADD 8 %v3 %t0 %t1
+R_RMW INC 8 $-128
+JMP @for_1
+@for_end_2:
+R_MOV 8 $-136 #0
+R_RMW ADD 8 $-136 $-16
+R_RMW ADD 8 $-136 $-24
+R_RMW ADD 8 $-136 $-32
+R_RMW ADD 8 $-136 $-40
+R_RMW ADD 8 $-136 $-48
+R_RMW ADD 8 $-136 $-56
+R_RMW ADD 8 $-136 %v2
+R_RMW ADD 8 $-136 %v1
+R_RMW ADD 8 $-136 %v0
+R_RMW ADD 8 $-136 %v5
+R_RMW ADD 8 $-136 %v4
+R_RMW ADD 8 $-136 %v3
+R_RET $-136
+FUNC_END
+FUNC_START across
+ALLOC 144
+ADDR 8 $-8
+PUSH 8 ARG0
+ASSIGN 8 8 8
+R_MOV 8 $-16 #14
+R_MOV 8 %v1 #933
+R_MOV 8 %v0 #852
+R_MOV 8 $-40 #771
+R_MOV 8 %v2 #690
+R_MOV 8 $-56 #609
+R_MOV 8 $-64 #528
+R_MOV 8 $-72 #447
+R_MOV 8 $-80 #366
+R_MOV 8 $-88 #285
+R_MOV 8 $-96 #204
+R_MOV 8 $-104 #123
+R_MOV 8 $-120 #0
+R_MOV 8 %t0 $-8
+R_MOV 8 $-112 %t0
+R_MOV 8 %t0 $-120
+R_MOV 8 $-128 %t0
+@for_3:
+R_BRC LT 8 $-128 $-112 @for_end_4
+R_BIN MUL 8 %t0 %v1 #3
+R_BIN ADD 8 %t0 $-16 %t0
+R_DIVC MOD 8 %t1 $-56 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-16 %t0
+R_BIN MUL 8 %t0 %v0 #4
+R_BIN ADD 8 %t0 %v1 %t0
+R_DIVC MOD 8 %t1 $-64 #7
+R_BIN ADD 8 %v1 %t0 %t1
+R_BIN MUL 8 %t0 $-40 #5
+R_BIN ADD 8 %t0 %v0 %t0
+R_DIVC MOD 8 %t1 $-72 #1000
+R_BIN ADD 8 %v0 %t0 %t1
+R_BIN MUL 8 %t0 %v2 #6
+R_BIN ADD 8 %t0 $-40 %t0
+R_DIVC MOD 8 %t1 $-80 #6
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-40 %t0
+R_BIN MUL 8 %t0 $-56 #7
+R_BIN ADD 8 %t0 %v2 %t0
+R_DIVC MOD 8 %t1 $-88 #13
+R_BIN ADD 8 %v2 %t0 %t1
+R_BIN MUL 8 %t0 $-64 #8
+R_BIN ADD 8 %t0 $-56 %t0
+R_DIVC MOD 8 %t1 $-96 #24
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-56 %t0
+R_BIN MUL 8 %t0 $-72 #9
+R_BIN ADD 8 %t0 $-64 %t0
+R_DIVC MOD 8 %t1 $-104 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-64 %t0
+R_BIN MUL 8 %t0 $-80 #10
+R_BIN ADD 8 %t0 $-72 %t0
+R_DIVC MOD 8 %t1 $-16 #7
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-72 %t0
+R_BIN MUL 8 %t0 $-88 #11
+R_BIN ADD 8 %t0 $-80 %t0
+R_DIVC MOD 8 %t1 %v1 #1000
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-80 %t0
+R_BIN MUL 8 %t0 $-96 #12
+R_BIN ADD 8 %t0 $-88 %t0
+R_DIVC MOD 8 %t1 %v0 #6
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-88 %t0
+R_BIN MUL 8 %t0 $-104 #13
+R_BIN ADD 8 %t0 $-96 %t0
+R_DIVC MOD 8 %t1 $-40 #13
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-96 %t0
+R_BIN MUL 8 %t0 $-16 #14
+R_BIN ADD 8 %t0 $-104 %t0
+R_DIVC MOD 8 %t1 %v2 #24
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-104 %t0
+CC_START sysv_x64
+PUSH 8 string_id1
+POP ARG0 8
+VARARGS_XMM_COUNT 0
+CALL printf 1
+CC_END sysv_x64
+R_DIVC MOD 8 %t0 %v0 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-40 %t0
+R_BIN BXOR 8 %t0 $-16 %t0
+R_MOV 8 $-16 %t0
+R_BIN BAND 8 %t0 $-16 #4294967295
+R_DIVC MOD 8 %t1 %v1 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-40 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 %v2 #3
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 $-16 %t0
+R_DIVC MOD 8 %t0 $-40 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 %v2 %t0
+R_BIN BXOR 8 %v1 %v1 %t0
+R_BIN BAND 8 %t0 %v1 #4294967295
+R_DIVC MOD 8 %t1 %v0 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 %v2 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-56 #10
+R_BIN ADD 8 %t0 %t0 %t1
+R_MOV 8 %v1 %t0
+R_DIVC MOD 8 %t0 %v2 #7
+R_BIN ADD 8 %t0 %t0 #1
+R_BIN SHL 8 %t0 $-56 %t0
+R_BIN BXOR 8 %v0 %v0 %t0
+R_BIN BAND 8 %t0 %v0 #4294967295
+R_DIVC MOD 8 %t1 $-40 #5
+R_BIN ADD 8 %t1 %t1 #1
+R_BIN SHR 8 %t1 $-56 %t1
+R_BIN ADD 8 %t0 %t0 %t1
+R_DIVC DIV 8 %t1 $-64 #12
+R_BIN ADD 8 %v0 %t0 %t1
+R_RMW INC 8 $-128
+JMP @for_3
+@for_end_4:
+R_MOV 8 %v3 #0
+R_BIN BXOR 8 %v3 %v3 $-16
+R_BIN BXOR 8 %v3 %v3 %v1
+R_BIN BXOR 8 %v3 %v3 %v0
+R_BIN BXOR 8 %v3 %v3 $-40
+R_BIN BXOR 8 %v3 %v3 %v2
+R_BIN BXOR 8 %v3 %v3 $-56
+R_BIN BXOR 8 %v3 %v3 $-64
+R_BIN BXOR 8 %v3 %v3 $-72
+R_BIN BXOR 8 %v3 %v3 $-80
+R_BIN BXOR 8 %v3 %v3 $-88
+R_BIN BXOR 8 %v3 %v3 $-96
+R_BIN BXOR 8 %v3 %v3 $-104
+R_RET %v3
+FUNC_END
+FUNC_START main
+ALLOC 16
+ADDR 8 $-8
+CC_START sysv_x64
+R_ARG 0 8 #40
+CALL pressure
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+ADDR 8 $-16
+CC_START sysv_x64
+R_ARG 0 8 #25
+CALL across
+CC_END sysv_x64
+PUSH_RET_INT 8
+ASSIGN 8 8 8
+CC_START sysv_x64
+PUSH 8 string_id2
+POP ARG0 8
+R_ARG 1 8 $-8
+R_ARG 2 8 $-16
+VARARGS_XMM_COUNT 0
+CALL printf 3
+CC_END sysv_x64
+FUNC_END

@@ -238,5 +238,42 @@ public class Scope {
                     "variable '" + name + "' is already declared in this scope");
         }
         target.vars.put(name, type);
+        target.declSerial.put(name, ++serialCounter);
+    }
+
+    // ---- lifetime contracts: where a local lives (docs/LifetimeContracts.md) ----
+    private static int serialCounter = 0;
+    /** Declaration order of the names declared directly in this scope. */
+    public final Map<String, Integer> declSerial = new HashMap<>();
+    /** Per local: the innermost position of anything its `ref some` value(s) borrow ({depth, serial}); see TypeCheckerLifetimes. */
+    public final Map<String, long[]> borrowRegion = new HashMap<>();
+
+    /** Number of real scopes between this one and the function root (unsafe/safe markers do not count). */
+    public int depth() {
+        int d = 0;
+        for (Scope s = declScope(); s.parent != null; s = s.parent.declScope()) {
+            d++;
+        }
+        return d;
+    }
+
+    /** The scope that declares `name`, or null. */
+    public Scope declaringScope(String name) {
+        for (Scope s = this; s != null; s = s.parent) {
+            if (s.vars.containsKey(name)) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    /** {depth, serial} of the local `name`, or null when it is not a local (a global). */
+    public long[] positionOf(String name) {
+        Scope d = declaringScope(name);
+        if (d == null) {
+            return null;
+        }
+        Integer ser = d.declSerial.get(name);
+        return new long[]{d.depth(), ser == null ? 0 : ser};
     }
 }

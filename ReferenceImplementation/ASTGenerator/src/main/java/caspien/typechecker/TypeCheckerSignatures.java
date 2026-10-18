@@ -1193,6 +1193,9 @@ public final class TypeCheckerSignatures {
         for (int pi = 0; pi < f.paramTypes.size(); pi++) {
             requireNoAutoContainer(f.paramTypes.get(pi), f.funcToken, "parameter '" + f.paramNames.get(pi) + "' of '" + f.name + "'");
         }
+        hub.lifetimes.validateContract(f);
+        hub.lifetimes.validateNoScopedFuncElements(f);
+        hub.lifetimes.requireNoScopedReturn(f);
         if (typeHoldsAuto(f.returnType)) {
             throw new CompilerException("type", f.funcToken.file, f.funcToken.line,
                     "'" + f.name + "' returns an 'auto' pointer (" + f.returnType.canonical() + ") -- it would point into the stack frame "
