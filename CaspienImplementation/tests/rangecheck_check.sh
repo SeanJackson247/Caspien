@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hand-made stack-form LOB cases for RangeCheckFusionPass (the constant-bounds `match i in arr` test: the 14-line
-# PUSH i / PUSH K0 / PUSH K1 / POP r 16 / POP l 8 ... CMP / JMP shape becomes direct compares). Needs LowerOrderGenerator/out built.
+# PUSH i / PUSH K0 / PUSH K1 / POP r 16 / POP l 8 ... CMP / JMP shape becomes direct compares). Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/rangecheck_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -184,7 +184,7 @@ public class Drv5 {
     }
 }
 EOT
-CP=${LOB_CP:-$ROOT/LowerOrderGenerator/out}
+CP=${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}
 javac -cp $CP -d $T $T/caspien/lowerorder/Drv5.java 2>&1 | grep -v Picked
 java -cp $CP:$T caspien.lowerorder.Drv5
 rc=$?

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Hand-made register-form (LOB) cases for the float forms of IndexedAccessPass (`R_LEA` + `R_LDX`/`R_STX` -> `R_LDXI`/`R_STXI`,
 # scale = access width: 4 for f32, 8 for f64) and for FloatTempPass keeping an `R_FBIN`-defined chain whose only reader is a store
-# in xmm (`a[i] -= ...`). Needs LowerOrderGenerator/out built.
+# in xmm (`a[i] -= ...`). Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/floatindex_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -94,8 +94,8 @@ public class Drv6 {
     }
 }
 EOF2
-javac -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv6.java 2>&1 | grep -v Picked
-java -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv6
+javac -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv6.java 2>&1 | grep -v Picked
+java -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv6
 rc=$?
 rm -rf $T
 exit $rc

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hand-made stack-form LOB cases for RegisterFormPass: safe dynarray access in register form -- LEN, LOOKUP_DYN (value),
-# LOOKUP_DYN_LHS (address), ZEXT and TRUNC, and the optional displacement operand of R_LEA. Needs LowerOrderGenerator/out built.
+# LOOKUP_DYN_LHS (address), ZEXT and TRUNC, and the optional displacement operand of R_LEA. Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/regform_dyn_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -192,8 +192,8 @@ public class Drv9 {
     }
 }
 EOT
-javac -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv9.java 2>&1 | grep -v Picked
-java -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv9
+javac -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv9.java 2>&1 | grep -v Picked
+java -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv9
 rc=$?
 rm -rf $T
 exit $rc

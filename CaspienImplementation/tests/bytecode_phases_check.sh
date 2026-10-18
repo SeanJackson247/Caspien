@@ -13,7 +13,7 @@ fail(){ echo "FAIL $1"; bad=1; }
 # the representation package knows nothing about any stage
 x=$(grep -rE "^import caspien\.(optimizer|lowerorder|codegen)" "$HOB"); [ -z "$x" ] && echo "PASS HOB imports no stage" || fail "HOB imports a stage: $x"
 for stage in "Optimizer optimizer Optimizer" "LowerOrderGenerator lowerorder LowerOrder"; do
-  set -- $stage; SRC="$ROOT/$1/src/main/java/caspien/$2"; LIB="$3"
+  set -- $stage; SRC="$ROOT/../ReferenceImplementation/$1/src/main/java/caspien/$2"; LIB="$3"
   # own copies of the representation are gone
   x=$(ls "$SRC"/Bytecode{Parser,Serializer,Token}.java 2>/dev/null); [ -z "$x" ] && echo "PASS $1 has no private parser/serializer/token" || fail "$1 still has: $x"
   # only the library entry class ($LIB) may use the program parser or serializer (Main calls the library)
@@ -34,7 +34,7 @@ CG="$ROOT/Codegen/src/main/java/caspien/codegen"
 x=$(ls "$CG"/Bytecode{Parser,Serializer,Token}.java 2>/dev/null); [ -z "$x" ] && echo "PASS Codegen has no private parser/token" || fail "Codegen still has: $x"
 x=$(grep -rlE "BytecodeParser|BytecodeSerializer" "$CG" | grep -v "/Codegen.java$"); [ -z "$x" ] && echo "PASS Codegen: only the library entry Codegen uses BytecodeParser" || fail "Codegen parser use outside Codegen.java: $x"
 # the lower-order config is parsed once, in the library entry class; no pass reads or parses it
-x=$(grep -lE "CompilerConfig\.parse" "$ROOT"/LowerOrderGenerator/src/main/java/caspien/lowerorder/*.java | grep -v "/LowerOrder.java$"); [ -z "$x" ] && echo "PASS LowerOrderGenerator: config parsed only in LowerOrder" || fail "config parsed outside LowerOrder: $x"
+x=$(grep -lE "CompilerConfig\.parse" "$ROOT"/../ReferenceImplementation/LowerOrderGenerator/src/main/java/caspien/lowerorder/*.java | grep -v "/LowerOrder.java$"); [ -z "$x" ] && echo "PASS LowerOrderGenerator: config parsed only in LowerOrder" || fail "config parsed outside LowerOrder: $x"
 # 2 round trip
 W=$(mktemp -d)
 printf 'FUNC_START main\nSTRING @s0 "a b  \\" c"\nPUSH %s imut_char\n\nRET imut_void\nFUNC_END\n' "' '" > "$W/t.hob"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hand-made LOB cases for (1) the caller-saved variable registers r8/r9/r10 (%v3..%v5) in RegVarPromotionPass and (2) RangeEndHintPass
-# (the end of a `for` range split off its 16-byte range so it can live in a register). Needs LowerOrderGenerator/out built.
+# (the end of a `for` range split off its 16-byte range so it can live in a register). Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/regvars_volatile_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -297,7 +297,7 @@ public class Drv8 {
     }
 }
 EOF
-CP=${LOB_CP:-$ROOT/LowerOrderGenerator/out}
+CP=${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}
 javac -cp $CP -d $T $T/caspien/lowerorder/Drv8.java 2>&1 | grep -v "^Picked"
 java -cp $T:$CP caspien.lowerorder.Drv8 2>&1 | grep -v "^Picked"
 RC=${PIPESTATUS[0]}

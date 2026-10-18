@@ -1,10 +1,10 @@
 #!/bin/bash
 # Hand-made register-form (LOB) cases for LengthCompareFusionPass (fuse-length-compare).
-# Needs LowerOrderGenerator/out built (env LOB_CP = a mutant classpath instead). Run from anywhere:  bash tests/length_fuse_passes_check.sh
+# Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes) (env LOB_CP = a mutant classpath instead). Run from anywhere:  bash tests/length_fuse_passes_check.sh
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export CASPIEN_STDLIB="$ROOT/../stdlib"
-CP="${LOB_CP:-$ROOT/LowerOrderGenerator/out}"
+CP="${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p $T/caspien/lowerorder
 cat > $T/caspien/lowerorder/Drv.java <<'EOF'

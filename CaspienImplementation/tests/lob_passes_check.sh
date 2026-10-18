@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hand-made register-form (LOB) cases for JumpCleanupPass and IndexedAccessPass. Needs LowerOrderGenerator/out built.
+# Hand-made register-form (LOB) cases for JumpCleanupPass and IndexedAccessPass. Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/lob_passes_check.sh      (prints one PASS/FAIL line per case)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -76,8 +76,8 @@ public class Drv {
     }
 }
 EOF
-javac -cp $ROOT/LowerOrderGenerator/out -d $T $T/caspien/lowerorder/Drv.java 2>&1 | grep -v Picked
-java -cp $ROOT/LowerOrderGenerator/out:$T caspien.lowerorder.Drv
+javac -cp $ROOT/../ReferenceImplementation/LowerOrderGenerator/out -d $T $T/caspien/lowerorder/Drv.java 2>&1 | grep -v Picked
+java -cp $ROOT/../ReferenceImplementation/LowerOrderGenerator/out:$T caspien.lowerorder.Drv
 rc=$?
 rm -rf $T
 exit $rc

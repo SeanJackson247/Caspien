@@ -1,7 +1,7 @@
 #!/bin/bash
 # Hand-made stack-form LOB cases for RegisterFormPass: global scalar reads (`PUSH n <global>` -> `R_LD n %tD &sym`) and the
 # "faithful flush" exception (a RISKY region is flushed instead of rolled back in front of a call bracket or a plain
-# stack arithmetic op when every remembered entry is one 8-byte word). Needs LowerOrderGenerator/out built.
+# stack arithmetic op when every remembered entry is one 8-byte word). Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/regform_globals_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -126,8 +126,8 @@ public class Drv4 {
     }
 }
 EOF
-javac -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv4.java 2>&1 | grep -v Picked
-java -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv4
+javac -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv4.java 2>&1 | grep -v Picked
+java -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv4
 rc=$?
 rm -rf $T
 exit $rc

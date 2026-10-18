@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hand-made register-form (LOB) cases for the register SHARING in RegVarPromotionPass (liveness colouring, used when a function has more
-# hot variables than registers). Needs LowerOrderGenerator/out built. Run from the project root:  bash tests/regvars_share_check.sh
+# hot variables than registers). Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes). Run from the project root:  bash tests/regvars_share_check.sh
 # Each variable has one marker store "... #<tag>"; the check reads which register that store was renamed to (or "mem" if the slot stayed).
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -159,8 +159,8 @@ public class Drv2 {
     }
 }
 EOF
-javac -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv2.java 2>&1 | grep -v Picked
-java -cp ${LOB_CP:-$ROOT/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv2
+javac -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out} -d $T $T/caspien/lowerorder/Drv2.java 2>&1 | grep -v Picked
+java -cp ${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}:$T caspien.lowerorder.Drv2
 rc=$?
 rm -rf $T
 exit $rc

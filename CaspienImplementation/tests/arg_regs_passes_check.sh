@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hand-made LOB cases for the rsi/rdi variable registers (%v6, %v7; variables-in-arg-registers) in RegVarPromotionPass. Needs LowerOrderGenerator/out built.
+# Hand-made LOB cases for the rsi/rdi variable registers (%v6, %v7; variables-in-arg-registers) in RegVarPromotionPass. Needs ReferenceImplementation/LowerOrderGenerator/out built (the Java passes).
 # Run from the project root:  bash tests/arg_regs_passes_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -121,7 +121,7 @@ public class DrvA {
     }
 }
 EOF
-CP=${LOB_CP:-$ROOT/LowerOrderGenerator/out}
+CP=${LOB_CP:-$ROOT/../ReferenceImplementation/LowerOrderGenerator/out}
 javac -cp $CP -d $T $T/caspien/lowerorder/DrvA.java 2>&1 | grep -v "^Picked"
 java -cp $T:$CP caspien.lowerorder.DrvA 2>&1 | grep -v "^Picked"
 RC=${PIPESTATUS[0]}
