@@ -1,3 +1,5 @@
 # Built by build.sh
 /Codegen/out/codegen
 /Codegen/out/codegen.exe
+/LowerOrderGenerator/out/lowerorder
+/LowerOrderGenerator/out/lowerorder.exe
