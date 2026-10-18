@@ -64,6 +64,9 @@ public final class TokenChecked {
      */
     public boolean insideTry;
 
+    /** Set by the emitter on a call that is a whole statement: its result is unused, so no PUSH_RET (nothing is left on the stack). */
+    public boolean resultDiscarded;
+
     /** Set by TypeChecker.checkNew on the constructor CALL node directly under a `try`-covered `new X(...)`: that one `try` covers the constructor's own throw as well as the allocation (there is no syntax to wrap the inner call separately), so a `@throws` constructor needs no `try` of its own there. See TypeChecker.requireThrowsWrapping. */
     public boolean coveredByThrowingNew;
 

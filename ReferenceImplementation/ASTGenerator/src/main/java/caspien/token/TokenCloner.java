@@ -130,6 +130,7 @@ public final class TokenCloner {
         d.resolvedType = s.resolvedType;
         d.synthesizedUnsafe = s.synthesizedUnsafe;
         d.insideTry = s.insideTry;
+        d.resultDiscarded = s.resultDiscarded;
         d.coveredByThrowingNew = s.coveredByThrowingNew;
         d.catchUsesStackTrace = s.catchUsesStackTrace;
         d.catchMember = s.catchMember;
