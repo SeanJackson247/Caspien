@@ -47,7 +47,7 @@ lowerordergenerator -i input.txt output.txt        # java -cp out caspien.lowero
   folder, `Compiler.java` overwrites it on every run from the `===compiler.config===` section of `toolchain.config`). It carries the
   calling conventions and the register switches (section 5).
 * The stage is also a library, `LowerOrder.generate(hobText, origin, compilerConfigText)` -> `Result{lob, messages}` (text in, text out; no files); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (it reads `./compiler.config`).
-* Build: `../build.sh` (the Caspien exe `out/lowerorder`; the Java build instructions no longer apply to this folder) (the shared HOB parser/classes in `../BytecodeParser/` are compiled into `out/`).
+* Build: `../build.sh` (the Caspien exe `out/lowerorder`; the Java build instructions no longer apply to this folder).
 * Never compile two programs at once in one compiler tree (scratch files are shared).
 
 Source layout (`src/main/java/caspien/lowerorder/`): `Main`, `LowerOrderGenerator` (the pipeline), one class per pass, and the

@@ -51,7 +51,7 @@ Run: `lowerordergenerator -i in.txt out.txt`. Needs `compiler.config` in the CWD
   - Register sharing (`shareRegisters`/`colour`) runs only when candidates exceed registers; backward liveness; call-like lines have edges to every label referenced by a non-jump line (catch pads); `NO_FALLTHROUGH` = RET RET_FLOAT R_RET R_RETF GT_UNWIND EXIT EXIT_THREAD FUNC_END. One `R_XVAR` per float register; `@catch_` labels get `R_XRELOAD`.
 
 ## Build and test
-Build: `../build.sh` (exe) . Root `Compiler` runs all four stages (`java Compiler -i x.caspien outname`); never compile two programs at once in one tree.
+Build: `../build.sh` (exe). Root `Compiler` runs all four stages (`java Compiler -i x.caspien outname`); never compile two programs at once in one tree.
 Hand-made LOB check scripts live in `/home/claude/caspien/tests/`, run from the project root, need `LowerOrderGenerator/out` built, env `LOB_CP=<classpath>` runs against a mutant build: `lob_passes_check.sh` (JumpCleanup/IndexedAccess), `rangecheck_check.sh`, `regform_globals_check.sh`, `regform_dyn_check.sh`, `regvars_share_check.sh`, `regvars_volatile_check.sh` (also RangeEndHint), `floatindex_check.sh`. Runtime tests are `tests/*.caspien` (PASS/FAIL lines; compare output across configs: everything on, shipped, register-form only, everything off), e.g. `regform*_test`, `regvars_*_test`, `floattemps_test`, `range_split_test`, `bits_ops*_test`. `tests/callee_saved_probe.sh` checks callee-saved preservation (Linux, gcc).
 
 ## Known open gaps
