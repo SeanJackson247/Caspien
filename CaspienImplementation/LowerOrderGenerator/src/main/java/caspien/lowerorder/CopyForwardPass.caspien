@@ -1,0 +1,211 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "DestForwardingPass.caspien"
+
+/** Port of CopyForwardPass (switch `copy-forward`): `R_MOV 8 %tX %vY` whose temp is only read in value positions in the next lines has those reads replaced by %vY. */
+@pub
+struct CopyForwardPass{@pub{
+}}
+
+impl constructor for CopyForwardPass() self{
+	return CopyForwardPass{}
+}
+
+@pub
+impl CopyForwardPass{
+	/** DEST of CopyForwardPass (adds R_SETV, R_DIVC): the register position, -1 not a DEST mnemonic, -2 DEST mnemonic with the position past the end. */
+	static func destOf(prog: ref some imut Prog, j: mut u64) mut s64{
+		let d = mut -1
+		if prog.opEq(prog, j, "R_MOV"){ d = 2 } else if prog.opEq(prog, j, "R_LD"){ d = 2 } else if prog.opEq(prog, j, "R_LDI"){ d = 2 } else if prog.opEq(prog, j, "R_LDD"){ d = 2 } else if prog.opEq(prog, j, "R_LEA"){ d = 1 } else if prog.opEq(prog, j, "R_BIN"){ d = 3 } else if prog.opEq(prog, j, "R_UN"){ d = 3 } else if prog.opEq(prog, j, "R_SETV"){ d = 2 } else if prog.opEq(prog, j, "R_DIVC"){ d = 3 } else if prog.opEq(prog, j, "R_FBIN"){ d = 3 } else if prog.opEq(prog, j, "R_FCMP"){ d = 3 } else if prog.opEq(prog, j, "R_XTOG"){ d = 2 }
+		if d < 0{
+			return -1
+		}
+		if wrap:<u64>(d) >= prog.count(prog, j){
+			return -2
+		}
+		return d
+	}
+
+	static func isStraight(prog: ref some imut Prog, j: mut u64) mut bool{
+		if prog.opEq(prog, j, "R_ST") || prog.opEq(prog, j, "R_STI") || prog.opEq(prog, j, "R_STD") || prog.opEq(prog, j, "R_LDX") || prog.opEq(prog, j, "R_STX"){
+			return true
+		}
+		if prog.opEq(prog, j, "R_XMOV") || prog.opEq(prog, j, "R_GTOX") || prog.opEq(prog, j, "R_FSQRT"){
+			return true
+		}
+		if prog.opEq(prog, j, "R_LDXI") || prog.opEq(prog, j, "R_STXI") || prog.opEq(prog, j, "R_LDXD") || prog.opEq(prog, j, "R_STXD"){
+			return true
+		}
+		return false
+	}
+
+	static func inBinOps(prog: ref some imut Prog, j: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, j, k, "ADD") || prog.eqLit(prog, j, k, "SUB") || prog.eqLit(prog, j, k, "MUL") || prog.eqLit(prog, j, k, "AND") || prog.eqLit(prog, j, k, "OR"){
+			return true
+		}
+		if prog.eqLit(prog, j, k, "BAND") || prog.eqLit(prog, j, k, "BOR") || prog.eqLit(prog, j, k, "BXOR") || prog.eqLit(prog, j, k, "SHL") || prog.eqLit(prog, j, k, "SHR") || prog.eqLit(prog, j, k, "SAR"){
+			return true
+		}
+		return false
+	}
+
+	/** Operand `k` of line `l` is a plain value read of a general register that the backend also accepts a variable register for. */
+	static func readSlot(prog: ref some imut Prog, l: mut u64, k: mut u64) mut bool{
+		let c = mut prog.count(prog, l)
+		if prog.opEq(prog, l, "R_MOV") || prog.opEq(prog, l, "R_SETV"){
+			return c == 4 && k == 3
+		}
+		if prog.opEq(prog, l, "R_BIN"){
+			if c == 6 &&then (k == 4 || k == 5) &&then CopyForwardPass.inBinOps(prog, l, 1){
+				return true
+			}
+			return false
+		}
+		if prog.opEq(prog, l, "R_ST"){
+			return c == 4 && (k == 2 || k == 3)
+		}
+		if prog.opEq(prog, l, "R_STD"){
+			return c == 5 && (k == 2 || k == 4)
+		}
+		if prog.opEq(prog, l, "R_STI"){
+			return (c == 6 || c == 7) && k == 5
+		}
+		if prog.opEq(prog, l, "R_LD"){
+			return c == 4 && k == 3
+		}
+		if prog.opEq(prog, l, "R_LDD"){
+			return c == 5 && k == 3
+		}
+		if prog.opEq(prog, l, "R_LEA"){
+			return c >= 5 && k == 2
+		}
+		return false
+	}
+
+	/** `%t` + one of 0123 / `%v` + one of 012345: `prefixC` is 't' or 'v', `limit` the exclusive upper digit. */
+	static func isReg(prog: ref some imut Prog, i: mut u64, k: mut u64, prefixC: mut char, limit: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		if q - a != 3{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, a) != '%' || prog.buf.charAt(prog.buf, a + 1) != prefixC{
+			return false
+		}
+		let d = mut prog.buf.charAt(prog.buf, a + 2)
+		if d < '0'{
+			return false
+		}
+		return String.charCode(d) - 48 < limit
+	}
+
+	/** Plans the forwarding for the copy on line `from` (token 2 = temp x, token 3 = variable v): fills the plan list and returns true, or returns false. */
+	static func plan(prog: ref some mut Prog, from: mut u64) mut bool{
+		prog.planClear(prog)
+		let n = mut prog.size(prog)
+		let seen = mut 0
+		let j = mut (from + 1)
+		for st in 0..n{
+			if j >= n || seen >= 14{
+				break
+			}
+			if prog.isGone(prog, j){
+				j += 1
+				continue
+			}
+			seen += 1
+			if prog.len(prog, j) == 0{
+				return false
+			}
+			if prog.count(prog, j) == 1 &&then prog.tokStartsCh(prog, j, 0, '@'){
+				return true
+			}
+			if prog.opEq(prog, j, "JMP"){
+				return true
+			}
+			let d = mut CopyForwardPass.destOf(prog, j)
+			if d == -1 &&then CopyForwardPass.isStraight(prog, j) == false{
+				return false
+			}
+			if d == -2{
+				return false
+			}
+			let c = mut prog.count(prog, j)
+			let mask = mut 0
+			for k in 1..c{
+				if prog.tokEq(prog, j, k, from, 2) == false{
+					continue
+				}
+				if d >= 0 &&then wrap:<u64>(d) == k{
+					continue
+				}
+				if CopyForwardPass.readSlot(prog, j, k) == false{
+					return false
+				}
+				mask = bits_or(mask, bits_left(1, k))
+			}
+			if mask != 0{
+				prog.planAdd(prog, j, mask)
+			}
+			if d >= 0{
+				let du = mut wrap:<u64>(d)
+				if prog.tokEq(prog, j, du, from, 3){
+					return DestForwardingPass.deadAfter(prog, j + 1, from, 2)
+				}
+				if prog.tokEq(prog, j, du, from, 2){
+					return true
+				}
+			}
+			j += 1
+		}
+		return false
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let killed = mut false
+		for i in 0..n{
+			if prog.isGone(prog, i) || prog.count(prog, i) != 4 || prog.opEq(prog, i, "R_MOV") == false || prog.eqLit(prog, i, 1, "8") == false{
+				continue
+			}
+			if prog.startsWith(prog, i, 2, "%v") &&then prog.tokEq(prog, i, 2, i, 3){
+				prog.kill(prog, i)
+				killed = true
+				continue
+			}
+			if CopyForwardPass.isReg(prog, i, 2, 't', 4) == false || CopyForwardPass.isReg(prog, i, 3, 'v', 6) == false{
+				continue
+			}
+			if CopyForwardPass.plan(prog, i) == false{
+				continue
+			}
+			let pc = mut prog.planCount(prog)
+			for e in 0..pc{
+				let line = mut prog.planLine(prog, e)
+				let mask = mut prog.planMask(prog, e)
+				let cnt = mut prog.count(prog, line)
+				prog.begin(prog)
+				for t in 0..cnt{
+					if bits_and(bits_right(mask, t), 1) != 0{
+						? prog.addTok(prog, i, 3)
+					} else {
+						? prog.addTok(prog, line, t)
+					}
+				}
+				prog.setBuilt(prog, line)
+			}
+			prog.kill(prog, i)
+			killed = true
+		}
+		if killed{
+			prog.compactGone(prog)
+		}
+	}
+}

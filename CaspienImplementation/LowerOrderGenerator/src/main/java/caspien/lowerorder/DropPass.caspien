@@ -1,0 +1,913 @@
+import "stdlib/string.caspien"
+import "Config.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+import "Hob.caspien"
+import "Tpl.caspien"
+import "RangeMap.caspien"
+import "RQueue.caspien"
+import "StructTab.caspien"
+
+/**
+ * Port of DropGlueGenerationPass (step 3): `GT_DESTRUCT` of owns-bearing locals gets the member/element drops in front of it, `GT_DROP_ADDR`, `GT_DESTRUCT_ADDR` and `GT_DESTRUCT_TAIL`
+ * are expanded, and the per-struct routines `__drop_T` are appended after the program.
+ */
+@pub
+struct DropPass{@pub{
+	tp: owns some mut Tpl
+	tab: owns some mut StructTab
+	need: owns some mut RQueue
+	gen: owns some mut RangeMap
+	locals: owns some mut RangeMap
+	labelCount: mut u64
+	tempCount: mut u64
+	tdS: owns some mut dynarray(mut u64)
+	tdE: owns some mut dynarray(mut u64)
+	tdTS: owns some mut dynarray(mut u64)
+	tdTE: owns some mut dynarray(mut u64)
+	ntd: mut u64
+	lvS: owns some mut dynarray(mut u64)
+	lvE: owns some mut dynarray(mut u64)
+	cnt: owns some mut dynarray(mut u64)
+	idx: owns some mut dynarray(mut u64)
+	convS: mut u64
+	convE: mut u64
+	hasConv: mut bool
+	os: mut u64
+	oe: mut u64
+	rnS: mut u64
+	rnE: mut u64
+}}
+
+@throws
+impl constructor for DropPass(structs: mut u64) self{
+	?catch(e){ throw e }
+	let tab = mut ? new StructTab(structs)
+	let t = mut ? new Tpl()
+	let q = mut ? new RQueue()
+	let g = mut ? new RangeMap()
+	let l = mut ? new RangeMap()
+	let a1 = mut ? dyn:<u64>([])
+	let a2 = mut ? dyn:<u64>([])
+	let a3 = mut ? dyn:<u64>([])
+	let a4 = mut ? dyn:<u64>([])
+	let b1 = mut ? dyn:<u64>([])
+	let b2 = mut ? dyn:<u64>([])
+	let b3 = mut ? dyn:<u64>([])
+	let b4 = mut ? dyn:<u64>([])
+	return DropPass{tp= t, tab= tab, need= q, gen= g, locals= l, labelCount= 0, tempCount= 0, tdS= a1, tdE= a2, tdTS= a3, tdTE= a4, ntd= 0, lvS= b1, lvE= b2, cnt= b3, idx= b4, convS= 0, convE= 0, hasConv= false, os= 0, oe= 0, rnS= 0, rnE= 0}
+}
+
+@pub
+impl DropPass{
+	// ---- names ----
+
+	@throws
+	func label(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, lit: static imut string) void{
+		?catch(e){ throw e }
+		_self.labelCount += 1
+		prog.begin(prog)
+		? prog.addLit(prog, lit)
+		? prog.glueS64(prog, wrap:<s64>(_self.labelCount))
+		_self.tp.set(_self.tp, k, prog.cur, prog.used)
+	}
+
+	@throws
+	func routineName(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, lit: static imut string, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, lit)
+		for q in a..z{
+			let c = mut prog.buf.charAt(prog.buf, q)
+			let cc = mut String.charCode(c)
+			let ok = mut false
+			if cc >= 97 &&then cc <= 122{
+				ok = true
+			} else if cc >= 65 &&then cc <= 90{
+				ok = true
+			} else if cc >= 48 &&then cc <= 57{
+				ok = true
+			} else if cc == 95{
+				ok = true
+			}
+			if ok{
+				? prog.glueCh(prog, c)
+			} else {
+				? prog.glueCh(prog, '_')
+			}
+		}
+		_self.tp.set(_self.tp, k, prog.cur, prog.used)
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	@throws
+	func cat(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, pre: static imut string, a: mut u64, z: mut u64, suf: static imut string) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, pre)
+		? prog.glueRange(prog, a, z)
+		? prog.glueLit(prog, suf)
+		_self.tp.set(_self.tp, k, prog.cur, prog.used)
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	@throws
+	func join(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, b: mut u64, y: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addRange(prog, a, z)
+		? prog.glueLit(prog, ".")
+		? prog.glueRange(prog, b, y)
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	@throws
+	func joinNum(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, i: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addRange(prog, a, z)
+		? prog.glueLit(prog, ".")
+		? prog.glueS64(prog, wrap:<s64>(i))
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	/** Declares `tag<N>` of type [ts, te) (an ALLOC line); the name goes to slot k and [os, oe). */
+	@throws
+	func newTemp(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, tag: static imut string, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		_self.tempCount += 1
+		prog.begin(prog)
+		? prog.addLit(prog, tag)
+		? prog.glueS64(prog, wrap:<s64>(_self.tempCount))
+		let ns = mut prog.cur
+		let ne = mut prog.used
+		_self.tp.set(_self.tp, k, ns, ne)
+		_self.os = ns
+		_self.oe = ne
+		prog.begin(prog)
+		? prog.addLit(prog, "ALLOC")
+		? prog.addRange(prog, ns, ne)
+		? prog.addRange(prog, ts, te)
+		? prog.outBuilt(prog)
+	}
+
+	func dynElemOf(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z > a &&then Hob.startsLit(prog, a, z, "dynarray(") &&then prog.buf.charAt(prog.buf, z - 1) == ')'{
+			_self.os = a + 9
+			_self.oe = z - 1
+			return true
+		}
+		return false
+	}
+
+	/** "elem[N]": elem in [os, oe), N in [rnS, rnE). */
+	func fixedElemOf(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z <= a{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, z - 1) != ']'{
+			return false
+		}
+		let open = mut Hob.lastIndexOf(prog, a, z, '[')
+		if open < 0{
+			return false
+		}
+		let o = mut wrap:<u64>(open)
+		_self.os = a
+		_self.oe = o
+		_self.rnS = o + 1
+		_self.rnE = z - 1
+		return true
+	}
+
+	func fixedLen(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		if _self.fixedElemOf(_self, prog, a, z) == false{
+			return -1
+		}
+		if Hob.isDigits(prog, _self.rnS, _self.rnE) == false{
+			return -1
+		}
+		return wrap:<s64>(Hob.digitsValue(prog, _self.rnS, _self.rnE))
+	}
+
+	/** Queues a struct for routine generation (the Java `enqueue`: only known structs not yet generated). */
+	@throws
+	func enqueue(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		if _self.tab.hasStruct(_self.tab, prog, a, z) &&then _self.gen.has(_self.gen, prog, a, z) == false{
+			? _self.need.push(_self.need, a, z)
+		}
+	}
+
+	/** The drop routine of the element type [ds, de), as slot 8 (rnS/rnE hold it); false = NONE. */
+	@throws
+	func elementRoutine(_self: ref some mut self, prog: ref some mut Prog, ds: mut u64, de: mut u64) mut bool{
+		?catch(e){ throw e }
+		let et = mut ? Hob.parse(prog, ds, de)
+		if _self.tab.hasStruct(_self.tab, prog, et.baS, et.baE){
+			let ob = mut ? _self.tab.isOwnsBearing(_self.tab, prog, et.baS, et.baE)
+			if ob{
+				? _self.enqueue(_self, prog, et.baS, et.baE)
+				? _self.routineName(_self, prog, 8, "__drop_", et.baS, et.baE)
+				_self.rnS = _self.os
+				_self.rnE = _self.oe
+				return true
+			}
+		}
+		return false
+	}
+
+	// ---- emitters ----
+
+	/** Walks a dynarray's elements from index 0 (or the `mut_u64` local [ss, se) when hasStart), destructing each. */
+	@throws
+	func elementDrop(_self: ref some mut self, prog: ref some mut Prog, ps: mut u64, pe: mut u64, cs: mut u64, ce: mut u64, ds: mut u64, de: mut u64, hasStart: mut bool, ss: mut u64, se: mut u64) void{
+		?catch(e){ throw e }
+		let et = mut ? Hob.parse(prog, ds, de)
+		let isOwnsPtr = mut Hob.storageIs(prog, et, "owns")
+		let inlineOwns = mut false
+		if isOwnsPtr == false &&then _self.tab.hasStruct(_self.tab, prog, et.baS, et.baE){
+			inlineOwns = ? _self.tab.isOwnsBearing(_self.tab, prog, et.baS, et.baE)
+		}
+		if isOwnsPtr == false &&then inlineOwns == false{
+			return
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "mut_u64")
+		let mus = mut prog.cur
+		let mue = mut prog.used
+		? _self.newTemp(_self, prog, 3, "$gt_loop_i", mus, mue)
+		_self.tp.set(_self.tp, 0, ps, pe)
+		_self.tp.set(_self.tp, 1, cs, ce)
+		_self.tp.set(_self.tp, 2, ds, de)
+		_self.tp.set(_self.tp, 9, ss, se)
+		? _self.tp.emit(_self.tp, prog, "ADDR %3 mut_u64")
+		if hasStart{
+			? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		} else {
+			? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		}
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 mut_u64 mut_u64")
+		? _self.label(_self, prog, 4, "@gt_loop_")
+		? _self.label(_self, prog, 5, "@gt_loop_end_")
+		? _self.tp.emit(_self.tp, prog, "%4:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %3 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "LT mut_u64 indeterminate_u64 indeterminate_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %5")
+		if isOwnsPtr{
+			? _self.newTemp(_self, prog, 6, "$gt_loop_elem", ds, de)
+			? _self.tp.emit(_self.tp, prog, "ADDR %6 %2")
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH %3 mut_u64")
+			? _self.tp.emit(_self.tp, prog, "LOOKUP %1 mut_u64 %2")
+			? _self.tp.emit(_self.tp, prog, "ASSIGN %2 %2 %2")
+			let has = mut ? _self.elementRoutine(_self, prog, ds, de)
+			if has{
+				? _self.label(_self, prog, 7, "@gt_loop_elem_skip_")
+				? _self.tp.emit(_self.tp, prog, "PUSH %6 %2")
+				? _self.tp.emit(_self.tp, prog, "PUSH null %2")
+				? _self.tp.emit(_self.tp, prog, "NEQ %2 %2 imut_bool")
+				? _self.tp.emit(_self.tp, prog, "CMP")
+				? _self.tp.emit(_self.tp, prog, "JMP %7")
+				? _self.tp.emit(_self.tp, prog, "PUSH %6 %2")
+				? _self.tp.emit(_self.tp, prog, "CALL %8")
+				? _self.tp.emit(_self.tp, prog, "%7:")
+			}
+			? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %6")
+		} else {
+			let has2 = mut ? _self.elementRoutine(_self, prog, ds, de)
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH %3 mut_u64")
+			? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %1 mut_u64 %2")
+			? _self.tp.emit(_self.tp, prog, "CALL %8")
+		}
+		? _self.tp.emit(_self.tp, prog, "ADDR %3 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %3 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "INC mut_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "JMP %4")
+		? _self.tp.emit(_self.tp, prog, "%5:")
+	}
+
+	/** An owns member/local `path`: null-guarded drop of what it points to, then the GT_DESTRUCT itself. */
+	@throws
+	func ownsDestruct(_self: ref some mut self, prog: ref some mut Prog, ps: mut u64, pe: mut u64, cs: mut u64, ce: mut u64, bs: mut u64, be: mut u64) void{
+		?catch(e){ throw e }
+		? _self.label(_self, prog, 2, "@drop_skip_")
+		let k2s = mut _self.tp.getS(_self.tp, 2)
+		let k2e = mut _self.tp.getE(_self.tp, 2)
+		_self.tp.set(_self.tp, 0, ps, pe)
+		_self.tp.set(_self.tp, 1, cs, ce)
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %1")
+		? _self.tp.emit(_self.tp, prog, "NEQ %1 %1 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %2")
+		if _self.dynElemOf(_self, prog, bs, be){
+			let ds = mut _self.os
+			let de = mut _self.oe
+			? _self.elementDrop(_self, prog, ps, pe, cs, ce, ds, de, false, 0, 0)
+		} else if _self.tab.hasStruct(_self.tab, prog, bs, be){
+			let ob = mut ? _self.tab.isOwnsBearing(_self.tab, prog, bs, be)
+			if ob{
+				? _self.routineName(_self, prog, 8, "__drop_", bs, be)
+				_self.tp.set(_self.tp, 0, ps, pe)
+				_self.tp.set(_self.tp, 1, cs, ce)
+				? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+				? _self.tp.emit(_self.tp, prog, "CALL %8")
+				? _self.enqueue(_self, prog, bs, be)
+			}
+		}
+		_self.tp.set(_self.tp, 0, ps, pe)
+		_self.tp.set(_self.tp, 2, k2s, k2e)
+		? _self.tp.emit(_self.tp, prog, "%2:")
+		? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %0")
+	}
+
+	@throws
+	func pushTodo(_self: ref some mut self, ps: mut u64, pe: mut u64, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		let k = mut _self.ntd
+		if k >= len(_self.tdS){
+			let nc = mut (k * 2 + 16)
+			_self.tdS = ? resize(_self.tdS, nc, 0)
+			_self.tdE = ? resize(_self.tdE, nc, 0)
+			_self.tdTS = ? resize(_self.tdTS, nc, 0)
+			_self.tdTE = ? resize(_self.tdTE, nc, 0)
+		}
+		match k into _self.tdS{ _self.tdS[k] = ps }
+		match k into _self.tdE{ _self.tdE[k] = pe }
+		match k into _self.tdTS{ _self.tdTS[k] = ts }
+		match k into _self.tdTE{ _self.tdTE[k] = te }
+		_self.ntd = k + 1
+	}
+
+	/** Drops of every element of a fixed (possibly nested) array of owning structs, unrolled. */
+	@throws
+	func fixedArrayDrops(_self: ref some mut self, prog: ref some mut Prog, bs: mut u64, be: mut u64, as_: mut u64, ae: mut u64, ls: mut u64, le: mut u64) void{
+		?catch(e){ throw e }
+		let depth = mut 0
+		let cs = mut as_
+		let ce = mut ae
+		for step in 0..64{
+			if depth >= len(_self.lvS){
+				let nc = mut (depth * 2 + 8)
+				_self.lvS = ? resize(_self.lvS, nc, 0)
+				_self.lvE = ? resize(_self.lvE, nc, 0)
+				_self.cnt = ? resize(_self.cnt, nc, 0)
+				_self.idx = ? resize(_self.idx, nc, 0)
+			}
+			match depth into _self.lvS{ _self.lvS[depth] = cs }
+			match depth into _self.lvE{ _self.lvE[depth] = ce }
+			depth += 1
+			let ct = mut ? Hob.parse(prog, cs, ce)
+			if _self.fixedElemOf(_self, prog, ct.baS, ct.baE) == false{
+				break
+			}
+			let es = mut _self.os
+			let ee = mut _self.oe
+			let et = mut ? Hob.parse(prog, es, ee)
+			let more = mut _self.fixedElemOf(_self, prog, et.baS, et.baE)
+			if more == false{
+				break
+			}
+			cs = es
+			ce = ee
+		}
+		for k in 0..depth{
+			let a = mut 0
+			let b = mut 0
+			match k in _self.lvS{ a = _self.lvS[k] }
+			match k in _self.lvE{ b = _self.lvE[k] }
+			let ct = mut ? Hob.parse(prog, a, b)
+			let n = mut _self.fixedLen(_self, prog, ct.baS, ct.baE)
+			if n <= 0{
+				return
+			}
+			match k into _self.cnt{ _self.cnt[k] = wrap:<u64>(n) }
+			match k into _self.idx{ _self.idx[k] = 0 }
+		}
+		? _self.routineName(_self, prog, 8, "__drop_", ls, le)
+		let r8s = mut _self.os
+		let r8e = mut _self.oe
+		for outer in 0..100000000{
+			_self.tp.set(_self.tp, 0, bs, be)
+			_self.tp.set(_self.tp, 1, as_, ae)
+			? _self.tp.emit(_self.tp, prog, "ADDR %0 %1")
+			for k in 0..depth{
+				let a = mut 0
+				let b = mut 0
+				match k in _self.lvS{ a = _self.lvS[k] }
+				match k in _self.lvE{ b = _self.lvE[k] }
+				let es = mut 0
+				let ee = mut 0
+				let nk = mut (k + 1)
+				if nk < depth{
+					match nk in _self.lvS{ es = _self.lvS[nk] }
+					match nk in _self.lvE{ ee = _self.lvE[nk] }
+				} else {
+					let ct = mut ? Hob.parse(prog, a, b)
+					if _self.fixedElemOf(_self, prog, ct.baS, ct.baE){
+						es = _self.os
+						ee = _self.oe
+					}
+				}
+				let iv = mut 0
+				match k in _self.idx{ iv = _self.idx[k] }
+				prog.begin(prog)
+				? prog.addLit(prog, "PUSH")
+				? prog.addS64(prog, wrap:<s64>(iv))
+				? prog.addLit(prog, "mut_u64")
+				? prog.outBuilt(prog)
+				_self.tp.set(_self.tp, 1, a, b)
+				_self.tp.set(_self.tp, 2, es, ee)
+				? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %1 mut_u64 %2")
+			}
+			_self.tp.set(_self.tp, 8, r8s, r8e)
+			? _self.tp.emit(_self.tp, prog, "CALL %8")
+			? _self.enqueue(_self, prog, ls, le)
+			let k = mut depth
+			let done = mut false
+			for q in 0..depth{
+				if done{
+					break
+				}
+				k -= 1
+				let iv = mut 0
+				let cv = mut 0
+				match k in _self.idx{ iv = _self.idx[k] }
+				match k in _self.cnt{ cv = _self.cnt[k] }
+				iv += 1
+				if iv == cv{
+					match k into _self.idx{ _self.idx[k] = 0 }
+					if k == 0{
+						return
+					}
+				} else {
+					match k into _self.idx{ _self.idx[k] = iv }
+					done = true
+				}
+			}
+		}
+	}
+
+	/** One destruct step of `path` of type `ct`: queued sub-items are pushed on the to-do stack. */
+	@throws
+	func valueStep(_self: ref some mut self, prog: ref some mut Prog, ps: mut u64, pe: mut u64, cs: mut u64, ce: mut u64) void{
+		?catch(e){ throw e }
+		let t = mut ? Hob.parse(prog, cs, ce)
+		let tbs = mut t.baS
+		let tbe = mut t.baE
+		if Hob.storageIs(prog, t, "owns"){
+			? _self.ownsDestruct(_self, prog, ps, pe, cs, ce, tbs, tbe)
+			return
+		}
+		if _self.tab.hasStruct(_self.tab, prog, tbs, tbe){
+			let ob = mut ? _self.tab.isOwnsBearing(_self.tab, prog, tbs, tbe)
+			if Hob.hasStorage(t) == false &&then ob{
+				? _self.routineName(_self, prog, 8, "__drop_", tbs, tbe)
+				_self.tp.set(_self.tp, 0, ps, pe)
+				_self.tp.set(_self.tp, 1, cs, ce)
+				? _self.tp.emit(_self.tp, prog, "ADDR %0 %1")
+				? _self.tp.emit(_self.tp, prog, "CALL %8")
+				? _self.enqueue(_self, prog, tbs, tbe)
+			}
+			return
+		}
+		if _self.fixedElemOf(_self, prog, tbs, tbe){
+			let es = mut _self.os
+			let ee = mut _self.oe
+			let et = mut ? Hob.parse(prog, es, ee)
+			let needs = mut Hob.storageIs(prog, et, "owns")
+			if needs == false &&then _self.tab.hasStruct(_self.tab, prog, et.baS, et.baE){
+				needs = ? _self.tab.isOwnsBearing(_self.tab, prog, et.baS, et.baE)
+			}
+			if needs == false{
+				needs = _self.fixedElemOf(_self, prog, et.baS, et.baE)
+			}
+			// leaf element type
+			let ls = mut et.baS
+			let le = mut et.baE
+			let lt = mut ? Hob.parse(prog, es, ee)
+			for q in 0..64{
+				if _self.fixedElemOf(_self, prog, lt.baS, lt.baE) == false{
+					break
+				}
+				let inner = mut ? Hob.parse(prog, _self.os, _self.oe)
+				lt = inner
+			}
+			ls = lt.baS
+			le = lt.baE
+			let leafOwns = mut Hob.storageIs(prog, lt, "owns")
+			let leafInline = mut false
+			if needs &&then leafOwns == false &&then Hob.hasStorage(lt) == false &&then _self.tab.hasStruct(_self.tab, prog, ls, le){
+				leafInline = ? _self.tab.isOwnsBearing(_self.tab, prog, ls, le)
+			}
+			if leafInline{
+				? _self.fixedArrayDrops(_self, prog, ps, pe, cs, ce, ls, le)
+				return
+			}
+			if needs{
+				let count = mut _self.fixedLen(_self, prog, tbs, tbe)
+				if count > 0{
+					let cu = mut wrap:<u64>(count)
+					for r in 0..cu{
+						let i = mut (cu - 1 - r)
+						? _self.joinNum(_self, prog, ps, pe, i)
+						? _self.pushTodo(_self, _self.os, _self.oe, es, ee)
+					}
+				}
+			}
+		}
+	}
+
+	/** Destructs the value at `path` (iterative: sub-items are handled in the order a recursive walk would). */
+	@throws
+	func valueDestruct(_self: ref some mut self, prog: ref some mut Prog, ps: mut u64, pe: mut u64, cs: mut u64, ce: mut u64) void{
+		?catch(e){ throw e }
+		let base = mut _self.ntd
+		? _self.pushTodo(_self, ps, pe, cs, ce)
+		for step in 0..100000000{
+			if _self.ntd <= base{
+				break
+			}
+			let top = mut (_self.ntd - 1)
+			let a = mut 0
+			let b = mut 0
+			let c = mut 0
+			let d = mut 0
+			match top in _self.tdS{ a = _self.tdS[top] }
+			match top in _self.tdE{ b = _self.tdE[top] }
+			match top in _self.tdTS{ c = _self.tdTS[top] }
+			match top in _self.tdTE{ d = _self.tdTE[top] }
+			_self.ntd = top
+			? _self.valueStep(_self, prog, a, b, c, d)
+		}
+	}
+
+	// ---- routines ----
+
+	@throws
+	func routine(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		? _self.routineName(_self, prog, 0, "__drop_", a, z)
+		let rns = mut _self.os
+		let rne = mut _self.oe
+		? _self.cat(_self, prog, 1, "ref_mut_", a, z, "")
+		let pts = mut _self.os
+		let pte = mut _self.oe
+		_self.tp.set(_self.tp, 0, rns, rne)
+		? _self.tp.emit(_self.tp, prog, "FUNC_START %0")
+		? _self.tp.emit(_self.tp, prog, "FUNC_DECORATE @drop_glue")
+		? _self.tp.emit(_self.tp, prog, "RETURNS imut_void")
+		? _self.tp.emit(_self.tp, prog, "ALLOC p %1")
+		? _self.tp.emit(_self.tp, prog, "ADDR p %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH $16 %1")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN %1 %1 %1")
+		let pc = mut ? Hob.parse(prog, pts, pte)
+		prog.begin(prog)
+		if Hob.hasMut(pc){
+			? prog.addRange(prog, pc.muS, pc.muE)
+			? prog.glueCh(prog, '_')
+			? prog.glueRange(prog, pc.baS, pc.baE)
+		} else {
+			? prog.addRange(prog, pc.baS, pc.baE)
+		}
+		let dts = mut prog.cur
+		let dte = mut prog.used
+		? _self.newTemp(_self, prog, 2, "$drop_self", dts, dte)
+		let rts = mut _self.os
+		let rte = mut _self.oe
+		_self.tp.set(_self.tp, 1, pts, pte)
+		_self.tp.set(_self.tp, 3, dts, dte)
+		_self.tp.set(_self.tp, 2, rts, rte)
+		? _self.tp.emit(_self.tp, prog, "PUSH p %1")
+		? _self.tp.emit(_self.tp, prog, "DEREF %3")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		let hs = mut _self.tab.hooks.get1(_self.tab.hooks, prog, a, z)
+		if hs >= 0{
+			let hn = mut wrap:<u64>(hs)
+			let he = mut _self.tab.hooks.get2(_self.tab.hooks, prog, a, z)
+			_self.tp.set(_self.tp, 4, hn, he)
+			_self.tp.set(_self.tp, 5, _self.convS, _self.convE)
+			_self.tp.set(_self.tp, 1, pts, pte)
+			? _self.tp.emit(_self.tp, prog, "CC_START %5")
+			? _self.tp.emit(_self.tp, prog, "PUSH p %1")
+			? _self.tp.emit(_self.tp, prog, "POP ARG0 %1")
+			? _self.tp.emit(_self.tp, prog, "CALL %4")
+			? _self.tp.emit(_self.tp, prog, "CC_END %5")
+		}
+		let sl = mut _self.tab.structLine(_self.tab, prog, a, z)
+		if sl >= 0{
+			let own = mut wrap:<u64>(sl)
+			? _self.tab.members(_self.tab, prog, own)
+			let cntm = mut _self.tab.nm
+			// the member lines are re-read on every step: a nested walk overwrites the shared member list, so take a snapshot of the (name, type) ranges first
+			let base = mut _self.ntd
+			for m in 0..cntm{
+				let ml = mut _self.tab.memberLine(_self.tab, m)
+				let nsp = mut wrap:<u64>(prog.tokPos(prog, ml, 1))
+				let nze = mut Ln.tokEnd(prog.buf, nsp, prog.lineEnd(prog, ml))
+				let tsp = mut wrap:<u64>(prog.tokPos(prog, ml, 2))
+				let tze = mut Ln.tokEnd(prog.buf, tsp, prog.lineEnd(prog, ml))
+				? _self.join(_self, prog, rts, rte, nsp, nze)
+				? _self.pushTodo(_self, _self.os, _self.oe, tsp, tze)
+			}
+			// the first member must come out first: take them from the bottom up
+			let total = mut (_self.ntd - base)
+			_self.ntd = base
+			for m in 0..total{
+				let at = mut (base + m)
+				let a1 = mut 0
+				let b1 = mut 0
+				let c1 = mut 0
+				let d1 = mut 0
+				match at in _self.tdS{ a1 = _self.tdS[at] }
+				match at in _self.tdE{ b1 = _self.tdE[at] }
+				match at in _self.tdTS{ c1 = _self.tdTS[at] }
+				match at in _self.tdTE{ d1 = _self.tdTE[at] }
+				// valueDestruct pushes above `ntd`, which must stay past the unread snapshot
+				_self.ntd = base + total
+				? _self.valueDestruct(_self, prog, a1, b1, c1, d1)
+			}
+			_self.ntd = base
+		}
+		_self.tp.set(_self.tp, 0, rns, rne)
+		? _self.tp.emit(_self.tp, prog, "RET imut_void")
+		? _self.tp.emit(_self.tp, prog, "FUNC_END")
+	}
+
+	/** Type of the (possibly dotted) destruct target [a, z) as [os, oe); false when a segment cannot be resolved. */
+	@throws
+	func resolveType(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64) mut bool{
+		?catch(e){ throw e }
+		let dot = mut Hob.indexOf(prog, a, z, '.')
+		let he = mut z
+		if dot >= 0{
+			he = wrap:<u64>(dot)
+		}
+		let v = mut _self.locals.get1(_self.locals, prog, a, he)
+		if v < 0{
+			return false
+		}
+		let cs = mut wrap:<u64>(v)
+		let ce = mut _self.locals.get2(_self.locals, prog, a, he)
+		let rem = mut z
+		if dot >= 0{
+			rem = he + 1
+		}
+		for step in 0..100000{
+			if rem >= z{
+				break
+			}
+			let nd = mut Hob.indexOf(prog, rem, z, '.')
+			let se = mut z
+			if nd >= 0{
+				se = wrap:<u64>(nd)
+			}
+			let ct = mut ? Hob.parse(prog, cs, ce)
+			let sl = mut _self.tab.structLine(_self.tab, prog, ct.baS, ct.baE)
+			if sl < 0{
+				return false
+			}
+			let own = mut wrap:<u64>(sl)
+			? _self.tab.members(_self.tab, prog, own)
+			let cntm = mut _self.tab.nm
+			let found = mut false
+			let fs = mut 0
+			let fe = mut 0
+			for m in 0..cntm{
+				if found == false{
+					let ml = mut _self.tab.memberLine(_self.tab, m)
+					let nsp = mut wrap:<u64>(prog.tokPos(prog, ml, 1))
+					let nze = mut Ln.tokEnd(prog.buf, nsp, prog.lineEnd(prog, ml))
+					if Hob.eq(prog, nsp, nze, rem, se){
+						found = true
+						fs = wrap:<u64>(prog.tokPos(prog, ml, 2))
+						fe = Ln.tokEnd(prog.buf, fs, prog.lineEnd(prog, ml))
+					}
+				}
+			}
+			if found == false{
+				return false
+			}
+			cs = fs
+			ce = fe
+			if nd >= 0{
+				rem = se + 1
+			} else {
+				rem = z
+			}
+		}
+		_self.os = cs
+		_self.oe = ce
+		return true
+	}
+
+	// ---- driver ----
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog, cfg: ref some imut Config) void{
+		?catch(e){ throw e }
+		let ns = mut StructTab.countStructs(prog)
+		let st = mut ? new DropPass(ns)
+		? st.tab.load(st.tab, prog)
+		// the default calling convention's name (only used for @drop hooks)
+		let di = mut cfg.defaultIndex(cfg)
+		if di >= 0{
+			let dc0 = mut cfg.conventions.get(cfg.conventions, wrap:<u64>(di))
+			let nl = mut 0
+			match Some(dc0){
+				nl = dc0.name.length(dc0.name)
+			}
+			prog.begin(prog)
+			for q in 0..nl{
+				let dc = mut cfg.conventions.get(cfg.conventions, wrap:<u64>(di))
+				match Some(dc){
+					let ch = mut dc.name.charAt(dc.name, q)
+					? prog.glueCh(prog, ch)
+				}
+			}
+			st.convS = prog.cur
+			st.convE = prog.used
+			st.hasConv = true
+		}
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			if end > n - 1{
+				end = n - 1
+			}
+			st.locals.clear(st.locals)
+			let last = mut (end + 1)
+			for k in i..last{
+				let isDecl = mut prog.opEq(prog, k, "ALLOC")
+				if isDecl == false{
+					isDecl = prog.opEq(prog, k, "ARG")
+				}
+				if isDecl &&then prog.count(prog, k) >= 3{
+					let ka = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let kz = mut Ln.tokEnd(prog.buf, ka, prog.lineEnd(prog, k))
+					let va = mut wrap:<u64>(prog.tokPos(prog, k, 2))
+					let vz = mut Ln.tokEnd(prog.buf, va, prog.lineEnd(prog, k))
+					? st.locals.put(st.locals, prog, ka, kz, va, vz)
+				}
+			}
+			for k in i..last{
+				let c = mut prog.count(prog, k)
+				let drop = mut false
+				if prog.opEq(prog, k, "GT_DROP_ADDR") &&then c >= 2{
+					let ts = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let te = mut Ln.tokEnd(prog.buf, ts, prog.lineEnd(prog, k))
+					let dt = mut ? Hob.parse(prog, ts, te)
+					if st.tab.hasStruct(st.tab, prog, dt.baS, dt.baE){
+						let ob = mut ? st.tab.isOwnsBearing(st.tab, prog, dt.baS, dt.baE)
+						if ob{
+							? st.routineName(st, prog, 8, "__drop_", dt.baS, dt.baE)
+							? st.tp.emit(st.tp, prog, "CALL %8")
+							? st.enqueue(st, prog, dt.baS, dt.baE)
+						}
+					}
+					drop = true
+				} else if prog.opEq(prog, k, "GT_DESTRUCT_ADDR") &&then c >= 2{
+					let ts = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let te = mut Ln.tokEnd(prog.buf, ts, prog.lineEnd(prog, k))
+					let dt = mut ? Hob.parse(prog, ts, te)
+					if Hob.storageIs(prog, dt, "owns") &&then dt.baE > dt.baS{
+						let ob = mut ? st.tab.isOwnsBearing(st.tab, prog, dt.baS, dt.baE)
+						if ob{
+							? st.newTemp(st, prog, 3, "$dest_addr", ts, te)
+							let tms = mut st.os
+							let tme = mut st.oe
+							st.tp.set(st.tp, 1, ts, te)
+							st.tp.set(st.tp, 3, tms, tme)
+							? st.tp.emit(st.tp, prog, "DEREF %1")
+							? st.tp.emit(st.tp, prog, "POP %3 %1")
+							? st.ownsDestruct(st, prog, tms, tme, ts, te, dt.baS, dt.baE)
+							drop = true
+						}
+					}
+				} else if prog.opEq(prog, k, "GT_DESTRUCT_TAIL") &&then c >= 4{
+					let as_ = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let ae = mut Ln.tokEnd(prog.buf, as_, prog.lineEnd(prog, k))
+					let ts = mut wrap:<u64>(prog.tokPos(prog, k, 2))
+					let te = mut Ln.tokEnd(prog.buf, ts, prog.lineEnd(prog, k))
+					let fs = mut wrap:<u64>(prog.tokPos(prog, k, 3))
+					let fe = mut Ln.tokEnd(prog.buf, fs, prog.lineEnd(prog, k))
+					let ct = mut ? Hob.parse(prog, ts, te)
+					if st.dynElemOf(st, prog, ct.baS, ct.baE){
+						let ds = mut st.os
+						let de = mut st.oe
+						? st.elementDrop(st, prog, as_, ae, ts, te, ds, de, true, fs, fe)
+					}
+					drop = true
+				} else if prog.opEq(prog, k, "GT_DESTRUCT") &&then c >= 2{
+					let ta = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let tz = mut Ln.tokEnd(prog.buf, ta, prog.lineEnd(prog, k))
+					let known = mut ? st.resolveType(st, prog, ta, tz)
+					if known{
+						let ys = mut st.os
+						let ye = mut st.oe
+						let t = mut ? Hob.parse(prog, ys, ye)
+						let tbs = mut t.baS
+						let tbe = mut t.baE
+						let plain = mut true
+						if Hob.hasStorage(t){
+							plain = false
+						}
+						if plain &&then st.fixedElemOf(st, prog, tbs, tbe){
+							let before = mut prog.n2
+							? st.valueDestruct(st, prog, ta, tz, ys, ye)
+							if prog.n2 != before{
+								drop = true
+							}
+						}
+						if drop == false &&then plain &&then st.tab.hasStruct(st.tab, prog, tbs, tbe){
+							let ob = mut ? st.tab.isOwnsBearing(st.tab, prog, tbs, tbe)
+							if ob{
+								? st.routineName(st, prog, 8, "__drop_", tbs, tbe)
+								st.tp.set(st.tp, 0, ta, tz)
+								st.tp.set(st.tp, 1, ys, ye)
+								? st.tp.emit(st.tp, prog, "ADDR %0 %1")
+								? st.tp.emit(st.tp, prog, "CALL %8")
+								? st.enqueue(st, prog, tbs, tbe)
+								drop = true
+							}
+						}
+						if drop == false &&then Hob.storageIs(prog, t, "owns"){
+							let ob2 = mut ? st.tab.isOwnsBearing(st.tab, prog, tbs, tbe)
+							if ob2{
+								? st.label(st, prog, 5, "@drop_skip_")
+								let k5s = mut st.tp.getS(st.tp, 5)
+								let k5e = mut st.tp.getE(st.tp, 5)
+								st.tp.set(st.tp, 0, ta, tz)
+								st.tp.set(st.tp, 1, ys, ye)
+								? st.tp.emit(st.tp, prog, "PUSH %0 %1")
+								? st.tp.emit(st.tp, prog, "PUSH null %1")
+								? st.tp.emit(st.tp, prog, "NEQ %1 %1 imut_bool")
+								? st.tp.emit(st.tp, prog, "CMP")
+								? st.tp.emit(st.tp, prog, "JMP %5")
+								if st.dynElemOf(st, prog, tbs, tbe){
+									let ds = mut st.os
+									let de = mut st.oe
+									? st.elementDrop(st, prog, ta, tz, ys, ye, ds, de, false, 0, 0)
+								} else {
+									? st.routineName(st, prog, 8, "__drop_", tbs, tbe)
+									st.tp.set(st.tp, 0, ta, tz)
+									st.tp.set(st.tp, 1, ys, ye)
+									? st.tp.emit(st.tp, prog, "PUSH %0 %1")
+									? st.tp.emit(st.tp, prog, "CALL %8")
+									? st.enqueue(st, prog, tbs, tbe)
+								}
+								st.tp.set(st.tp, 5, k5s, k5e)
+								? st.tp.emit(st.tp, prog, "%5:")
+							}
+						}
+					}
+				}
+				if drop == false{
+					? prog.outLine(prog, k)
+				}
+			}
+			i = end + 1
+		}
+		for outer in 0..100000000{
+			if st.need.isEmpty(st.need){
+				break
+			}
+			st.need.pop(st.need)
+			let a = mut st.need.ps
+			let z = mut st.need.pe
+			if st.gen.has(st.gen, prog, a, z) == false{
+				? st.gen.put(st.gen, prog, a, z, 1, 0)
+				? st.routine(st, prog, a, z)
+			}
+		}
+		prog.outCommit(prog)
+	}
+}

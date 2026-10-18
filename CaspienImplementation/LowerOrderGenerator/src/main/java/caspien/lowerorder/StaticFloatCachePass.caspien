@@ -1,0 +1,730 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "LabelIndex.caspien"
+import "TokMap.caspien"
+
+/**
+ * Port of StaticFloatCachePass (step 16): read-only float statics cached in spare xmm registers (%z0..%z3, %x above the highest used) for the length of a call-free loop.
+ * Loops are visited outermost first (ascending header line; a header has at most one loop), edits to the loop body are done in place on the program table and the
+ * R_LDX pre-loads are emitted in front of the header when the function is written out.
+ */
+@pub
+struct StaticFloatCachePass{@pub{
+}}
+
+impl constructor for StaticFloatCachePass() self{
+	return StaticFloatCachePass{}
+}
+
+@pub
+struct SfcWork{@pub{
+	lpAt: owns some mut dynarray(mut u64)
+	lpH: owns some mut dynarray(mut u64)
+	lpB: owns some mut dynarray(mut u64)
+	lpUsed: owns some mut dynarray(mut u64)
+	lpDone: owns some mut dynarray(mut u64)
+	lpCS: owns some mut dynarray(mut u64)
+	lpCN: owns some mut dynarray(mut u64)
+	cGs: owns some mut dynarray(mut u64)
+	cGe: owns some mut dynarray(mut u64)
+	cWs: owns some mut dynarray(mut u64)
+	cWe: owns some mut dynarray(mut u64)
+	cReg: owns some mut dynarray(mut u64)
+	eS: owns some mut dynarray(mut u64)
+	eE: owns some mut dynarray(mut u64)
+	eCnt: owns some mut dynarray(mut u64)
+	eWs: owns some mut dynarray(mut u64)
+	eWe: owns some mut dynarray(mut u64)
+	eBad: owns some mut dynarray(mut u64)
+	ord: owns some mut dynarray(mut u64)
+	nLoops: mut u64
+	nC: mut u64
+	nE: mut u64
+}}
+
+@throws
+impl constructor for SfcWork() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<u64>([])
+	let d = mut ? dyn:<u64>([])
+	let e1 = mut ? dyn:<u64>([])
+	let f = mut ? dyn:<u64>([])
+	let g = mut ? dyn:<u64>([])
+	let h = mut ? dyn:<u64>([])
+	let i = mut ? dyn:<u64>([])
+	let j = mut ? dyn:<u64>([])
+	let k = mut ? dyn:<u64>([])
+	let l = mut ? dyn:<u64>([])
+	let m = mut ? dyn:<u64>([])
+	let n = mut ? dyn:<u64>([])
+	let o = mut ? dyn:<u64>([])
+	let p = mut ? dyn:<u64>([])
+	let q = mut ? dyn:<u64>([])
+	let r = mut ? dyn:<u64>([])
+	let s = mut ? dyn:<u64>([])
+	return SfcWork{lpAt= a, lpH= b, lpB= c, lpUsed= d, lpDone= e1, lpCS= f, lpCN= g, cGs= h, cGe= i, cWs= j, cWe= k, cReg= l, eS= m, eE= n, eCnt= o, eWs= p, eWe= q, eBad= r, ord= s, nLoops= 0, nC= 0, nE= 0}
+}
+
+@pub
+impl StaticFloatCachePass{
+	static func rangeEq(prog: ref some imut Prog, a: mut u64, ae: mut u64, b: mut u64, be: mut u64) mut bool{
+		if ae - a != be - b{
+			return false
+		}
+		let w = mut (ae - a)
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, a + d) != prog.buf.charAt(prog.buf, b + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Byte-wise comparison of two ranges: <0, 0, >0. */
+	static func rangeCmp(prog: ref some imut Prog, a: mut u64, ae: mut u64, b: mut u64, be: mut u64) mut s64{
+		let la = mut (ae - a)
+		let lb = mut (be - b)
+		let m = mut la
+		if lb < m{
+			m = lb
+		}
+		for d in 0..m{
+			let x = mut String.charCode(prog.buf.charAt(prog.buf, a + d))
+			let y = mut String.charCode(prog.buf.charAt(prog.buf, b + d))
+			if x != y{
+				if x < y{
+					return -1
+				}
+				return 1
+			}
+		}
+		if la < lb{
+			return -1
+		}
+		if la > lb{
+			return 1
+		}
+		return 0
+	}
+
+	/** Whitelist of the ops a cached loop may hold. */
+	static func okOp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.startsWith(prog, i, 0, "R_") == false{
+			return prog.opEq(prog, i, "JMP")
+		}
+		if prog.opEq(prog, i, "R_MOV") || prog.opEq(prog, i, "R_LD") || prog.opEq(prog, i, "R_LDI") || prog.opEq(prog, i, "R_LDD") || prog.opEq(prog, i, "R_ST") || prog.opEq(prog, i, "R_STI") || prog.opEq(prog, i, "R_STD") || prog.opEq(prog, i, "R_LEA"){
+			return true
+		}
+		if prog.opEq(prog, i, "R_BIN") || prog.opEq(prog, i, "R_BRC") || prog.opEq(prog, i, "R_BRCM") || prog.opEq(prog, i, "R_FBIN") || prog.opEq(prog, i, "R_FBINX") || prog.opEq(prog, i, "R_FCMP") || prog.opEq(prog, i, "R_BRF"){
+			return true
+		}
+		if prog.opEq(prog, i, "R_LDX") || prog.opEq(prog, i, "R_STX") || prog.opEq(prog, i, "R_FSQRT") || prog.opEq(prog, i, "R_XMOV") || prog.opEq(prog, i, "R_XTOG") || prog.opEq(prog, i, "R_GTOX") || prog.opEq(prog, i, "R_RMW"){
+			return true
+		}
+		return false
+	}
+
+	static func isAddrOp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_LDX") || prog.opEq(prog, i, "R_STX") || prog.opEq(prog, i, "R_LD") || prog.opEq(prog, i, "R_ST"){
+			return true
+		}
+		return false
+	}
+
+	static func isLabelDef(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) != 1 || prog.tokStartsCh(prog, i, 0, '@') == false{
+			return false
+		}
+		let e = mut prog.lineEnd(prog, i)
+		return prog.buf.charAt(prog.buf, e - 1) == ':'
+	}
+
+	/** The token [a, z) contains par_call, await_call or pthread. */
+	static func threadToken(prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		let w = mut (z - a)
+		for d in 0..w{
+			let c = mut prog.buf.charAt(prog.buf, a + d)
+			if c == 'p'{
+				if d + 8 <= w &&then prog.buf.charAt(prog.buf, a + d + 1) == 'a' &&then prog.buf.charAt(prog.buf, a + d + 2) == 'r' &&then prog.buf.charAt(prog.buf, a + d + 3) == '_' &&then prog.buf.charAt(prog.buf, a + d + 4) == 'c' &&then prog.buf.charAt(prog.buf, a + d + 5) == 'a' &&then prog.buf.charAt(prog.buf, a + d + 6) == 'l' &&then prog.buf.charAt(prog.buf, a + d + 7) == 'l'{
+					return true
+				}
+				if d + 7 <= w &&then prog.buf.charAt(prog.buf, a + d + 1) == 't' &&then prog.buf.charAt(prog.buf, a + d + 2) == 'h' &&then prog.buf.charAt(prog.buf, a + d + 3) == 'r' &&then prog.buf.charAt(prog.buf, a + d + 4) == 'e' &&then prog.buf.charAt(prog.buf, a + d + 5) == 'a' &&then prog.buf.charAt(prog.buf, a + d + 6) == 'd'{
+					return true
+				}
+			} else if c == 'a'{
+				if d + 10 <= w &&then prog.buf.charAt(prog.buf, a + d + 1) == 'w' &&then prog.buf.charAt(prog.buf, a + d + 2) == 'a' &&then prog.buf.charAt(prog.buf, a + d + 3) == 'i' &&then prog.buf.charAt(prog.buf, a + d + 4) == 't' &&then prog.buf.charAt(prog.buf, a + d + 5) == '_' &&then prog.buf.charAt(prog.buf, a + d + 6) == 'c' &&then prog.buf.charAt(prog.buf, a + d + 7) == 'a' &&then prog.buf.charAt(prog.buf, a + d + 8) == 'l' &&then prog.buf.charAt(prog.buf, a + d + 9) == 'l'{
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	@throws
+	static func addReg(prog: ref some mut Prog, code: mut u64) void{
+		?catch(e){ throw e }
+		if code == 0{
+			? prog.addLit(prog, "%z0")
+		} else if code == 1{
+			? prog.addLit(prog, "%z1")
+		} else if code == 2{
+			? prog.addLit(prog, "%z2")
+		} else if code == 3{
+			? prog.addLit(prog, "%z3")
+		} else if code == 10{
+			? prog.addLit(prog, "%x0")
+		} else if code == 11{
+			? prog.addLit(prog, "%x1")
+		} else if code == 12{
+			? prog.addLit(prog, "%x2")
+		} else if code == 13{
+			? prog.addLit(prog, "%x3")
+		} else if code == 14{
+			? prog.addLit(prog, "%x4")
+		} else {
+			? prog.addLit(prog, "%x5")
+		}
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		// program-wide scan: inline assembly or threads -> nothing to do; statics whose address escapes
+		let nEsc = mut 0
+		for i in 0..n{
+			if prog.opEq(prog, i, "ASM_START"){
+				return
+			}
+			let c = mut prog.count(prog, i)
+			let addrOp = mut StaticFloatCachePass.isAddrOp(prog, i)
+			for k in 1..c{
+				let p = mut prog.tokPos(prog, i, k)
+				let a = mut wrap:<u64>(p)
+				if prog.buf.charAt(prog.buf, a) == '&'{
+					if addrOp == false{
+						nEsc += 1
+					}
+				} else {
+					let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+					if StaticFloatCachePass.threadToken(prog, a, z){
+						return
+					}
+				}
+			}
+		}
+		let esc = mut ? TokMap.forKeys(nEsc + 1)
+		if nEsc > 0{
+			for i in 0..n{
+				if StaticFloatCachePass.isAddrOp(prog, i){
+					continue
+				}
+				let c = mut prog.count(prog, i)
+				for k in 1..c{
+					if prog.tokStartsCh(prog, i, k, '&'){
+						esc.addTok(esc, prog, i, k, 1)
+					}
+				}
+			}
+		}
+		let w = mut ? new SfcWork()
+		w.lpAt = ? resize(w.lpAt, n + 1, 0)
+		prog.outReset(prog)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			let stop = mut (end + 1)
+			if stop > n{
+				stop = n
+			}
+			if stop - i <= 20000{
+				? StaticFloatCachePass.cacheFunction(prog, w, esc, i, stop)
+			} else {
+				for q in i..stop{
+					? prog.outLine(prog, q)
+				}
+			}
+			i = stop
+		}
+		prog.outCommit(prog)
+	}
+
+	/** Writes the function [fs, fe) to the new table (with pre-loads in front of cached loop headers). */
+	@throws
+	static func cacheFunction(prog: ref some mut Prog, w: ref some mut SfcWork, esc: ref some imut TokMap, fs: mut u64, fe: mut u64) void{
+		?catch(e){ throw e }
+		let mx1 = mut 0
+		let bail = mut false
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			for k in 1..c{
+				if prog.startsWith(prog, i, k, "%x"){
+					let p = mut prog.tokPos(prog, i, k)
+					let a = mut wrap:<u64>(p)
+					let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+					if z - a >= 3 &&then String.isDigit(prog.buf.charAt(prog.buf, a + 2)){
+						let v = mut 0
+						let good = mut true
+						let lo2 = mut (a + 2)
+						for q in lo2..z{
+							let ch = mut prog.buf.charAt(prog.buf, q)
+							if String.isDigit(ch){
+								v = v * 10 + (String.charCode(ch) - 48)
+							} else {
+								good = false
+							}
+						}
+						if good == false || z - a > 12{
+							bail = true
+						} else if v + 1 > mx1{
+							mx1 = v + 1
+						}
+					}
+				}
+			}
+		}
+		if bail{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return
+		}
+		let labels = mut ? LabelIndex.buildRange(prog, fs, fe)
+		// back edges
+		w.nLoops = 0
+		for i in fs..fe{
+			match i into w.lpAt{ w.lpAt[i] = 0 }
+		}
+		for i in fs..fe{
+			if StaticFloatCachePass.isLabelDef(prog, i){
+				continue
+			}
+			let c = mut prog.count(prog, i)
+			for k in 1..c{
+				if prog.tokStartsCh(prog, i, k, '@'){
+					let d = mut labels.find(labels, prog, i, k)
+					if d >= 0{
+						let du = mut wrap:<u64>(d)
+						if du < i{
+							let li = mut 0
+							match du in w.lpAt{ li = w.lpAt[du] }
+							if li == 0{
+								let nl = mut w.nLoops
+								let need = mut (nl + 1)
+								if need > len(w.lpH){
+									let cap2 = mut (need * 2)
+									w.lpH = ? resize(w.lpH, cap2, 0)
+									w.lpB = ? resize(w.lpB, cap2, 0)
+									w.lpUsed = ? resize(w.lpUsed, cap2, 0)
+									w.lpDone = ? resize(w.lpDone, cap2, 0)
+									w.lpCS = ? resize(w.lpCS, cap2, 0)
+									w.lpCN = ? resize(w.lpCN, cap2, 0)
+								}
+								match nl into w.lpH{ w.lpH[nl] = du }
+								match nl into w.lpB{ w.lpB[nl] = i }
+								match nl into w.lpUsed{ w.lpUsed[nl] = 0 }
+								match nl into w.lpDone{ w.lpDone[nl] = 0 }
+								match nl into w.lpCS{ w.lpCS[nl] = 0 }
+								match nl into w.lpCN{ w.lpCN[nl] = 0 }
+								match du into w.lpAt{ w.lpAt[du] = need }
+								w.nLoops = need
+							} else {
+								let lx = mut (li - 1)
+								let ob = mut 0
+								match lx in w.lpB{ ob = w.lpB[lx] }
+								if i > ob{
+									match lx into w.lpB{ w.lpB[lx] = i }
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if w.nLoops == 0{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return
+		}
+		w.nC = 0
+		let nDone = mut 0
+		for i in fs..fe{
+			let li = mut 0
+			match i in w.lpAt{ li = w.lpAt[i] }
+			if li == 0{
+				continue
+			}
+			let lx = mut (li - 1)
+			let h = mut i
+			let b = mut 0
+			match lx in w.lpB{ b = w.lpB[lx] }
+			if StaticFloatCachePass.loopOk(prog, labels, fs, fe, h, b) == false{
+				continue
+			}
+			let b1 = mut (b + 1)
+			// reads of each static inside the loop
+			w.nE = 0
+			for q in h..b1{
+				if StaticFloatCachePass.isLabelDef(prog, q){
+					continue
+				}
+				let c = mut prog.count(prog, q)
+				for k in 1..c{
+					if prog.tokStartsCh(prog, q, k, '&') == false{
+						continue
+					}
+					let p = mut prog.tokPos(prog, q, k)
+					let a = mut wrap:<u64>(p)
+					let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, q))
+					// find or add the entry
+					let ei = mut 99999999999
+					let ne = mut w.nE
+					for e in 0..ne{
+						let es = mut 0
+						let ee = mut 0
+						match e in w.eS{ es = w.eS[e] }
+						match e in w.eE{ ee = w.eE[e] }
+						if StaticFloatCachePass.rangeEq(prog, a, z, es, ee){
+							ei = e
+							break
+						}
+					}
+					if ei == 99999999999{
+						ei = ne
+						let need = mut (ne + 1)
+						if need > len(w.eS){
+							let cap2 = mut (need * 2)
+							w.eS = ? resize(w.eS, cap2, 0)
+							w.eE = ? resize(w.eE, cap2, 0)
+							w.eCnt = ? resize(w.eCnt, cap2, 0)
+							w.eWs = ? resize(w.eWs, cap2, 0)
+							w.eWe = ? resize(w.eWe, cap2, 0)
+							w.eBad = ? resize(w.eBad, cap2, 0)
+						}
+						match ei into w.eS{ w.eS[ei] = a }
+						match ei into w.eE{ w.eE[ei] = z }
+						match ei into w.eCnt{ w.eCnt[ei] = 0 }
+						match ei into w.eWs{ w.eWs[ei] = 0 }
+						match ei into w.eWe{ w.eWe[ei] = 0 }
+						match ei into w.eBad{ w.eBad[ei] = 0 }
+						w.nE = need
+					}
+					let plain = mut false
+					if prog.opEq(prog, q, "R_LDX") &&then c == 4 &&then k == 3 &&then (prog.eqLit(prog, q, 1, "4") || prog.eqLit(prog, q, 1, "8")) &&then (prog.startsWith(prog, q, 2, "%y") || prog.startsWith(prog, q, 2, "%x")){
+						if esc.get(esc, prog, q, k) == 0{
+							plain = true
+						}
+					}
+					if plain{
+						let cnt = mut 0
+						match ei in w.eCnt{ cnt = w.eCnt[ei] }
+						match ei into w.eCnt{ w.eCnt[ei] = cnt + 1 }
+						let wp = mut prog.tokPos(prog, q, 1)
+						let wa = mut wrap:<u64>(wp)
+						let wz = mut Ln.tokEnd(prog.buf, wa, prog.lineEnd(prog, q))
+						let ws = mut 0
+						let we = mut 0
+						match ei in w.eWs{ ws = w.eWs[ei] }
+						match ei in w.eWe{ we = w.eWe[ei] }
+						if we == 0{
+							match ei into w.eWs{ w.eWs[ei] = wa }
+							match ei into w.eWe{ w.eWe[ei] = wz }
+						} else if StaticFloatCachePass.rangeEq(prog, ws, we, wa, wz) == false{
+							match ei into w.eBad{ w.eBad[ei] = 1 }
+						}
+					} else {
+						match ei into w.eBad{ w.eBad[ei] = 1 }
+					}
+				}
+			}
+			// registers an enclosing cached loop uses are taken
+			let takenMask = mut 0
+			let hi2 = mut w.nLoops
+			for d in 0..hi2{
+				let dn = mut 0
+				match d in w.lpDone{ dn = w.lpDone[d] }
+				if dn == 0{
+					continue
+				}
+				let dh = mut 0
+				let db = mut 0
+				let du2 = mut 0
+				match d in w.lpH{ dh = w.lpH[d] }
+				match d in w.lpB{ db = w.lpB[d] }
+				match d in w.lpUsed{ du2 = w.lpUsed[d] }
+				if dh <= h &&then db >= b{
+					takenMask = bits_or(takenMask, du2)
+				}
+			}
+			// free registers in pool order: z0..z3, then %x above the highest used
+			let nfree = mut 0
+			let f0 = mut 0
+			let f1 = mut 0
+			let f2 = mut 0
+			let f3 = mut 0
+			let f4 = mut 0
+			let f5 = mut 0
+			let f6 = mut 0
+			let f7 = mut 0
+			let f8 = mut 0
+			let f9 = mut 0
+			for pc in 0..10{
+				let code = mut 99
+				if pc < 4{
+					code = pc
+				} else {
+					let xk = mut (mx1 + pc - 4)
+					if xk <= 5{
+						code = 10 + xk
+					}
+				}
+				if code == 99{
+					continue
+				}
+				if bits_and(takenMask, bits_left(1, code)) != 0{
+					continue
+				}
+				if nfree == 0{ f0 = code }
+				else if nfree == 1{ f1 = code }
+				else if nfree == 2{ f2 = code }
+				else if nfree == 3{ f3 = code }
+				else if nfree == 4{ f4 = code }
+				else if nfree == 5{ f5 = code }
+				else if nfree == 6{ f6 = code }
+				else if nfree == 7{ f7 = code }
+				else if nfree == 8{ f8 = code }
+				else { f9 = code }
+				nfree += 1
+			}
+			// candidates: read at least twice, not bad
+			let nCand = mut 0
+			let ne2 = mut w.nE
+			w.ord = ? resize(w.ord, ne2 + 1, 0)
+			for e in 0..ne2{
+				let cnt = mut 0
+				let bd = mut 0
+				match e in w.eCnt{ cnt = w.eCnt[e] }
+				match e in w.eBad{ bd = w.eBad[e] }
+				if cnt >= 2 &&then bd == 0{
+					match nCand into w.ord{ w.ord[nCand] = e }
+					nCand += 1
+				}
+			}
+			if nCand == 0 || nfree == 0{
+				continue
+			}
+			// insertion sort: reads desc, then name asc
+			for a1 in 1..nCand{
+				let x = mut 0
+				match a1 in w.ord{ x = w.ord[a1] }
+				let j = mut a1
+				for st in 0..a1{
+					if j == 0{
+						break
+					}
+					let yv = mut 0
+					let jm = mut (j - 1)
+					match jm in w.ord{ yv = w.ord[jm] }
+					let cy = mut 0
+					let cx = mut 0
+					match yv in w.eCnt{ cy = w.eCnt[yv] }
+					match x in w.eCnt{ cx = w.eCnt[x] }
+					let gt = mut false
+					if cy == cx{
+						let ys = mut 0
+						let ye = mut 0
+						let xs = mut 0
+						let xe = mut 0
+						match yv in w.eS{ ys = w.eS[yv] }
+						match yv in w.eE{ ye = w.eE[yv] }
+						match x in w.eS{ xs = w.eS[x] }
+						match x in w.eE{ xe = w.eE[x] }
+						gt = StaticFloatCachePass.rangeCmp(prog, ys, ye, xs, xe) > 0
+					} else {
+						gt = cx > cy
+					}
+					if gt{
+						match j into w.ord{ w.ord[j] = yv }
+						j = jm
+					} else {
+						break
+					}
+				}
+				match j into w.ord{ w.ord[j] = x }
+			}
+			let nAssign = mut nCand
+			if nfree < nAssign{
+				nAssign = nfree
+			}
+			let cs = mut w.nC
+			let needC = mut (cs + nAssign)
+			if needC > len(w.cGs){
+				let cap3 = mut (needC * 2)
+				w.cGs = ? resize(w.cGs, cap3, 0)
+				w.cGe = ? resize(w.cGe, cap3, 0)
+				w.cWs = ? resize(w.cWs, cap3, 0)
+				w.cWe = ? resize(w.cWe, cap3, 0)
+				w.cReg = ? resize(w.cReg, cap3, 0)
+			}
+			let usedMask = mut 0
+			for ai in 0..nAssign{
+				let e = mut 0
+				match ai in w.ord{ e = w.ord[ai] }
+				let reg = mut f0
+				if ai == 1{ reg = f1 }
+				else if ai == 2{ reg = f2 }
+				else if ai == 3{ reg = f3 }
+				else if ai == 4{ reg = f4 }
+				else if ai == 5{ reg = f5 }
+				else if ai == 6{ reg = f6 }
+				else if ai == 7{ reg = f7 }
+				else if ai == 8{ reg = f8 }
+				else if ai == 9{ reg = f9 }
+				let ci = mut (cs + ai)
+				let gs = mut 0
+				let ge = mut 0
+				let ws = mut 0
+				let we = mut 0
+				match e in w.eS{ gs = w.eS[e] }
+				match e in w.eE{ ge = w.eE[e] }
+				match e in w.eWs{ ws = w.eWs[e] }
+				match e in w.eWe{ we = w.eWe[e] }
+				match ci into w.cGs{ w.cGs[ci] = gs }
+				match ci into w.cGe{ w.cGe[ci] = ge }
+				match ci into w.cWs{ w.cWs[ci] = ws }
+				match ci into w.cWe{ w.cWe[ci] = we }
+				match ci into w.cReg{ w.cReg[ci] = reg }
+				usedMask = bits_or(usedMask, bits_left(1, reg))
+			}
+			w.nC = needC
+			match lx into w.lpCS{ w.lpCS[lx] = cs }
+			match lx into w.lpCN{ w.lpCN[lx] = nAssign }
+			match lx into w.lpUsed{ w.lpUsed[lx] = usedMask }
+			match lx into w.lpDone{ w.lpDone[lx] = 1 }
+			nDone += 1
+			// reads inside the loop become register copies
+			for q in h..b1{
+				if prog.count(prog, q) == 4 &&then prog.opEq(prog, q, "R_LDX") &&then prog.tokStartsCh(prog, q, 3, '&'){
+					let p = mut prog.tokPos(prog, q, 3)
+					let a = mut wrap:<u64>(p)
+					let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, q))
+					let cend = mut (cs + nAssign)
+					for ci in cs..cend{
+						let gs = mut 0
+						let ge = mut 0
+						match ci in w.cGs{ gs = w.cGs[ci] }
+						match ci in w.cGe{ ge = w.cGe[ci] }
+						if StaticFloatCachePass.rangeEq(prog, a, z, gs, ge){
+							let reg = mut 0
+							match ci in w.cReg{ reg = w.cReg[ci] }
+							prog.begin(prog)
+							? prog.addLit(prog, "R_XMOV")
+							? prog.addTok(prog, q, 2)
+							? StaticFloatCachePass.addReg(prog, reg)
+							prog.setBuilt(prog, q)
+							break
+						}
+					}
+				}
+			}
+		}
+		// emit
+		for q in fs..fe{
+			let li = mut 0
+			match q in w.lpAt{ li = w.lpAt[q] }
+			if li != 0{
+				let lx = mut (li - 1)
+				let dn = mut 0
+				match lx in w.lpDone{ dn = w.lpDone[lx] }
+				if dn == 1{
+					let cs = mut 0
+					let cn = mut 0
+					match lx in w.lpCS{ cs = w.lpCS[lx] }
+					match lx in w.lpCN{ cn = w.lpCN[lx] }
+					let cend = mut (cs + cn)
+					for ci in cs..cend{
+						let gs = mut 0
+						let ge = mut 0
+						let ws = mut 0
+						let we = mut 0
+						let reg = mut 0
+						match ci in w.cGs{ gs = w.cGs[ci] }
+						match ci in w.cGe{ ge = w.cGe[ci] }
+						match ci in w.cWs{ ws = w.cWs[ci] }
+						match ci in w.cWe{ we = w.cWe[ci] }
+						match ci in w.cReg{ reg = w.cReg[ci] }
+						prog.begin(prog)
+						? prog.addLit(prog, "R_LDX")
+						? prog.addRange(prog, ws, we)
+						? StaticFloatCachePass.addReg(prog, reg)
+						? prog.addRange(prog, gs, ge)
+						? prog.outBuilt(prog)
+					}
+				}
+			}
+			? prog.outLine(prog, q)
+		}
+	}
+
+	/** Whitelisted ops only, single entry: no jump to the header from outside, none to an inner label from outside. */
+	static func loopOk(prog: ref some imut Prog, labels: ref some imut LabelIndex, fs: mut u64, fe: mut u64, h: mut u64, b: mut u64) mut bool{
+		let bl = mut (b + 1)
+		for q in h..bl{
+			if StaticFloatCachePass.isLabelDef(prog, q){
+				continue
+			}
+			if StaticFloatCachePass.okOp(prog, q) == false{
+				return false
+			}
+		}
+		for q in fs..h{
+			if StaticFloatCachePass.jumpsInto(prog, labels, q, h, b){
+				return false
+			}
+		}
+		for q in bl..fe{
+			if StaticFloatCachePass.jumpsInto(prog, labels, q, h, b){
+				return false
+			}
+		}
+		return true
+	}
+
+	static func jumpsInto(prog: ref some imut Prog, labels: ref some imut LabelIndex, q: mut u64, h: mut u64, b: mut u64) mut bool{
+		if StaticFloatCachePass.isLabelDef(prog, q){
+			return false
+		}
+		let c = mut prog.count(prog, q)
+		for k in 1..c{
+			if prog.tokStartsCh(prog, q, k, '@'){
+				let d = mut labels.find(labels, prog, q, k)
+				if d >= 0{
+					let du = mut wrap:<u64>(d)
+					if du >= h &&then du <= b{
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+}

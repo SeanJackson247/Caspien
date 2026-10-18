@@ -30,6 +30,7 @@ import java.util.Map;
  *   LowerOrderGenerator/   bytecode -> "low order" bytecode
  *   Codegen/               low-order bytecode -> x86-64 assembly
  *
+ * (Since the Caspien port, LowerOrderGenerator/ and Codegen/ are native executables built by build.sh and run as programs, not Java libraries.)
  * Each is a separately prebuilt Java library (its own "out/" directory
  * of .class files). This program's own job is: read ONE config file
  * (toolchain.config, next to this file), split it into the config text
@@ -237,10 +238,10 @@ public class Compiler {
         Path optimizerDir = root.resolve("Optimizer");
         Path lowerOrderDir = root.resolve("LowerOrderGenerator");
         Path codegenDir = root.resolve("Codegen");
-        // Stages 1-3 are the reference implementation's Java: classes are loaded from its out/ folders (CODE_ROOT). Stage 4 is this implementation's own
-        // Codegen component, a native executable (build.sh). The stage folders here only hold the generated config files, so a run never writes into the reference tree.
+        // Stages 1-2 are the reference implementation's Java: classes are loaded from its out/ folders (CODE_ROOT). Stages 3 and 4 are this implementation's own
+        // LowerOrderGenerator and Codegen components, native executables (build.sh). The stage folders here only hold the generated config files, so a run never writes into the reference tree.
         codeRoot = root.resolve(CODE_ROOT).normalize();
-        for (Path p : new Path[]{astGenDir, optimizerDir, lowerOrderDir, codegenDir, codeDir(astGenDir), codeDir(optimizerDir), codeDir(lowerOrderDir)}) {
+        for (Path p : new Path[]{astGenDir, optimizerDir, lowerOrderDir, codegenDir, codeDir(astGenDir), codeDir(optimizerDir)}) {
             if (!Files.isDirectory(p)) {
                 throw new IOException("expected component folder not found: " + p
                         + " -- this orchestrator must be run from the directory it lives in, "
@@ -418,18 +419,18 @@ public class Compiler {
         String sharedBytecode = cache.bytecodeClassesHash(codeDir(astGenDir));   // stages 1-3 run with this one copy of the program classes
         String key2 = CompilerCache.sha("S2\n" + cache.classesHash(codeDir(optimizerDir)) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(hobOut));
-        // Every stage runs inside this JVM as a library (see runProgramStage / runFrontend); Codegen is run as a program (runCodegenExecutable), like the assembler and linker.
-        // Stages 1-3 hand the BytecodeProgram itself on; its text (files, cache) is parsed back only when a stage has to run on a cache hit's output.
+        // Stages 1-2 run inside this JVM as libraries (see runProgramStage / runFrontend); LowerOrderGenerator and Codegen are run as programs (runStageExecutable), like the assembler and linker.
+        // Stages 1-2 hand the BytecodeProgram itself on; its text (files, cache) is parsed back only when a stage has to run on a cache hit's output.
         CompilerOut opt = runProgramStage(cache, "s2", key2, optimizerDir, "caspien.optimizer.Optimizer", "optimize", "hob", "compiler.config",
                 hobProgram, hobOut, optOut, diag, "Optimizer");
         if (diag.hasFatalError()) return diag.exitCode();
 
         // ---- Stage 3: LowerOrderGenerator (bytecode -> low-order bytecode) ----
         Path lobOut = stopLob ? output : buildDir.resolve("3_lower_order_generator.lob.txt");
-        String key3 = CompilerCache.sha("S3\n" + cache.classesHash(codeDir(lowerOrderDir)) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS)
+        Path lowerOrderExe = stageExecutable(lowerOrderDir, "lowerorder");
+        String key3 = CompilerCache.sha("S3\n" + CompilerCache.fileHash(lowerOrderExe) + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(optOut));
-        CompilerOut lob = runProgramStage(cache, "s3", key3, lowerOrderDir, "caspien.lowerorder.LowerOrder", "generate", "lob", "compiler.config",
-                opt.program, optOut, lobOut, diag, "LowerOrderGenerator");   // the Optimizer's program goes straight in; the LOB comes out as text
+        runStageExecutable(cache, "s3", key3, lowerOrderDir, lowerOrderExe, optOut, lobOut, diag, "LowerOrderGenerator");   // the Optimizer's text goes in as a file, the LOB comes out as a file
         if (diag.hasFatalError()) return diag.exitCode();
         if (stopLob) {
             printSummary(lobOut, "low-order bytecode", diag);
@@ -438,9 +439,9 @@ public class Compiler {
 
         // ---- Stage 4: Codegen (low-order bytecode -> assembly) ----
         Path asmOut = stopAsm ? output : buildDir.resolve("4_codegen.s");
-        Path codegenExe = codegenExecutable(codegenDir);
+        Path codegenExe = stageExecutable(codegenDir, "codegen");
         String key4 = CompilerCache.sha("S4\n" + CompilerCache.fileHash(codegenExe) + "\n" + codegenCfg + "\n--in--\n" + CompilerCache.fileHash(lobOut));
-        runCodegenExecutable(cache, key4, codegenDir, codegenExe, lobOut, asmOut, diag);   // the LOB goes in as a file, the assembly comes out as a file
+        runStageExecutable(cache, "s4", key4, codegenDir, codegenExe, lobOut, asmOut, diag, "Codegen");   // the LOB goes in as a file, the assembly comes out as a file
         if (diag.hasFatalError()) return diag.exitCode();
         scanCodegenTodos(asmOut, diag);
         if (stopAsm) {
@@ -653,49 +654,49 @@ public class Compiler {
         return null;
     }
 
-    /** The Codegen component built by build.sh: `<stage folder>/out/codegen` (`codegen.exe` on Windows). */
-    private static Path codegenExecutable(Path codegenDir) throws IOException {
+    /** A component built by build.sh: `<stage folder>/out/<name>` (`<name>.exe` on Windows). */
+    private static Path stageExecutable(Path stageDir, String name) throws IOException {
         boolean windows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
-        Path exe = codegenDir.resolve("out").resolve(windows ? "codegen.exe" : "codegen").toAbsolutePath();
+        Path exe = stageDir.resolve("out").resolve(windows ? name + ".exe" : name).toAbsolutePath();
         if (!Files.isRegularFile(exe)) {
-            throw new IOException("the Codegen executable " + exe + " is not built (run build.sh in this folder first)");
+            throw new IOException("the " + stageDir.getFileName() + " executable " + exe + " is not built (run build.sh in this folder first)");
         }
         return exe;
     }
 
     /**
-     * Stage 4 as a program: `codegen -i <lob file> <asm file>` run in the Codegen config folder (it reads `codegen.config` from its working
-     * directory). A cache hit restores the stored assembly and replays its notes; a miss runs the executable, reports its stderr like a library
-     * stage's messages (its own "wrote assembly" line is dropped) and stores the result.
+     * A stage as a program: `<exe> -i <in file> <out file>` run in the stage's config folder (it reads its config file from its working
+     * directory). A cache hit restores the stored output and replays its notes; a miss runs the executable, reports its stderr like a library
+     * stage's messages (its own "wrote ..." line is dropped) and stores the result.
      */
-    private static void runCodegenExecutable(CompilerCache cache, String key, Path codegenDir, Path exe, Path lobFile, Path asmFile,
-                                             CompilerDiagnostics diag) throws IOException, InterruptedException {
+    private static void runStageExecutable(CompilerCache cache, String stage, String key, Path stageDir, Path exe, Path inFile, Path outFile,
+                                           CompilerDiagnostics diag, String label) throws IOException, InterruptedException {
         CompilerStageLog log = new CompilerStageLog();
-        if (cache.restore("s4", key, asmFile, false, log)) {
-            replayCached(cache, "s4", log, diag);
+        if (cache.restore(stage, key, outFile, false, log)) {
+            replayCached(cache, stage, log, diag);
             return;
         }
-        ProcessBuilder pb = new ProcessBuilder(exe.toString(), "-i", lobFile.toAbsolutePath().toString(), asmFile.toAbsolutePath().toString());
-        pb.directory(codegenDir.toFile());
+        ProcessBuilder pb = new ProcessBuilder(exe.toString(), "-i", inFile.toAbsolutePath().toString(), outFile.toAbsolutePath().toString());
+        pb.directory(stageDir.toFile());
         Process proc = pb.start();
-        Thread stdoutDrain = new Thread(new CompilerDrain(proc.getInputStream()));   // the executable also prints the assembly to stdout
+        Thread stdoutDrain = new Thread(new CompilerDrain(proc.getInputStream()));   // an executable may also print its output to stdout
         stdoutDrain.setDaemon(true);
         stdoutDrain.start();
         List<String> lines = new ArrayList<>();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if (!line.isBlank() && !line.startsWith("[info] wrote assembly to ")) {
+                if (!line.isBlank() && !line.startsWith("[info] wrote ")) {
                     lines.add(line);
                 }
             }
         }
         int exit = proc.waitFor();
         stdoutDrain.join();
-        reportStageOutput(lines, exit, diag, "Codegen", log);
-        cache.note("s4", false);
+        reportStageOutput(lines, exit, diag, label, log);
+        cache.note(stage, false);
         if (exit == 0) {
-            cache.store("s4", key, asmFile, log, null);
+            cache.store(stage, key, outFile, log, null);
         }
     }
 

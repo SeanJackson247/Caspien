@@ -1,0 +1,1382 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+import "Hob.caspien"
+import "NameIndex.caspien"
+
+/**
+ * Port of MembershipLoweringPass (step 1): IN, WITHIN, INSTANCEOF, IMPLEMENTS, IS_BASE, IN_SCAN and LEN_SCAN become plain comparison/logic primitives; operands that are
+ * not simple named pushes are popped into `$in_tmpN` temps whose ALLOCs are inserted behind the function header. The new lines are built straight into the new line table
+ * after the two operand pushes, which are then removed (the Java builds them into a list first); the temp ALLOCs are written after the function and rotated into place.
+ */
+@pub
+struct MembershipPass{@pub{
+	tempCount: mut u64
+	labelCount: mut u64
+	allocIdx: mut u64
+	nTemps: mut u64
+	tNameS: owns some mut dynarray(mut u64)
+	tNameE: owns some mut dynarray(mut u64)
+	tTyS: owns some mut dynarray(mut u64)
+	tTyE: owns some mut dynarray(mut u64)
+	r1s: mut u64
+	r1e: mut u64
+	r2s: mut u64
+	r2e: mut u64
+	keepL: mut bool
+	keepR: mut bool
+	tablesReady: mut bool
+	enumIx: owns some mut NameIndex
+	structIx: owns some mut NameIndex
+	classS: mut u64
+	classE: mut u64
+}}
+
+@throws
+impl constructor for MembershipPass() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<u64>([])
+	let d = mut ? dyn:<u64>([])
+	let ei = mut ? new NameIndex(64)
+	let si = mut ? new NameIndex(64)
+	return MembershipPass{tempCount= 0, labelCount= 0, allocIdx= 0, nTemps= 0, tNameS= a, tNameE= b, tTyS= c, tTyE= d, r1s= 0, r1e= 0, r2s= 0, r2e= 0, keepL= false, keepR= false, tablesReady= false, enumIx= ei, structIx= si, classS= 0, classE= 0}
+}
+
+@pub
+impl MembershipPass{
+	// ---- out-table line access ----
+
+	static func outS(prog: ref some imut Prog, idx: mut u64) mut u64{
+		let v = mut 0
+		match idx in prog.ls2{ v = prog.ls2[idx] }
+		return v
+	}
+
+	static func outE(prog: ref some imut Prog, idx: mut u64) mut u64{
+		let v = mut 0
+		match idx in prog.le2{ v = prog.le2[idx] }
+		return v
+	}
+
+	/** Token k of the new-table line idx as [r1s, r1e) (false when absent). */
+	static func outTok(prog: ref some imut Prog, st: ref some mut MembershipPass, idx: mut u64, k: mut u64) mut bool{
+		let s = mut MembershipPass.outS(prog, idx)
+		let e = mut MembershipPass.outE(prog, idx)
+		let p = mut Ln.start(prog.buf, s, e, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		st.r1s = a
+		st.r1e = Ln.tokEnd(prog.buf, a, e)
+		return true
+	}
+
+	static func isRealName(prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z <= a{
+			return false
+		}
+		if Hob.eqLit(prog, a, z, "true") || Hob.eqLit(prog, a, z, "false") || Hob.eqLit(prog, a, z, "null"){
+			return false
+		}
+		let first = mut prog.buf.charAt(prog.buf, a)
+		if Hob.isLetter(first) == false &&then first != '_' &&then first != '$'{
+			return false
+		}
+		let a1 = mut (a + 1)
+		for q in a1..z{
+			let c = mut prog.buf.charAt(prog.buf, q)
+			if Hob.isLetterOrDigit(c) == false &&then c != '_' &&then c != '.'{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** "PUSH name" on the new-table line idx. */
+	static func isBarePush(prog: ref some imut Prog, st: ref some mut MembershipPass, idx: mut u64) mut bool{
+		let s = mut MembershipPass.outS(prog, idx)
+		let e = mut MembershipPass.outE(prog, idx)
+		if Ln.count(prog.buf, s, e) != 2 || Ln.opEq(prog.buf, s, e, "PUSH") == false{
+			return false
+		}
+		if MembershipPass.outTok(prog, st, idx, 1) == false{
+			return false
+		}
+		return MembershipPass.isRealName(prog, st.r1s, st.r1e)
+	}
+
+	/** "PUSH name type" on the new-table line idx. */
+	static func isSimplePush(prog: ref some imut Prog, st: ref some mut MembershipPass, idx: mut u64) mut bool{
+		let s = mut MembershipPass.outS(prog, idx)
+		let e = mut MembershipPass.outE(prog, idx)
+		if Ln.count(prog.buf, s, e) != 3 || Ln.opEq(prog.buf, s, e, "PUSH") == false{
+			return false
+		}
+		if MembershipPass.outTok(prog, st, idx, 1) == false{
+			return false
+		}
+		return MembershipPass.isRealName(prog, st.r1s, st.r1e)
+	}
+
+	/** Storage is a genuine pointer (not owns; not a ref to a dynarray). */
+	static func isGenuinePointer(prog: ref some imut Prog, t: ref some imut CType) mut bool{
+		if Hob.hasStorage(t) == false{
+			return false
+		}
+		if Hob.storageIs(prog, t, "ref") &&then Hob.baseStarts(prog, t, "dynarray("){
+			return false
+		}
+		return Hob.storageIs(prog, t, "owns") == false
+	}
+
+	// ---- tables (built on first use) ----
+
+	@throws
+	static func ensureTables(prog: ref some mut Prog, st: ref some mut MembershipPass) void{
+		?catch(e){ throw e }
+		if st.tablesReady{
+			return
+		}
+		st.tablesReady = true
+		let n = mut prog.size(prog)
+		let ne = mut 0
+		let ns = mut 0
+		for i in 0..n{
+			if prog.opEq(prog, i, "ENUM"){
+				ne += 1
+			} else if prog.opEq(prog, i, "STRUCT_START"){
+				ns += 1
+			}
+		}
+		st.enumIx = ? NameIndex.forKeys(ne + 1)
+		st.structIx = ? NameIndex.forKeys(ns + 1)
+		for i in 0..n{
+			if prog.opEq(prog, i, "ENUM") &&then prog.count(prog, i) >= 2{
+				st.enumIx.put(st.enumIx, prog, i)
+			} else if prog.opEq(prog, i, "STRUCT_START") &&then prog.count(prog, i) >= 2{
+				st.structIx.put(st.structIx, prog, i)
+			}
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "Class")
+		st.classS = prog.cur
+		st.classE = prog.used
+	}
+
+	/** "lo..hi" with both sides plain digit runs. */
+	@pub
+	static func isRangeLiteral(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		let w = mut (z - a)
+		for d in 0..w{
+			if d + 1 < w &&then prog.buf.charAt(prog.buf, a + d) == '.' &&then prog.buf.charAt(prog.buf, a + d + 1) == '.'{
+				if Hob.isDigits(prog, a, a + d) &&then Hob.isDigits(prog, a + d + 2, z){
+					return true
+				}
+				return false
+			}
+		}
+		return false
+	}
+
+	@pub
+	static func isDigitTok(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		return Hob.isDigits(prog, a, z)
+	}
+
+	/** Shape of the ENUM line: 1 range-valued, 2 value-valued, 3 plain. */
+	@pub
+	static func enumShape(prog: ref some imut Prog, i: mut u64) mut u64{
+		let c = mut prog.count(prog, i)
+		if c < 3{
+			return 3
+		}
+		let rest = mut (c - 2)
+		if rest >= 2 &&then rest % 2 == 0{
+			if MembershipPass.isRangeLiteral(prog, i, 3){
+				return 1
+			}
+			if MembershipPass.isDigitTok(prog, i, 3){
+				return 2
+			}
+		}
+		return 3
+	}
+
+	/** Line of the ENUM named by [a, z), or -1. */
+	static func enumLine(prog: ref some imut Prog, st: ref some mut MembershipPass, a: mut u64, z: mut u64) mut s64{
+		return st.enumIx.find(st.enumIx, prog, a, z)
+	}
+
+	// ---- temps and labels ----
+
+	/** A fresh `$in_tmpN` local of the type [ts, te): its name is returned in [r1s, r1e); the ALLOC itself is written after the function. */
+	@throws
+	static func declareTemp(prog: ref some mut Prog, st: ref some mut MembershipPass, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		st.tempCount += 1
+		prog.begin(prog)
+		? prog.addLit(prog, "$in_tmp")
+		? prog.glueS64(prog, wrap:<s64>(st.tempCount))
+		let ns = mut prog.cur
+		let ne = mut prog.used
+		let k = mut st.nTemps
+		let need = mut (k + 1)
+		if need > len(st.tNameS){
+			let cap = mut (need * 2)
+			st.tNameS = ? resize(st.tNameS, cap, 0)
+			st.tNameE = ? resize(st.tNameE, cap, 0)
+			st.tTyS = ? resize(st.tTyS, cap, 0)
+			st.tTyE = ? resize(st.tTyE, cap, 0)
+		}
+		match k into st.tNameS{ st.tNameS[k] = ns }
+		match k into st.tNameE{ st.tNameE[k] = ne }
+		match k into st.tTyS{ st.tTyS[k] = ts }
+		match k into st.tTyE{ st.tTyE[k] = te }
+		st.nTemps = need
+		st.r1s = ns
+		st.r1e = ne
+	}
+
+	/** "@prefix_N" without the colon, returned in [r1s, r1e). */
+	@throws
+	static func newLabel2(prog: ref some mut Prog, st: ref some mut MembershipPass, which: mut u64) void{
+		?catch(e){ throw e }
+		st.labelCount += 1
+		prog.begin(prog)
+		if which == 0{
+			? prog.addLit(prog, "@in_scan_loop_")
+		} else if which == 1{
+			? prog.addLit(prog, "@in_scan_not_found_")
+		} else if which == 2{
+			? prog.addLit(prog, "@in_scan_increment_")
+		} else if which == 3{
+			? prog.addLit(prog, "@in_scan_end_")
+		} else if which == 4{
+			? prog.addLit(prog, "@len_scan_loop_")
+		} else if which == 5{
+			? prog.addLit(prog, "@len_scan_increment_")
+		} else {
+			? prog.addLit(prog, "@len_scan_end_")
+		}
+		? prog.glueS64(prog, wrap:<s64>(st.labelCount))
+		st.r1s = prog.cur
+		st.r1e = prog.used
+	}
+
+	// ---- small emitters ----
+
+	/** "PUSH name type" */
+	@throws
+	static func ePush(prog: ref some mut Prog, ns: mut u64, ne: mut u64, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addRange(prog, ns, ne)
+		? prog.addRange(prog, ts, te)
+		? prog.outBuilt(prog)
+	}
+
+	/** "PUSH name<suffix> indeterminate_u64" with suffix 0 ".start", 1 ".end" */
+	@throws
+	static func ePushDot(prog: ref some mut Prog, ns: mut u64, ne: mut u64, which: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addRange(prog, ns, ne)
+		if which == 0{
+			? prog.glueLit(prog, ".start")
+		} else {
+			? prog.glueLit(prog, ".end")
+		}
+		? prog.addLit(prog, "indeterminate_u64")
+		? prog.outBuilt(prog)
+	}
+
+	/** "POP name type" */
+	@throws
+	static func ePop(prog: ref some mut Prog, ns: mut u64, ne: mut u64, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "POP")
+		? prog.addRange(prog, ns, ne)
+		? prog.addRange(prog, ts, te)
+		? prog.outBuilt(prog)
+	}
+
+	@throws
+	static func eLit(prog: ref some mut Prog, lit: static imut string) void{
+		?catch(e){ throw e }
+		? prog.outPushLit(prog, lit)
+	}
+
+	/** "<op> A B R" where A and B are literals and R a range. */
+	@throws
+	static func eOpLLR(prog: ref some mut Prog, lit: static imut string, rs: mut u64, re: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, lit)
+		? prog.addRange(prog, rs, re)
+		? prog.outBuilt(prog)
+	}
+
+	/** Dereferences the pointer-typed `name` of type `ty` (parsed as `ct`) into a fresh temp. New name/type in [r1s, r1e) / [r2s, r2e). */
+	@throws
+	static func derefInto(prog: ref some mut Prog, st: ref some mut MembershipPass, ns: mut u64, ne: mut u64, ts: mut u64, te: mut u64, ct: ref some imut CType) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		if Hob.hasMut(ct){
+			? prog.addRange(prog, ct.muS, ct.muE)
+			? prog.glueCh(prog, '_')
+			? prog.glueRange(prog, ct.baS, ct.baE)
+		} else {
+			? prog.addRange(prog, ct.baS, ct.baE)
+		}
+		let ds = mut prog.cur
+		let de = mut prog.used
+		? MembershipPass.declareTemp(prog, st, ds, de)
+		let dns = mut st.r1s
+		let dne = mut st.r1e
+		? MembershipPass.ePush(prog, ns, ne, ts, te)
+		prog.begin(prog)
+		? prog.addLit(prog, "DEREF")
+		? prog.addRange(prog, ds, de)
+		? prog.outBuilt(prog)
+		? MembershipPass.ePop(prog, dns, dne, ds, de)
+		st.r1s = dns
+		st.r1e = dne
+		st.r2s = ds
+		st.r2e = de
+	}
+
+	// ---- code generation ----
+
+	@throws
+	static func buildRangeCheck(prog: ref some mut Prog, ls: mut u64, le: mut u64, lts: mut u64, lte: mut u64, rs: mut u64, re: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		if Hob.startsLit(prog, rs, re, "$for_range_"){
+			? MembershipPass.ePush(prog, ls, le, lts, lte)
+			? MembershipPass.ePushDot(prog, rs, re, 1)
+			prog.begin(prog)
+			? prog.addLit(prog, "LT")
+			? prog.addRange(prog, lts, lte)
+			? prog.addLit(prog, "indeterminate_u64")
+			? prog.addRange(prog, ress, rese)
+			? prog.outBuilt(prog)
+			return
+		}
+		? MembershipPass.ePush(prog, ls, le, lts, lte)
+		? MembershipPass.ePushDot(prog, rs, re, 0)
+		prog.begin(prog)
+		? prog.addLit(prog, "GT_EQ")
+		? prog.addRange(prog, lts, lte)
+		? prog.addLit(prog, "indeterminate_u64 imut_bool")
+		? prog.outBuilt(prog)
+		? MembershipPass.ePush(prog, ls, le, lts, lte)
+		? MembershipPass.ePushDot(prog, rs, re, 1)
+		prog.begin(prog)
+		? prog.addLit(prog, "LT")
+		? prog.addRange(prog, lts, lte)
+		? prog.addLit(prog, "indeterminate_u64 imut_bool")
+		? prog.outBuilt(prog)
+		? MembershipPass.eOpLLR(prog, "AND imut_bool imut_bool", ress, rese)
+	}
+
+	@throws
+	static func buildDynArrayCheck(prog: ref some mut Prog, ls: mut u64, le: mut u64, lts: mut u64, lte: mut u64, ds: mut u64, de: mut u64, dts: mut u64, dte: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		? MembershipPass.ePush(prog, ls, le, lts, lte)
+		? MembershipPass.ePush(prog, ds, de, dts, dte)
+		? MembershipPass.eLit(prog, "LEN")
+		prog.begin(prog)
+		? prog.addLit(prog, "LT")
+		? prog.addRange(prog, lts, lte)
+		? prog.addLit(prog, "indeterminate_u64")
+		? prog.addRange(prog, ress, rese)
+		? prog.outBuilt(prog)
+	}
+
+	@throws
+	static func buildRangeSubsetCheck(prog: ref some mut Prog, as_: mut u64, ae: mut u64, bs: mut u64, be: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		? MembershipPass.ePushDot(prog, as_, ae, 0)
+		? MembershipPass.ePushDot(prog, bs, be, 0)
+		? MembershipPass.eLit(prog, "GT_EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? MembershipPass.ePushDot(prog, as_, ae, 1)
+		? MembershipPass.ePushDot(prog, bs, be, 1)
+		? MembershipPass.eLit(prog, "LT_EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? MembershipPass.eOpLLR(prog, "AND imut_bool imut_bool", ress, rese)
+	}
+
+	@throws
+	static func buildRangeStrictSubsetCheck(prog: ref some mut Prog, as_: mut u64, ae: mut u64, bs: mut u64, be: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		? MembershipPass.ePushDot(prog, as_, ae, 0)
+		? MembershipPass.ePushDot(prog, bs, be, 0)
+		? MembershipPass.eLit(prog, "GT_EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? MembershipPass.ePushDot(prog, as_, ae, 1)
+		? MembershipPass.ePushDot(prog, bs, be, 1)
+		? MembershipPass.eLit(prog, "LT_EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? MembershipPass.eLit(prog, "AND imut_bool imut_bool imut_bool")
+		? MembershipPass.ePushDot(prog, as_, ae, 0)
+		? MembershipPass.ePushDot(prog, bs, be, 0)
+		? MembershipPass.eLit(prog, "EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? MembershipPass.ePushDot(prog, as_, ae, 1)
+		? MembershipPass.ePushDot(prog, bs, be, 1)
+		? MembershipPass.eLit(prog, "EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? MembershipPass.eLit(prog, "AND imut_bool imut_bool imut_bool")
+		? MembershipPass.eLit(prog, "NOT imut_bool imut_bool")
+		? MembershipPass.eOpLLR(prog, "AND imut_bool imut_bool", ress, rese)
+	}
+
+	@throws
+	static func buildRangeInDynArrayCheck(prog: ref some mut Prog, rs: mut u64, re: mut u64, ds: mut u64, de: mut u64, dts: mut u64, dte: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		? MembershipPass.ePushDot(prog, rs, re, 1)
+		? MembershipPass.ePush(prog, ds, de, dts, dte)
+		? MembershipPass.eLit(prog, "LEN")
+		? MembershipPass.eOpLLR(prog, "LT_EQ indeterminate_u64 indeterminate_u64", ress, rese)
+	}
+
+	/** An OR-chain of "value == vi": ids from the enum line `el` (variants of a value-valued enum, `which` 0 = all pairs) or one id. */
+	@throws
+	static func buildOrChainEnum(prog: ref some mut Prog, el: mut u64, ls: mut u64, le: mut u64, lts: mut u64, lte: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		let c = mut prog.count(prog, el)
+		let nvar = mut 0
+		let pairs = mut ((c - 2) / 2)
+		for j in 0..pairs{
+			let vk = mut (3 + 2 * j)
+			if MembershipPass.isDigitTok(prog, el, vk){
+				nvar += 1
+			}
+		}
+		let lone = mut (nvar == 1)
+		let idx = mut 0
+		for j in 0..pairs{
+			let vk = mut (3 + 2 * j)
+			if MembershipPass.isDigitTok(prog, el, vk) == false{
+				continue
+			}
+			let p = mut prog.tokPos(prog, el, vk)
+			let va = mut wrap:<u64>(p)
+			let vz = mut Ln.tokEnd(prog.buf, va, prog.lineEnd(prog, el))
+			? MembershipPass.ePush(prog, ls, le, lts, lte)
+			prog.begin(prog)
+			? prog.addLit(prog, "PUSH")
+			? prog.addS64(prog, wrap:<s64>(Hob.digitsValue(prog, va, vz)))
+			? prog.addLit(prog, "indeterminate_u64")
+			? prog.outBuilt(prog)
+			prog.begin(prog)
+			? prog.addLit(prog, "EQ")
+			? prog.addRange(prog, lts, lte)
+			? prog.addLit(prog, "indeterminate_u64")
+			if lone{
+				? prog.addRange(prog, ress, rese)
+			} else {
+				? prog.addLit(prog, "imut_bool")
+			}
+			? prog.outBuilt(prog)
+			if idx > 0{
+				prog.begin(prog)
+				? prog.addLit(prog, "OR imut_bool imut_bool")
+				if idx == nvar - 1{
+					? prog.addRange(prog, ress, rese)
+				} else {
+					? prog.addLit(prog, "imut_bool")
+				}
+				? prog.outBuilt(prog)
+			}
+			idx += 1
+		}
+	}
+
+	// ---- matchers: each returns true when it emitted the replacement after the operand pushes (which the caller then removes) ----
+
+	@throws
+	static func tryIn(prog: ref some mut Prog, st: ref some mut MembershipPass, i: mut u64) mut bool{
+		?catch(e){ throw e }
+		let t1p = mut prog.tokPos(prog, i, 1)
+		let t2p = mut prog.tokPos(prog, i, 2)
+		let t3p = mut prog.tokPos(prog, i, 3)
+		let le0 = mut prog.lineEnd(prog, i)
+		let t1s = mut wrap:<u64>(t1p)
+		let t1e = mut Ln.tokEnd(prog.buf, t1s, le0)
+		let t2s = mut wrap:<u64>(t2p)
+		let t2e = mut Ln.tokEnd(prog.buf, t2s, le0)
+		let t3s = mut wrap:<u64>(t3p)
+		let t3e = mut Ln.tokEnd(prog.buf, t3s, le0)
+		let m0 = mut prog.n2
+		let rightIdx = mut (m0 - 1)
+		let leftIdx = mut (m0 - 2)
+		? MembershipPass.ensureTables(prog, st)
+		// Shape 1: u64 in GuaranteedEnum
+		let el = mut MembershipPass.enumLine(prog, st, t2s, t2e)
+		if el >= 0{
+			let elu = mut wrap:<u64>(el)
+			if MembershipPass.enumShape(prog, elu) == 2{
+				let nv = mut 0
+				let pairs = mut ((prog.count(prog, elu) - 2) / 2)
+				for j in 0..pairs{
+					if MembershipPass.isDigitTok(prog, elu, 3 + 2 * j){
+						nv += 1
+					}
+				}
+				if nv > 0 &&then MembershipPass.isBarePush(prog, st, rightIdx){
+					let rs0 = mut st.r1s
+					let re0 = mut st.r1e
+					if Hob.eq(prog, rs0, re0, t2s, t2e) &&then MembershipPass.isSimplePush(prog, st, leftIdx){
+						let lns = mut st.r1s
+						let lne = mut st.r1e
+						? MembershipPass.buildOrChainEnum(prog, elu, lns, lne, t1s, t1e, t3s, t3e)
+						st.keepL = false
+						st.keepR = false
+						return true
+					}
+				}
+			}
+		}
+		let lc = mut ? Hob.parse(prog, t1s, t1e)
+		let leftIsPlainU64 = mut false
+		if Hob.hasStorage(lc) == false &&then Hob.baseIs(prog, lc, "u64"){
+			leftIsPlainU64 = true
+		}
+		if leftIsPlainU64{
+			let rc = mut ? Hob.parse(prog, t2s, t2e)
+			let rightIsRange = mut Hob.isRangeBase(prog, rc)
+			let rightIsDyn = mut Hob.baseStarts(prog, rc, "dynarray(")
+			if rightIsRange || rightIsDyn{
+				let rightSimple = mut MembershipPass.isSimplePush(prog, st, rightIdx)
+				let rns = mut 0
+				let rne = mut 0
+				let rts = mut t2s
+				let rte = mut t2e
+				if rightSimple{
+					rns = st.r1s
+					rne = st.r1e
+				} else {
+					? MembershipPass.declareTemp(prog, st, t2s, t2e)
+					rns = st.r1s
+					rne = st.r1e
+					? MembershipPass.ePop(prog, rns, rne, t2s, t2e)
+				}
+				let leftSimple = mut false
+				if rightSimple{
+					leftSimple = MembershipPass.isSimplePush(prog, st, leftIdx)
+				}
+				let lns = mut 0
+				let lne = mut 0
+				if leftSimple{
+					lns = st.r1s
+					lne = st.r1e
+				} else {
+					? MembershipPass.declareTemp(prog, st, t1s, t1e)
+					lns = st.r1s
+					lne = st.r1e
+					? MembershipPass.ePop(prog, lns, lne, t1s, t1e)
+				}
+				if MembershipPass.isGenuinePointer(prog, rc){
+					? MembershipPass.derefInto(prog, st, rns, rne, t2s, t2e, rc)
+					rns = st.r1s
+					rne = st.r1e
+					rts = st.r2s
+					rte = st.r2e
+				}
+				if rightIsRange{
+					? MembershipPass.buildRangeCheck(prog, lns, lne, t1s, t1e, rns, rne, t3s, t3e)
+				} else {
+					? MembershipPass.buildDynArrayCheck(prog, lns, lne, t1s, t1e, rns, rne, rts, rte, t3s, t3e)
+				}
+				st.keepL = leftSimple == false
+				st.keepR = rightSimple == false
+				return true
+			}
+		}
+		// Shape 4: range-shaped left against a range or dynarray right
+		if Hob.isRangeBase(prog, lc){
+			let rc = mut ? Hob.parse(prog, t2s, t2e)
+			let rightIsRange = mut Hob.isRangeBase(prog, rc)
+			let rightIsDyn = mut Hob.baseStarts(prog, rc, "dynarray(")
+			if rightIsRange || rightIsDyn{
+				let rightSimple = mut MembershipPass.isSimplePush(prog, st, rightIdx)
+				let rns = mut 0
+				let rne = mut 0
+				let rts = mut t2s
+				let rte = mut t2e
+				if rightSimple{
+					rns = st.r1s
+					rne = st.r1e
+				} else {
+					? MembershipPass.declareTemp(prog, st, t2s, t2e)
+					rns = st.r1s
+					rne = st.r1e
+					? MembershipPass.ePop(prog, rns, rne, t2s, t2e)
+				}
+				let leftSimple = mut false
+				if rightSimple{
+					leftSimple = MembershipPass.isSimplePush(prog, st, leftIdx)
+				}
+				let lns = mut 0
+				let lne = mut 0
+				let lts = mut t1s
+				let lte = mut t1e
+				if leftSimple{
+					lns = st.r1s
+					lne = st.r1e
+				} else {
+					? MembershipPass.declareTemp(prog, st, t1s, t1e)
+					lns = st.r1s
+					lne = st.r1e
+					? MembershipPass.ePop(prog, lns, lne, t1s, t1e)
+				}
+				if MembershipPass.isGenuinePointer(prog, rc){
+					? MembershipPass.derefInto(prog, st, rns, rne, rts, rte, rc)
+					rns = st.r1s
+					rne = st.r1e
+					rts = st.r2s
+					rte = st.r2e
+				}
+				if MembershipPass.isGenuinePointer(prog, lc){
+					? MembershipPass.derefInto(prog, st, lns, lne, lts, lte, lc)
+					lns = st.r1s
+					lne = st.r1e
+				}
+				if rightIsRange{
+					? MembershipPass.buildRangeSubsetCheck(prog, lns, lne, rns, rne, t3s, t3e)
+				} else {
+					? MembershipPass.buildRangeInDynArrayCheck(prog, lns, lne, rns, rne, rts, rte, t3s, t3e)
+				}
+				st.keepL = leftSimple == false
+				st.keepR = rightSimple == false
+				return true
+			}
+		}
+		return false
+	}
+
+	@throws
+	static func tryWithin(prog: ref some mut Prog, st: ref some mut MembershipPass, i: mut u64) mut bool{
+		?catch(e){ throw e }
+		let le0 = mut prog.lineEnd(prog, i)
+		let t1s = mut wrap:<u64>(prog.tokPos(prog, i, 1))
+		let t1e = mut Ln.tokEnd(prog.buf, t1s, le0)
+		let t2s = mut wrap:<u64>(prog.tokPos(prog, i, 2))
+		let t2e = mut Ln.tokEnd(prog.buf, t2s, le0)
+		let t3s = mut wrap:<u64>(prog.tokPos(prog, i, 3))
+		let t3e = mut Ln.tokEnd(prog.buf, t3s, le0)
+		let m0 = mut prog.n2
+		let rightIdx = mut (m0 - 1)
+		let leftIdx = mut (m0 - 2)
+		let lc = mut ? Hob.parse(prog, t1s, t1e)
+		let rc = mut ? Hob.parse(prog, t2s, t2e)
+		if Hob.isRangeBase(prog, lc) == false || Hob.isRangeBase(prog, rc) == false{
+			return false
+		}
+		let rightSimple = mut MembershipPass.isSimplePush(prog, st, rightIdx)
+		let rns = mut 0
+		let rne = mut 0
+		if rightSimple{
+			rns = st.r1s
+			rne = st.r1e
+		} else {
+			? MembershipPass.declareTemp(prog, st, t2s, t2e)
+			rns = st.r1s
+			rne = st.r1e
+			? MembershipPass.ePop(prog, rns, rne, t2s, t2e)
+		}
+		let leftSimple = mut false
+		if rightSimple{
+			leftSimple = MembershipPass.isSimplePush(prog, st, leftIdx)
+		}
+		let lns = mut 0
+		let lne = mut 0
+		if leftSimple{
+			lns = st.r1s
+			lne = st.r1e
+		} else {
+			? MembershipPass.declareTemp(prog, st, t1s, t1e)
+			lns = st.r1s
+			lne = st.r1e
+			? MembershipPass.ePop(prog, lns, lne, t1s, t1e)
+		}
+		if MembershipPass.isGenuinePointer(prog, rc){
+			? MembershipPass.derefInto(prog, st, rns, rne, t2s, t2e, rc)
+			rns = st.r1s
+			rne = st.r1e
+		}
+		if MembershipPass.isGenuinePointer(prog, lc){
+			? MembershipPass.derefInto(prog, st, lns, lne, t1s, t1e, lc)
+			lns = st.r1s
+			lne = st.r1e
+		}
+		? MembershipPass.buildRangeStrictSubsetCheck(prog, lns, lne, rns, rne, t3s, t3e)
+		st.keepL = leftSimple == false
+		st.keepR = rightSimple == false
+		return true
+	}
+
+	@throws
+	static func tryIsBase(prog: ref some mut Prog, st: ref some mut MembershipPass, i: mut u64) mut bool{
+		?catch(e){ throw e }
+		let le0 = mut prog.lineEnd(prog, i)
+		let ts = mut wrap:<u64>(prog.tokPos(prog, i, 1))
+		let te = mut Ln.tokEnd(prog.buf, ts, le0)
+		let m0 = mut prog.n2
+		let leftIdx = mut (m0 - 1)
+		let leftSimple = mut MembershipPass.isSimplePush(prog, st, leftIdx)
+		let lns = mut st.r1s
+		let lne = mut st.r1e
+		let lc = mut ? Hob.parse(prog, ts, te)
+		if Hob.isRangeBase(prog, lc) == false{
+			return false
+		}
+		if leftSimple == false{
+			? MembershipPass.declareTemp(prog, st, ts, te)
+			lns = st.r1s
+			lne = st.r1e
+			? MembershipPass.ePop(prog, lns, lne, ts, te)
+		}
+		if MembershipPass.isGenuinePointer(prog, lc){
+			? MembershipPass.derefInto(prog, st, lns, lne, ts, te, lc)
+			lns = st.r1s
+			lne = st.r1e
+		}
+		? MembershipPass.ePushDot(prog, lns, lne, 0)
+		? MembershipPass.ePushDot(prog, lns, lne, 1)
+		? MembershipPass.eLit(prog, "GT_EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		st.keepL = leftSimple == false
+		return true
+	}
+
+	@throws
+	static func tryInScan(prog: ref some mut Prog, st: ref some mut MembershipPass, i: mut u64) mut bool{
+		?catch(e){ throw e }
+		let le0 = mut prog.lineEnd(prog, i)
+		let t1s = mut wrap:<u64>(prog.tokPos(prog, i, 1))
+		let t1e = mut Ln.tokEnd(prog.buf, t1s, le0)
+		let t2s = mut wrap:<u64>(prog.tokPos(prog, i, 2))
+		let t2e = mut Ln.tokEnd(prog.buf, t2s, le0)
+		let t3s = mut wrap:<u64>(prog.tokPos(prog, i, 3))
+		let t3e = mut Ln.tokEnd(prog.buf, t3s, le0)
+		let m0 = mut prog.n2
+		let rightIdx = mut (m0 - 1)
+		let leftIdx = mut (m0 - 2)
+		let lc = mut ? Hob.parse(prog, t1s, t1e)
+		let rc = mut ? Hob.parse(prog, t2s, t2e)
+		if Hob.hasStorage(lc) || Hob.baseIs(prog, lc, "u64") == false || Hob.baseIs(prog, rc, "string") == false{
+			return false
+		}
+		let rightSimple = mut MembershipPass.isSimplePush(prog, st, rightIdx)
+		let rns = mut 0
+		let rne = mut 0
+		let rts = mut t2s
+		let rte = mut t2e
+		if rightSimple{
+			rns = st.r1s
+			rne = st.r1e
+		} else {
+			? MembershipPass.declareTemp(prog, st, t2s, t2e)
+			rns = st.r1s
+			rne = st.r1e
+			? MembershipPass.ePop(prog, rns, rne, t2s, t2e)
+		}
+		let leftSimple = mut false
+		if rightSimple{
+			leftSimple = MembershipPass.isSimplePush(prog, st, leftIdx)
+		}
+		let lns = mut 0
+		let lne = mut 0
+		if leftSimple{
+			lns = st.r1s
+			lne = st.r1e
+		} else {
+			? MembershipPass.declareTemp(prog, st, t1s, t1e)
+			lns = st.r1s
+			lne = st.r1e
+			? MembershipPass.ePop(prog, lns, lne, t1s, t1e)
+		}
+		if Hob.hasStorage(rc) &&then Hob.storageIs(prog, rc, "static") == false{
+			? MembershipPass.derefInto(prog, st, rns, rne, t2s, t2e, rc)
+			rns = st.r1s
+			rne = st.r1e
+			rts = st.r2s
+			rte = st.r2e
+		}
+		? MembershipPass.buildStringScan(prog, st, lns, lne, t1s, t1e, rns, rne, rts, rte, t3s, t3e)
+		st.keepL = leftSimple == false
+		st.keepR = rightSimple == false
+		return true
+	}
+
+	@throws
+	static func buildStringScan(prog: ref some mut Prog, st: ref some mut MembershipPass, ls: mut u64, le: mut u64, lts: mut u64, lte: mut u64, rs: mut u64, re: mut u64, rts: mut u64, rte: mut u64, ress: mut u64, rese: mut u64) void{
+		?catch(e){ throw e }
+		// counter temp of type mut_u64
+		prog.begin(prog)
+		? prog.addLit(prog, "mut_u64")
+		let mus = mut prog.cur
+		let mue = mut prog.used
+		? MembershipPass.declareTemp(prog, st, mus, mue)
+		let cs = mut st.r1s
+		let ce = mut st.r1e
+		prog.begin(prog)
+		? prog.addLit(prog, "ADDR")
+		? prog.addRange(prog, cs, ce)
+		? prog.addRange(prog, mus, mue)
+		? prog.outBuilt(prog)
+		? MembershipPass.eLit(prog, "PUSH 0 indeterminate_u64")
+		? MembershipPass.eLit(prog, "ASSIGN mut_u64 mut_u64 mut_u64")
+		prog.begin(prog)
+		? prog.addLit(prog, "imut_char")
+		let chs = mut prog.cur
+		let che = mut prog.used
+		? MembershipPass.declareTemp(prog, st, chs, che)
+		let ts = mut st.r1s
+		let te = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 0)
+		let tops = mut st.r1s
+		let tope = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 1)
+		let nfs = mut st.r1s
+		let nfe = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 2)
+		let ins = mut st.r1s
+		let ine = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 3)
+		let ens = mut st.r1s
+		let ene = mut st.r1e
+		prog.begin(prog)
+		? prog.addRange(prog, tops, tope)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+		? MembershipPass.ePush(prog, rs, re, rts, rte)
+		? MembershipPass.ePush(prog, cs, ce, mus, mue)
+		prog.begin(prog)
+		? prog.addLit(prog, "LOOKUP")
+		? prog.addRange(prog, rts, rte)
+		? prog.addLit(prog, "mut_u64 imut_char")
+		? prog.outBuilt(prog)
+		? MembershipPass.ePop(prog, ts, te, chs, che)
+		? MembershipPass.ePush(prog, ts, te, chs, che)
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addLit(prog, "'")
+		? prog.glueCh(prog, '\\')
+		? prog.glueCh(prog, '0')
+		? prog.glueCh(prog, '\'')
+		? prog.addLit(prog, "imut_char")
+		? prog.outBuilt(prog)
+		? MembershipPass.eLit(prog, "EQ imut_char imut_char imut_bool")
+		? MembershipPass.eLit(prog, "CMP")
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, nfs, nfe)
+		? prog.outBuilt(prog)
+		? MembershipPass.ePush(prog, ts, te, chs, che)
+		? MembershipPass.eLit(prog, "ZEXT imut_char indeterminate_u64")
+		? MembershipPass.ePush(prog, ls, le, lts, lte)
+		prog.begin(prog)
+		? prog.addLit(prog, "EQ indeterminate_u64")
+		? prog.addRange(prog, lts, lte)
+		? prog.addLit(prog, "imut_bool")
+		? prog.outBuilt(prog)
+		? MembershipPass.eLit(prog, "CMP")
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, ins, ine)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH true")
+		? prog.addRange(prog, ress, rese)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, ens, ene)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addRange(prog, ins, ine)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "ADDR")
+		? prog.addRange(prog, cs, ce)
+		? prog.addRange(prog, mus, mue)
+		? prog.outBuilt(prog)
+		? MembershipPass.ePush(prog, cs, ce, mus, mue)
+		? MembershipPass.eLit(prog, "INC mut_u64 indeterminate_u64")
+		? MembershipPass.eLit(prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, tops, tope)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addRange(prog, nfs, nfe)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH false")
+		? prog.addRange(prog, ress, rese)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addRange(prog, ens, ene)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+	}
+
+	@throws
+	static func tryLenScan(prog: ref some mut Prog, st: ref some mut MembershipPass, i: mut u64) mut bool{
+		?catch(e){ throw e }
+		let le0 = mut prog.lineEnd(prog, i)
+		let t1s = mut wrap:<u64>(prog.tokPos(prog, i, 1))
+		let t1e = mut Ln.tokEnd(prog.buf, t1s, le0)
+		let t2s = mut wrap:<u64>(prog.tokPos(prog, i, 2))
+		let t2e = mut Ln.tokEnd(prog.buf, t2s, le0)
+		let m0 = mut prog.n2
+		let rightIdx = mut (m0 - 1)
+		let leftIdx = mut (m0 - 2)
+		let tc = mut ? Hob.parse(prog, t1s, t1e)
+		if Hob.baseStarts(prog, tc, "unsafe_dynarray(") == false{
+			return false
+		}
+		if tc.baE <= tc.baS ||then prog.buf.charAt(prog.buf, tc.baE - 1) != ')'{
+			return false
+		}
+		let rightSimple = mut MembershipPass.isSimplePush(prog, st, rightIdx)
+		let tns = mut 0
+		let tne = mut 0
+		if rightSimple{
+			tns = st.r1s
+			tne = st.r1e
+		} else {
+			? MembershipPass.declareTemp(prog, st, t2s, t2e)
+			tns = st.r1s
+			tne = st.r1e
+			? MembershipPass.ePop(prog, tns, tne, t2s, t2e)
+		}
+		let leftSimple = mut false
+		if rightSimple{
+			leftSimple = MembershipPass.isSimplePush(prog, st, leftIdx)
+		}
+		let gns = mut 0
+		let gne = mut 0
+		if leftSimple{
+			gns = st.r1s
+			gne = st.r1e
+		} else {
+			? MembershipPass.declareTemp(prog, st, t1s, t1e)
+			gns = st.r1s
+			gne = st.r1e
+			? MembershipPass.ePop(prog, gns, gne, t1s, t1e)
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "mut_u64")
+		let mus = mut prog.cur
+		let mue = mut prog.used
+		? MembershipPass.declareTemp(prog, st, mus, mue)
+		let cs = mut st.r1s
+		let ce = mut st.r1e
+		prog.begin(prog)
+		? prog.addLit(prog, "ADDR")
+		? prog.addRange(prog, cs, ce)
+		? prog.addRange(prog, mus, mue)
+		? prog.outBuilt(prog)
+		? MembershipPass.eLit(prog, "PUSH 0 indeterminate_u64")
+		? MembershipPass.eLit(prog, "ASSIGN mut_u64 mut_u64 mut_u64")
+		? MembershipPass.declareTemp(prog, st, t2s, t2e)
+		let es = mut st.r1s
+		let ee = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 4)
+		let tops = mut st.r1s
+		let tope = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 5)
+		let ins = mut st.r1s
+		let ine = mut st.r1e
+		? MembershipPass.newLabel2(prog, st, 6)
+		let ens = mut st.r1s
+		let ene = mut st.r1e
+		prog.begin(prog)
+		? prog.addRange(prog, tops, tope)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+		? MembershipPass.ePush(prog, gns, gne, t1s, t1e)
+		? MembershipPass.ePush(prog, cs, ce, mus, mue)
+		prog.begin(prog)
+		? prog.addLit(prog, "LOOKUP")
+		? prog.addRange(prog, t1s, t1e)
+		? prog.addLit(prog, "indeterminate_u64")
+		? prog.addRange(prog, t2s, t2e)
+		? prog.outBuilt(prog)
+		? MembershipPass.ePop(prog, es, ee, t2s, t2e)
+		? MembershipPass.ePush(prog, es, ee, t2s, t2e)
+		? MembershipPass.ePush(prog, tns, tne, t2s, t2e)
+		prog.begin(prog)
+		? prog.addLit(prog, "EQ")
+		? prog.addRange(prog, t2s, t2e)
+		? prog.addRange(prog, t2s, t2e)
+		? prog.addLit(prog, "imut_bool")
+		? prog.outBuilt(prog)
+		? MembershipPass.eLit(prog, "CMP")
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, ins, ine)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addRange(prog, cs, ce)
+		? prog.addLit(prog, "indeterminate_u64")
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, ens, ene)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addRange(prog, ins, ine)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "ADDR")
+		? prog.addRange(prog, cs, ce)
+		? prog.addRange(prog, mus, mue)
+		? prog.outBuilt(prog)
+		? MembershipPass.ePush(prog, cs, ce, mus, mue)
+		? MembershipPass.eLit(prog, "INC mut_u64 indeterminate_u64")
+		? MembershipPass.eLit(prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		prog.begin(prog)
+		? prog.addLit(prog, "JMP")
+		? prog.addRange(prog, tops, tope)
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addRange(prog, ens, ene)
+		? prog.glueCh(prog, ':')
+		? prog.outBuilt(prog)
+		st.keepL = leftSimple == false
+		st.keepR = rightSimple == false
+		return true
+	}
+
+	// ---- INSTANCEOF / IMPLEMENTS ----
+
+	/** Value of variant [a, z) of the enum on line `el` (-1 when it has none): explicit for a value enum, the position for a plain one, none for a range enum. */
+	@pub
+	static func variantValue(prog: ref some imut Prog, el: mut u64, a: mut u64, z: mut u64) mut s64{
+		let shape = mut MembershipPass.enumShape(prog, el)
+		let c = mut prog.count(prog, el)
+		let r = mut -1
+		if shape == 2{
+			let pairs = mut ((c - 2) / 2)
+			for j in 0..pairs{
+				let kn = mut (2 + 2 * j)
+				let kv = mut (kn + 1)
+				let p = mut wrap:<u64>(prog.tokPos(prog, el, kn))
+				let pz = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, el))
+				if Hob.eq(prog, p, pz, a, z) &&then MembershipPass.isDigitTok(prog, el, kv){
+					let q = mut wrap:<u64>(prog.tokPos(prog, el, kv))
+					let qz = mut Ln.tokEnd(prog.buf, q, prog.lineEnd(prog, el))
+					r = wrap:<s64>(Hob.digitsValue(prog, q, qz))
+				}
+			}
+		} else if shape == 3{
+			let rest = mut (c - 2)
+			for j in 0..rest{
+				let kn = mut (2 + j)
+				let p = mut wrap:<u64>(prog.tokPos(prog, el, kn))
+				let pz = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, el))
+				if r < 0 &&then Hob.eq(prog, p, pz, a, z){
+					r = wrap:<s64>(j)
+				}
+			}
+		}
+		return r
+	}
+
+	/** "PUSH path imut_u64 ; PUSH v indeterminate_u64 ; EQ ... ; [OR ...]" for the idx-th id. */
+	@throws
+	static func eIdEq(prog: ref some mut Prog, ps: mut u64, pe: mut u64, v: mut s64, idx: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addRange(prog, ps, pe)
+		? prog.addLit(prog, "imut_u64")
+		? prog.outBuilt(prog)
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addS64(prog, v)
+		? prog.addLit(prog, "indeterminate_u64")
+		? prog.outBuilt(prog)
+		? MembershipPass.eLit(prog, "EQ imut_u64 indeterminate_u64 imut_bool")
+		if idx > 0{
+			? MembershipPass.eLit(prog, "OR imut_bool imut_bool imut_bool")
+		}
+	}
+
+	/** Left operand's name: the simple push's own, or a fresh temp (declared, with its POP emitted) for any other. Result in [r1s, r1e). */
+	@throws
+	static func resolveLeft(prog: ref some mut Prog, st: ref some mut MembershipPass, leftSimple: mut bool, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		if leftSimple{
+			return
+		}
+		? MembershipPass.declareTemp(prog, st, ts, te)
+		? MembershipPass.ePop(prog, st.r1s, st.r1e, ts, te)
+	}
+
+	/** "<left>.___type" in [r1s, r1e), dereferencing first when the left type carries any storage keyword. */
+	@throws
+	static func typeFieldPath(prog: ref some mut Prog, st: ref some mut MembershipPass, ns: mut u64, ne: mut u64, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		let ct = mut ? Hob.parse(prog, ts, te)
+		let bs = mut ns
+		let be = mut ne
+		if Hob.hasStorage(ct){
+			? MembershipPass.derefInto(prog, st, ns, ne, ts, te, ct)
+			bs = st.r1s
+			be = st.r1e
+		}
+		prog.begin(prog)
+		? prog.addRange(prog, bs, be)
+		? prog.glueLit(prog, ".___type")
+		st.r1s = prog.cur
+		st.r1e = prog.used
+	}
+
+	/** `x instanceof S` / `x implements I`: operator line `i` ("<op> leftType"); the target's name is the bare push on input line i-1. */
+	@throws
+	static func tryTypeTest(prog: ref some mut Prog, st: ref some mut MembershipPass, i: mut u64, isInstance: mut bool) mut bool{
+		?catch(e){ throw e }
+		let le0 = mut prog.lineEnd(prog, i)
+		let ts = mut wrap:<u64>(prog.tokPos(prog, i, 1))
+		let te = mut Ln.tokEnd(prog.buf, ts, le0)
+		let prev = mut (i - 1)
+		if prog.count(prog, prev) != 2 || prog.opEq(prog, prev, "PUSH") == false{
+			return false
+		}
+		let nps = mut wrap:<u64>(prog.tokPos(prog, prev, 1))
+		let npe = mut Ln.tokEnd(prog.buf, nps, prog.lineEnd(prog, prev))
+		if MembershipPass.isRealName(prog, nps, npe) == false{
+			return false
+		}
+		let m0 = mut prog.n2
+		let leftIdx = mut (m0 - 2)
+		let leftSimple = mut MembershipPass.isSimplePush(prog, st, leftIdx)
+		let lns = mut st.r1s
+		let lne = mut st.r1e
+		? MembershipPass.ensureTables(prog, st)
+		if isInstance{
+			let cl = mut st.enumIx.find(st.enumIx, prog, st.classS, st.classE)
+			if cl < 0{
+				return false
+			}
+			let id = mut MembershipPass.variantValue(prog, wrap:<u64>(cl), nps, npe)
+			if id < 0{
+				return false
+			}
+			? MembershipPass.resolveLeft(prog, st, leftSimple, ts, te)
+			if leftSimple == false{
+				lns = st.r1s
+				lne = st.r1e
+			}
+			? MembershipPass.typeFieldPath(prog, st, lns, lne, ts, te)
+			let ps = mut st.r1s
+			let pe = mut st.r1e
+			? MembershipPass.eIdEq(prog, ps, pe, id, 0)
+			st.keepL = leftSimple == false
+			return true
+		}
+		// implements: the ids of "$enum_for_<I>"
+		prog.begin(prog)
+		? prog.addLit(prog, "$enum_for_")
+		? prog.glueRange(prog, nps, npe)
+		let fs = mut prog.cur
+		let fe = mut prog.used
+		let el = mut st.enumIx.find(st.enumIx, prog, fs, fe)
+		let nid = mut 0
+		if el >= 0 &&then MembershipPass.enumShape(prog, wrap:<u64>(el)) == 2{
+			let elu = mut wrap:<u64>(el)
+			let pairs = mut ((prog.count(prog, elu) - 2) / 2)
+			for j in 0..pairs{
+				if MembershipPass.isDigitTok(prog, elu, 3 + 2 * j){
+					nid += 1
+				}
+			}
+		}
+		? MembershipPass.resolveLeft(prog, st, leftSimple, ts, te)
+		if leftSimple == false{
+			lns = st.r1s
+			lne = st.r1e
+		}
+		if nid == 0{
+			? MembershipPass.eLit(prog, "PUSH false imut_bool")
+			st.keepL = leftSimple == false
+			return true
+		}
+		? MembershipPass.typeFieldPath(prog, st, lns, lne, ts, te)
+		let ps = mut st.r1s
+		let pe = mut st.r1e
+		let elu = mut wrap:<u64>(el)
+		let pairs = mut ((prog.count(prog, elu) - 2) / 2)
+		let idx = mut 0
+		for j in 0..pairs{
+			let vk = mut (3 + 2 * j)
+			if MembershipPass.isDigitTok(prog, elu, vk){
+				let q = mut wrap:<u64>(prog.tokPos(prog, elu, vk))
+				let qz = mut Ln.tokEnd(prog.buf, q, prog.lineEnd(prog, elu))
+				? MembershipPass.eIdEq(prog, ps, pe, wrap:<s64>(Hob.digitsValue(prog, q, qz)), idx)
+				idx += 1
+			}
+		}
+		st.keepL = leftSimple == false
+		return true
+	}
+
+	// ---- driver ----
+
+	/** Removes the operand pushes the match did not keep (right first so the left index stays valid). */
+	static func dropPushes(prog: ref some mut Prog, st: ref some imut MembershipPass, m0: mut u64) void{
+		if st.keepR == false{
+			prog.outRemoveAt(prog, m0 - 1)
+		}
+		if st.keepL == false{
+			prog.outRemoveAt(prog, m0 - 2)
+		}
+	}
+
+	/** INSTANCEOF/IMPLEMENTS: the target-name push always goes, the left push unless materialized. */
+	static func dropTarget(prog: ref some mut Prog, st: ref some imut MembershipPass, m0: mut u64) void{
+		prog.outRemoveAt(prog, m0 - 1)
+		if st.keepL == false{
+			prog.outRemoveAt(prog, m0 - 2)
+		}
+	}
+
+	/** IS_BASE: the single operand push. */
+	static func dropLeftOnly(prog: ref some mut Prog, st: ref some imut MembershipPass, m0: mut u64) void{
+		if st.keepL == false{
+			prog.outRemoveAt(prog, m0 - 1)
+		}
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let st = mut ? new MembershipPass()
+		prog.outReset(prog)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			if end > n - 1{
+				end = n - 1
+			}
+			let base = mut prog.n2
+			let pre = mut 0
+			let lim0 = mut (end + 1)
+			for q in i..lim0{
+				if prog.opEq(prog, q, "FUNC_START") || prog.opEq(prog, q, "EXPORT") || prog.opEq(prog, q, "FUNC_DECORATE") || prog.opEq(prog, q, "RETURNS") || prog.opEq(prog, q, "ARG") || prog.opEq(prog, q, "ALLOC"){
+					pre += 1
+				} else {
+					break
+				}
+			}
+			st.tempCount = 0
+			st.nTemps = 0
+			let last = mut (end + 1)
+			for k in i..last{
+				let have = mut (prog.n2 - base)
+				let m0 = mut prog.n2
+				let c = mut prog.count(prog, k)
+				let done = mut false
+				if prog.opEq(prog, k, "IN") &&then c == 4 &&then have >= 2{
+					done = ? MembershipPass.tryIn(prog, st, k)
+					if done{
+						MembershipPass.dropPushes(prog, st, m0)
+					}
+				} else if prog.opEq(prog, k, "WITHIN") &&then c == 4 &&then have >= 2{
+					done = ? MembershipPass.tryWithin(prog, st, k)
+					if done{
+						MembershipPass.dropPushes(prog, st, m0)
+					}
+				} else if prog.opEq(prog, k, "INSTANCEOF") &&then c == 2 &&then k > i &&then have >= 2{
+					done = ? MembershipPass.tryTypeTest(prog, st, k, true)
+					if done{
+						MembershipPass.dropTarget(prog, st, m0)
+					}
+				} else if prog.opEq(prog, k, "IMPLEMENTS") &&then c == 2 &&then k > i &&then have >= 2{
+					done = ? MembershipPass.tryTypeTest(prog, st, k, false)
+					if done{
+						MembershipPass.dropTarget(prog, st, m0)
+					}
+				} else if prog.opEq(prog, k, "IS_BASE") &&then c == 2 &&then have >= 1{
+					done = ? MembershipPass.tryIsBase(prog, st, k)
+					if done{
+						MembershipPass.dropLeftOnly(prog, st, m0)
+					}
+				} else if prog.opEq(prog, k, "IN_SCAN") &&then c == 4 &&then have >= 2{
+					done = ? MembershipPass.tryInScan(prog, st, k)
+					if done{
+						MembershipPass.dropPushes(prog, st, m0)
+					}
+				} else if prog.opEq(prog, k, "LEN_SCAN") &&then c == 3 &&then have >= 2{
+					done = ? MembershipPass.tryLenScan(prog, st, k)
+					if done{
+						MembershipPass.dropPushes(prog, st, m0)
+					}
+				}
+				if done == false{
+					? prog.outLine(prog, k)
+				}
+			}
+			// the temps' ALLOCs go behind the header lines
+			let nt = mut st.nTemps
+			for q in 0..nt{
+				let a = mut 0
+				let b = mut 0
+				let c1 = mut 0
+				let d1 = mut 0
+				match q in st.tNameS{ a = st.tNameS[q] }
+				match q in st.tNameE{ b = st.tNameE[q] }
+				match q in st.tTyS{ c1 = st.tTyS[q] }
+				match q in st.tTyE{ d1 = st.tTyE[q] }
+				prog.begin(prog)
+				? prog.addLit(prog, "ALLOC")
+				? prog.addRange(prog, a, b)
+				? prog.addRange(prog, c1, d1)
+				? prog.outBuilt(prog)
+			}
+			if nt > 0{
+				? prog.outRotateTail(prog, base + pre, nt)
+			}
+			i = end + 1
+		}
+		prog.outCommit(prog)
+	}
+}

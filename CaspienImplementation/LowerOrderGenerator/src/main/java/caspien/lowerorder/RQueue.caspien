@@ -1,0 +1,53 @@
+import "Prog.caspien"
+
+/** FIFO of buffer ranges (pop order = push order); `ps`/`pe` hold the range just popped. */
+@pub
+struct RQueue{@pub{
+	qs: owns some mut dynarray(mut u64)
+	qe: owns some mut dynarray(mut u64)
+	head: mut u64
+	tail: mut u64
+	ps: mut u64
+	pe: mut u64
+}}
+
+@throws
+impl constructor for RQueue() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 16, 0)
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 16, 0)
+	return RQueue{qs= a, qe= b, head= 0, tail= 0, ps= 0, pe= 0}
+}
+
+@pub
+impl RQueue{
+	@pub
+	@throws
+	func push(_self: ref some mut self, s: mut u64, e: mut u64) void{
+		?catch(e0){ throw e0 }
+		let k = mut _self.tail
+		if k >= len(_self.qs){
+			let nc = mut (k * 2 + 16)
+			_self.qs = ? resize(_self.qs, nc, 0)
+			_self.qe = ? resize(_self.qe, nc, 0)
+		}
+		match k into _self.qs{ _self.qs[k] = s }
+		match k into _self.qe{ _self.qe[k] = e }
+		_self.tail = k + 1
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) mut bool{
+		return _self.head >= _self.tail
+	}
+
+	@pub
+	func pop(_self: ref some mut self) void{
+		let k = mut _self.head
+		match k in _self.qs{ _self.ps = _self.qs[k] }
+		match k in _self.qe{ _self.pe = _self.qe[k] }
+		_self.head = k + 1
+	}
+}

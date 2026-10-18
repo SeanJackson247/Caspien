@@ -1,0 +1,201 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "TokMap.caspien"
+
+/** Port of ConditionalMovePass (switch `conditional-move`): `R_BRC C n a b @E ; R_MOV 8 %vK X ; @E:` (one arm, or two arms with their jump) -> `R_CMOV C n a b %vK X [Y]`. */
+@pub
+struct ConditionalMovePass{@pub{
+}}
+
+impl constructor for ConditionalMovePass() self{
+	return ConditionalMovePass{}
+}
+
+@pub
+impl ConditionalMovePass{
+	/** Token `k` of line `i` is a single char among 1 2 4 8. */
+	static func isSize(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, i, k, "1") || prog.eqLit(prog, i, k, "2") || prog.eqLit(prog, i, k, "4") || prog.eqLit(prog, i, k, "8"){
+			return true
+		}
+		return false
+	}
+
+	/** Token 2 of line `l` is `%v` + one digit. */
+	static func isVarReg(prog: ref some imut Prog, l: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, l, 2)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, l))
+		if q - a != 3{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, a) != '%' || prog.buf.charAt(prog.buf, a + 1) != 'v'{
+			return false
+		}
+		let d = mut prog.buf.charAt(prog.buf, a + 2)
+		if d >= '0' &&then d <= '9'{
+			return true
+		}
+		return false
+	}
+
+	/** Token 3 of the `#`-immediate form `#<number>` (Long.decode succeeds). */
+	static func isNumImm(prog: ref some mut Prog, l: mut u64) mut bool{
+		if prog.tokStartsCh(prog, l, 3, '#') == false{
+			return false
+		}
+		let p = mut prog.tokPos(prog, l, 3)
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, l))
+		if q - a < 2{
+			return false
+		}
+		let v = mut prog.decodeImm(prog, l, 3)
+		return prog.decodeOk(prog)
+	}
+
+	/** 0: not a source line; 1: `R_MOV 8 %vK src` with src a register or immediate; 2: `R_SETV m %vK #c` (constant cut to m bytes). */
+	static func sourceKind(prog: ref some mut Prog, l: mut u64) mut u64{
+		if prog.count(prog, l) != 4 || ConditionalMovePass.isVarReg(prog, l) == false{
+			return 0
+		}
+		if prog.opEq(prog, l, "R_MOV") &&then prog.eqLit(prog, l, 1, "8"){
+			if prog.startsWith(prog, l, 3, "%t") || prog.startsWith(prog, l, 3, "%v") || ConditionalMovePass.isNumImm(prog, l){
+				return 1
+			}
+		}
+		if prog.opEq(prog, l, "R_SETV") &&then ConditionalMovePass.isNumImm(prog, l) &&then ConditionalMovePass.isSize(prog, l, 1){
+			return 2
+		}
+		return 0
+	}
+
+	/** The value of a kind-2 source: the constant cut to m bytes. */
+	static func setvValue(prog: ref some mut Prog, l: mut u64) mut s64{
+		let m = mut prog.numTok(prog, l, 1)
+		let v = mut prog.decodeImm(prog, l, 3)
+		if m < 8{
+			let mask = mut (bits_left(1, wrap:<u64>(8 * m)) - 1)
+			return wrap:<s64>(bits_and(wrap:<u64>(v), mask))
+		}
+		return v
+	}
+
+	/** Appends the source operand of line `l` (kind `kind`) as a token. */
+	@throws
+	static func addSrc(prog: ref some mut Prog, l: mut u64, kind: mut u64) void{
+		?catch(e){ throw e }
+		if kind == 1{
+			? prog.addTok(prog, l, 3)
+		} else {
+			let v = mut ConditionalMovePass.setvValue(prog, l)
+			? prog.addLit(prog, "#")
+			? prog.glueS64(prog, v)
+		}
+	}
+
+	@throws
+	static func cmov(prog: ref some mut Prog, br: mut u64, l1: mut u64, k1: mut u64, l2: mut u64, k2: mut u64, two: mut bool, to: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "R_CMOV")
+		? prog.addTok(prog, br, 1)
+		? prog.addTok(prog, br, 2)
+		? prog.addTok(prog, br, 3)
+		? prog.addTok(prog, br, 4)
+		? prog.addTok(prog, l1, 2)
+		? ConditionalMovePass.addSrc(prog, l1, k1)
+		if two{
+			? ConditionalMovePass.addSrc(prog, l2, k2)
+		}
+		prog.setBuilt(prog, to)
+	}
+
+	static func isLabelOf(prog: ref some imut Prog, l: mut u64, src: mut u64, k: mut u64) mut bool{
+		if prog.count(prog, l) != 1{
+			return false
+		}
+		return prog.tokIsOtherPlus(prog, l, 0, src, k, ':')
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let refs = mut ? TokMap.forKeys(n)
+		for i in 0..n{
+			let c = mut prog.count(prog, i)
+			if c == 6 &&then (prog.opEq(prog, i, "R_BRC") || prog.opEq(prog, i, "R_BRCM")){
+				refs.addTok(refs, prog, i, 5, 1)
+			} else if c == 2 &&then prog.opEq(prog, i, "JMP"){
+				refs.addTok(refs, prog, i, 1, 1)
+			} else {
+				for k in 1..c{
+					if prog.tokStartsCh(prog, i, k, '@'){
+						let p = mut wrap:<u64>(prog.tokPos(prog, i, k))
+						let q = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+						if prog.buf.charAt(prog.buf, q - 1) != ':'{
+							refs.addTok(refs, prog, i, k, 100)
+						}
+					}
+				}
+			}
+		}
+		let w = mut 0
+		let i = mut 0
+		let changed = mut false
+		for st in 0..n{
+			if i >= n{
+				break
+			}
+			let done = mut false
+			if prog.count(prog, i) == 6 &&then prog.opEq(prog, i, "R_BRC") &&then ConditionalMovePass.isSize(prog, i, 2) &&then i + 2 < n{
+				let x1 = mut (i + 1)
+				let xk = mut ConditionalMovePass.sourceKind(prog, x1)
+				if xk != 0{
+					if ConditionalMovePass.isLabelOf(prog, i + 2, i, 5){
+						prog.stash(prog, 0, i + 2)
+						? ConditionalMovePass.cmov(prog, i, x1, xk, x1, xk, false, w)
+						prog.unstash(prog, 0, w + 1)
+						w += 2
+						i += 3
+						changed = true
+						done = true
+					} else if i + 5 < n &&then refs.get(refs, prog, i, 5) == 1 &&then prog.count(prog, i + 2) == 2 &&then prog.opEq(prog, i + 2, "JMP") &&then ConditionalMovePass.isLabelOf(prog, i + 3, i, 5){
+						let y1 = mut (i + 4)
+						let yk = mut ConditionalMovePass.sourceKind(prog, y1)
+						if yk != 0 &&then prog.tokEq(prog, x1, 2, y1, 2) &&then ConditionalMovePass.isLabelOf(prog, i + 5, i + 2, 1) &&then refs.get(refs, prog, i + 2, 1) == 1{
+							let sameAsVar = mut false
+							if xk == 1 &&then prog.tokEq(prog, x1, 3, x1, 2){
+								sameAsVar = true
+							}
+							if sameAsVar == false{
+								prog.stash(prog, 0, i + 5)
+								? ConditionalMovePass.cmov(prog, i, x1, xk, y1, yk, true, w)
+								prog.unstash(prog, 0, w + 1)
+								w += 2
+								i += 6
+								changed = true
+								done = true
+							}
+						}
+					}
+				}
+			}
+			if done == false{
+				if w != i{
+					prog.copyLine(prog, i, w)
+				}
+				w += 1
+				i += 1
+			}
+		}
+		if changed{
+			prog.truncate(prog, w)
+		}
+	}
+}

@@ -1,0 +1,130 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "RegOps.caspien"
+import "LabelIndex.caspien"
+
+/** Port of LengthCompareFusionPass (switch `fuse-length-compare`): the safe-dynarray bounds check `R_LD 8 %tL %tB ; R_BRC C 8 %vI %tL @L` becomes one `R_BRCM` memory compare. */
+@pub
+struct LengthCompareFusionPass{@pub{
+}}
+
+impl constructor for LengthCompareFusionPass() self{
+	return LengthCompareFusionPass{}
+}
+
+@pub
+impl LengthCompareFusionPass{
+	/** `R_BRC op 8 X %tA @L` where %tA is token 2 of line `a`, X a register different from it (form 1 also allows a frame slot). */
+	static func isLengthBranch(prog: ref some imut Prog, b: mut u64, a: mut u64, slotOk: mut bool) mut bool{
+		if prog.count(prog, b) != 6 || prog.opEq(prog, b, "R_BRC") == false{
+			return false
+		}
+		if prog.eqLit(prog, b, 2, "8") == false || prog.tokEq(prog, b, 4, a, 2) == false || prog.tokStartsCh(prog, b, 5, '@') == false{
+			return false
+		}
+		let ok = mut false
+		if prog.startsWith(prog, b, 3, "%t") || prog.startsWith(prog, b, 3, "%v"){
+			ok = true
+		} else if slotOk &&then prog.tokStartsCh(prog, b, 3, '$'){
+			ok = true
+		}
+		if ok == false{
+			return false
+		}
+		return prog.tokEq(prog, b, 3, a, 2) == false
+	}
+
+	static func deadAtTarget(prog: ref some imut Prog, labels: ref some imut LabelIndex, b: mut u64, a: mut u64) mut bool{
+		let at = mut labels.find(labels, prog, b, 5)
+		if at < 0{
+			return false
+		}
+		return RegOps.deadAfter(prog, wrap:<u64>(at) + 1, a, 2, false)
+	}
+
+	/** `R_BRCM` copy of branch `b` whose operand 4 is token `k` of line `src`. */
+	@throws
+	static func fused(prog: ref some mut Prog, b: mut u64, src: mut u64, k: mut u64, to: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "R_BRCM")
+		? prog.addTok(prog, b, 1)
+		? prog.addTok(prog, b, 2)
+		? prog.addTok(prog, b, 3)
+		? prog.addTok(prog, src, k)
+		? prog.addTok(prog, b, 5)
+		prog.setBuilt(prog, to)
+	}
+
+	/** Lines `x` and `y` have identical text. */
+	static func sameLine(prog: ref some imut Prog, x: mut u64, y: mut u64) mut bool{
+		let sx = mut prog.lineStart(prog, x)
+		let ex = mut prog.lineEnd(prog, x)
+		let sy = mut prog.lineStart(prog, y)
+		let ey = mut prog.lineEnd(prog, y)
+		if ex - sx != ey - sy{
+			return false
+		}
+		let w = mut (ex - sx)
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, sx + d) != prog.buf.charAt(prog.buf, sy + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let labels = mut ? LabelIndex.build(prog)
+		let killed = mut false
+		for i in 0..n{
+			if i + 1 >= n{
+				break
+			}
+			if prog.isGone(prog, i){
+				continue
+			}
+			if prog.count(prog, i) != 4{
+				continue
+			}
+			// form 2: R_LD 8 %tA %vK ; R_BRC op 8 X %tA @L
+			if prog.opEq(prog, i, "R_LD") &&then prog.eqLit(prog, i, 1, "8") &&then prog.startsWith(prog, i, 2, "%t") &&then prog.startsWith(prog, i, 3, "%v"){
+				let b = mut (i + 1)
+				if LengthCompareFusionPass.isLengthBranch(prog, b, i, false) &&then RegOps.deadAfter(prog, i + 2, i, 2, false) &&then LengthCompareFusionPass.deadAtTarget(prog, labels, b, i){
+					? LengthCompareFusionPass.fused(prog, b, i, 3, b)
+					prog.kill(prog, i)
+					killed = true
+				}
+				continue
+			}
+			// form 1: R_MOV 8 %tA $S ; R_LD 8 %tA %tA ; R_BRC op 8 X %tA @L
+			if i + 2 < n &&then prog.opEq(prog, i, "R_MOV") &&then prog.eqLit(prog, i, 1, "8") &&then prog.startsWith(prog, i, 2, "%t") &&then prog.tokStartsCh(prog, i, 3, '$'){
+				let ld = mut (i + 1)
+				let b = mut (i + 2)
+				if prog.count(prog, ld) == 4 &&then prog.opEq(prog, ld, "R_LD") &&then prog.eqLit(prog, ld, 1, "8") &&then prog.tokEq(prog, ld, 2, i, 2) &&then prog.tokEq(prog, ld, 3, i, 2){
+					if LengthCompareFusionPass.isLengthBranch(prog, b, i, true) &&then LengthCompareFusionPass.deadAtTarget(prog, labels, b, i){
+						let sameNext = mut false
+						if i + 3 < n &&then prog.isGone(prog, i + 3) == false &&then LengthCompareFusionPass.sameLine(prog, i + 3, i){
+							sameNext = true
+						}
+						if sameNext || RegOps.deadAfter(prog, i + 3, i, 2, false){
+							? LengthCompareFusionPass.fused(prog, b, i, 2, b)
+							prog.kill(prog, i + 1)
+							if sameNext{
+								prog.kill(prog, i + 3)
+							}
+							killed = true
+						}
+					}
+				}
+			}
+		}
+		if killed{
+			prog.compactGone(prog)
+		}
+	}
+}

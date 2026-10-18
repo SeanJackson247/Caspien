@@ -1,0 +1,304 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+import "Hob.caspien"
+import "NameIndex.caspien"
+import "RangeMap.caspien"
+
+/**
+ * Port of StructTable: struct declarations are read in place (a name index over the STRUCT_START lines; members are the STRUCT_MEMBER lines up to STRUCT_END), `@drop`
+ * hooks, and the memoised `isOwnsBearing` walk (explicit stacks, same order as the Java).
+ */
+@pub
+struct StructTab{@pub{
+	ix: owns some mut NameIndex
+	hooks: owns some mut RangeMap
+	cache: owns some mut RangeMap
+	mem: owns some mut dynarray(mut u64)
+	nm: mut u64
+	fTs: owns some mut dynarray(mut u64)
+	fTe: owns some mut dynarray(mut u64)
+	fBase: owns some mut dynarray(mut u64)
+	fLen: owns some mut dynarray(mut u64)
+	fPos: owns some mut dynarray(mut u64)
+	pS: owns some mut dynarray(mut u64)
+	pE: owns some mut dynarray(mut u64)
+	nf: mut u64
+	np: mut u64
+}}
+
+@throws
+impl constructor for StructTab(structs: mut u64) self{
+	?catch(e){ throw e }
+	let ix = mut ? NameIndex.forKeys(structs + 1)
+	let h = mut ? new RangeMap()
+	let c = mut ? new RangeMap()
+	let m = mut ? dyn:<u64>([])
+	m = ? resize(m, 64, 0)
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 32, 0)
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 32, 0)
+	let c1 = mut ? dyn:<u64>([])
+	c1 = ? resize(c1, 32, 0)
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 32, 0)
+	let f = mut ? dyn:<u64>([])
+	f = ? resize(f, 32, 0)
+	let p = mut ? dyn:<u64>([])
+	p = ? resize(p, 64, 0)
+	let q = mut ? dyn:<u64>([])
+	q = ? resize(q, 64, 0)
+	return StructTab{ix= ix, hooks= h, cache= c, mem= m, nm= 0, fTs= a, fTe= b, fBase= c1, fLen= d, fPos= f, pS= p, pE= q, nf= 0, np= 0}
+}
+
+@pub
+impl StructTab{
+	@pub
+	static func countStructs(prog: ref some imut Prog) mut u64 {
+		let n = mut prog.size(prog)
+		let ns = mut 0
+		for i in 0..n{
+			if prog.opEq(prog, i, "STRUCT_START"){
+				ns += 1
+			}
+		}
+		return ns
+	}
+
+	/** Reads the struct declarations and `@drop` hooks of the current table into this (empty) table. */
+	@pub
+	@throws
+	func load(tab: ref some mut self, prog: ref some imut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let fnS = mut 0
+		let fnE = mut 0
+		let isDrop = mut false
+		for i in 0..n{
+			if prog.opEq(prog, i, "FUNC_START") &&then prog.count(prog, i) >= 2{
+				let p = mut wrap:<u64>(prog.tokPos(prog, i, 1))
+				fnS = p
+				fnE = Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+				isDrop = false
+			} else if prog.opEq(prog, i, "FUNC_DECORATE") &&then prog.count(prog, i) >= 2 &&then prog.eqLit(prog, i, 1, "@drop"){
+				isDrop = true
+			} else if prog.opEq(prog, i, "ARG") &&then isDrop &&then fnE > fnS &&then prog.count(prog, i) >= 3{
+				let p = mut wrap:<u64>(prog.tokPos(prog, i, 2))
+				let z = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+				let ct = mut ? Hob.parse(prog, p, z)
+				? tab.hooks.put(tab.hooks, prog, ct.baS, ct.baE, fnS, fnE)
+				isDrop = false
+			} else if prog.opEq(prog, i, "STRUCT_START") &&then prog.count(prog, i) >= 2{
+				tab.ix.put(tab.ix, prog, i)
+			}
+		}
+	}
+
+	/** Line of the declaration of struct [a, z), or -1. */
+	@pub
+	func structLine(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		return _self.ix.find(_self.ix, prog, a, z)
+	}
+
+	@pub
+	func hasStruct(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		return _self.ix.find(_self.ix, prog, a, z) >= 0
+	}
+
+	/** Fills `mem` with the STRUCT_MEMBER lines of the struct declared at `sl` (count in `nm`). */
+	@pub
+	@throws
+	func members(_self: ref some mut self, prog: ref some imut Prog, sl: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let k = mut 0
+		let q = mut (sl + 1)
+		for step in 0..n{
+			if q >= n{
+				break
+			}
+			if prog.opEq(prog, q, "STRUCT_END"){
+				break
+			}
+			if prog.opEq(prog, q, "STRUCT_MEMBER") &&then prog.count(prog, q) >= 3{
+				if k >= len(_self.mem){
+					let nc = mut (k * 2 + 8)
+					_self.mem = ? resize(_self.mem, nc, 0)
+				}
+				match k into _self.mem{ _self.mem[k] = q }
+				k += 1
+			}
+			q += 1
+		}
+		_self.nm = k
+	}
+
+	@pub
+	func memberLine(_self: ref some imut self, k: mut u64) mut u64{
+		let v = mut 0
+		match k in _self.mem{ v = _self.mem[k] }
+		return v
+	}
+
+	// ---- ownsBearing ----
+
+	@throws
+	func pushPlanItem(_self: ref some mut self, s: mut u64, e: mut u64) void{
+		?catch(e0){ throw e0 }
+		let k = mut _self.np
+		if k >= len(_self.pS){
+			let nc = mut (k * 2 + 8)
+			_self.pS = ? resize(_self.pS, nc, 0)
+			_self.pE = ? resize(_self.pE, nc, 0)
+		}
+		match k into _self.pS{ _self.pS[k] = s }
+		match k into _self.pE{ _self.pE[k] = e }
+		_self.np = k + 1
+	}
+
+	/** Pushes the frame of type [a, z) with its plan items; returns nothing, the frame is at nf-1. */
+	@throws
+	func pushFrame(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) void{
+		?catch(e0){ throw e0 }
+		let base = mut _self.np
+		let isDyn = mut Hob.startsLit(prog, a, z, "dynarray(")
+		let hasElem = mut false
+		let es = mut a
+		let ee = mut z
+		if isDyn &&then z > a &&then prog.buf.charAt(prog.buf, z - 1) == ')'{
+			hasElem = true
+			es = a + 9
+			ee = z - 1
+		} else if z > a &&then prog.buf.charAt(prog.buf, z - 1) == ']'{
+			let open = mut Hob.lastIndexOf(prog, a, z, '[')
+			if open >= 0{
+				hasElem = true
+				es = a
+				ee = wrap:<u64>(open)
+			}
+		}
+		if hasElem{
+			let et = mut ? Hob.parse(prog, es, ee)
+			if Hob.storageIs(prog, et, "owns"){
+				? _self.pushPlanItem(_self, 0, 0)
+			} else {
+				? _self.pushPlanItem(_self, et.baS, et.baE)
+			}
+		} else if _self.hooks.has(_self.hooks, prog, a, z){
+			? _self.pushPlanItem(_self, 0, 0)
+		} else {
+			let sl = mut _self.structLine(_self, prog, a, z)
+			if sl >= 0{
+				let own = mut wrap:<u64>(sl)
+				? _self.members(_self, prog, own)
+				let cnt = mut _self.nm
+				for j in 0..cnt{
+					let ml = mut _self.memberLine(_self, j)
+					let tp = mut wrap:<u64>(prog.tokPos(prog, ml, 2))
+					let tz = mut Ln.tokEnd(prog.buf, tp, prog.lineEnd(prog, ml))
+					let mt = mut ? Hob.parse(prog, tp, tz)
+					if Hob.storageIs(prog, mt, "owns"){
+						? _self.pushPlanItem(_self, 0, 0)
+						break
+					}
+					if Hob.hasStorage(mt) == false{
+						? _self.pushPlanItem(_self, mt.baS, mt.baE)
+					}
+				}
+			}
+		}
+		let f = mut _self.nf
+		if f >= len(_self.fTs){
+			let nc = mut (f * 2 + 8)
+			_self.fTs = ? resize(_self.fTs, nc, 0)
+			_self.fTe = ? resize(_self.fTe, nc, 0)
+			_self.fBase = ? resize(_self.fBase, nc, 0)
+			_self.fLen = ? resize(_self.fLen, nc, 0)
+			_self.fPos = ? resize(_self.fPos, nc, 0)
+		}
+		let plen = mut (_self.np - base)
+		match f into _self.fTs{ _self.fTs[f] = a }
+		match f into _self.fTe{ _self.fTe[f] = z }
+		match f into _self.fBase{ _self.fBase[f] = base }
+		match f into _self.fLen{ _self.fLen[f] = plen }
+		match f into _self.fPos{ _self.fPos[f] = 0 }
+		_self.nf = f + 1
+	}
+
+	/** Whether values of base type [a, z) own memory somewhere below (memoised). */
+	@pub
+	@throws
+	func isOwnsBearing(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		?catch(e){ throw e }
+		let known0 = mut _self.cache.get1(_self.cache, prog, a, z)
+		if known0 >= 0{
+			return known0 == 1
+		}
+		? _self.cache.put(_self.cache, prog, a, z, 0, 0)
+		? _self.pushFrame(_self, prog, a, z)
+		let childOwns = mut false
+		let guard = mut 0
+		for outer in 0..100000000{
+			if _self.nf == 0{
+				break
+			}
+			let top = mut (_self.nf - 1)
+			let base = mut 0
+			let plen = mut 0
+			let pos = mut 0
+			match top in _self.fBase{ base = _self.fBase[top] }
+			match top in _self.fLen{ plen = _self.fLen[top] }
+			match top in _self.fPos{ pos = _self.fPos[top] }
+			let done = mut childOwns
+			let result = mut childOwns
+			childOwns = false
+			let descend = mut false
+			let plim = mut (plen + 1)
+			for inner in 0..plim{
+				if done || pos >= plen{
+					break
+				}
+				let ix = mut (base + pos)
+				pos += 1
+				let ss = mut 0
+				let se = mut 0
+				match ix in _self.pS{ ss = _self.pS[ix] }
+				match ix in _self.pE{ se = _self.pE[ix] }
+				if se == 0{
+					done = true
+					result = true
+				} else {
+					let known = mut _self.cache.get1(_self.cache, prog, ss, se)
+					if known < 0{
+						match top into _self.fPos{ _self.fPos[top] = pos }
+						? _self.cache.put(_self.cache, prog, ss, se, 0, 0)
+						? _self.pushFrame(_self, prog, ss, se)
+						descend = true
+						break
+					}
+					if known == 1{
+						done = true
+						result = true
+					}
+				}
+			}
+			if descend{
+				continue
+			}
+			let ta = mut 0
+			let tz = mut 0
+			match top in _self.fTs{ ta = _self.fTs[top] }
+			match top in _self.fTe{ tz = _self.fTe[top] }
+			if result{
+				? _self.cache.put(_self.cache, prog, ta, tz, 1, 0)
+			} else {
+				? _self.cache.put(_self.cache, prog, ta, tz, 0, 0)
+			}
+			_self.np = base
+			_self.nf = top
+			childOwns = result
+		}
+		return childOwns
+	}
+}

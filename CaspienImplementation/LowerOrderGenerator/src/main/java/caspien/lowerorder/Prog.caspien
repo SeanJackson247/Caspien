@@ -1,0 +1,1117 @@
+import "stdlib/libc.caspien"
+import "stdlib/string.caspien"
+import "Ln.caspien"
+
+/**
+ * The program being lowered. ALL line text lives in ONE buffer `buf` (a String used as raw capacity: `used` is the fill mark); a line is a range [ls[i], le[i]) of it
+ * (normalized: tokens joined by single spaces, see Ln). A pass reads lines in place through the accessors below, edits a line by building the new text at the end of the
+ * buffer (begin / addTok / addLit / addS64) and pointing the line at it (`setBuilt`, `pushBuilt`), and deletes or reorders lines by moving offsets only.
+ * No object per line: the memory-safety bookkeeping of this language is paid per allocation and per reference, and a program has tens of thousands of lines.
+ */
+@pub
+struct Prog{@pub{
+	buf: owns some mut String
+	used: mut u64
+	ls: owns some mut dynarray(mut u64)
+	le: owns some mut dynarray(mut u64)
+	n: mut u64
+	cur: mut u64
+	tmp: owns some mut dynarray(mut u64)
+	ls2: owns some mut dynarray(mut u64)
+	le2: owns some mut dynarray(mut u64)
+	n2: mut u64
+	ftxt: owns some mut String
+	fv: owns some mut dynarray(mut u64)
+	nf: mut u64
+	hr: owns some mut dynarray(mut u64)
+	nhr: mut u64
+	fo: owns some mut dynarray(mut u64)
+}}
+
+@throws
+impl constructor for Prog(charCap: mut u64, lineCap: mut u64) self{
+	?catch(e){ throw e }
+	let b = mut ? new String()
+	let sp = mut ' '
+	if charCap > 0{
+		let g = mut ? resize(b.chars.backing, charCap, sp)
+		b.chars.backing = g
+	}
+	let a = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<u64>([])
+	if lineCap > 0{
+		a = ? resize(a, lineCap, 0)
+		c = ? resize(c, lineCap, 0)
+	}
+	let t = mut ? dyn:<u64>([])
+	t = ? resize(t, 128, 0)
+	let a2 = mut ? dyn:<u64>([])
+	let c2 = mut ? dyn:<u64>([])
+	let ft = mut ? new String()
+	let fv0 = mut ? dyn:<u64>([])
+	let hr0 = mut ? dyn:<u64>([])
+	let fo0 = mut ? dyn:<u64>([])
+	return Prog{buf= b, used= 0, ls= a, le= c, n= 0, cur= 0, tmp= t, ls2= a2, le2= c2, n2= 0, ftxt= ft, fv= fv0, nf= 0, hr= hr0, nhr= 0, fo= fo0}
+}
+
+@pub
+impl Prog{
+	// ---- line table ----
+
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.n
+	}
+
+	@pub
+	func lineStart(_self: ref some imut self, i: mut u64) mut u64{
+		match i in _self.ls{
+			return _self.ls[i]
+		}
+		return 0
+	}
+
+	@pub
+	func lineEnd(_self: ref some imut self, i: mut u64) mut u64{
+		match i in _self.le{
+			return bits_and(_self.le[i], 4611686018427387903)
+		}
+		return 0
+	}
+
+	/** Points line `i` at the range [s, e). */
+	@pub
+	func setRange(_self: ref some mut self, i: mut u64, s: mut u64, e: mut u64) void{
+		match i into _self.ls{
+			_self.ls[i] = s
+		}
+		match i into _self.le{
+			_self.le[i] = e
+		}
+	}
+
+	/** Appends a line that is the range [s, e) (the line table doubles when full). */
+	@pub
+	@throws
+	func pushRange(_self: ref some mut self, s: mut u64, e: mut u64) void{
+		?catch(e0){ throw e0 }
+		let cap = mut len(_self.ls)
+		if _self.n >= cap{
+			let nc = mut (cap * 2)
+			if nc < 64{
+				nc = 64
+			}
+			let g1 = mut ? resize(_self.ls, nc, 0)
+			_self.ls = g1
+			let g2 = mut ? resize(_self.le, nc, 0)
+			_self.le = g2
+		}
+		let at = mut _self.n
+		_self.setRange(_self, at, s, e)
+		_self.n = at + 1
+	}
+
+	// ---- building a new line table (a pass that inserts lines): outReset, outPush*, outCommit ----
+
+	@pub
+	func outReset(_self: ref some mut self) void{
+		_self.n2 = 0
+	}
+
+	/** Appends the range [s, e) to the new table (it doubles when full). */
+	@pub
+	@throws
+	func outPush(_self: ref some mut self, s: mut u64, e: mut u64) void{
+		?catch(e0){ throw e0 }
+		let cap = mut len(_self.ls2)
+		if _self.n2 >= cap{
+			let nc = mut (cap * 2)
+			if nc < _self.n + 64{
+				nc = _self.n + 64
+			}
+			let g1 = mut ? resize(_self.ls2, nc, 0)
+			_self.ls2 = g1
+			let g2 = mut ? resize(_self.le2, nc, 0)
+			_self.le2 = g2
+		}
+		let at = mut _self.n2
+		match at into _self.ls2{
+			_self.ls2[at] = s
+		}
+		match at into _self.le2{
+			_self.le2[at] = e
+		}
+		_self.n2 = at + 1
+	}
+
+	/** Appends line `i` of the current table to the new table. */
+	@pub
+	@throws
+	func outLine(_self: ref some mut self, i: mut u64) void{
+		?catch(e0){ throw e0 }
+		? _self.outPush(_self, _self.lineStart(_self, i), _self.lineEnd(_self, i))
+	}
+
+	/** Appends a one-line literal to the new table. */
+	@pub
+	@throws
+	func outPushLit(_self: ref some mut self, lit: static imut string) void{
+		?catch(e0){ throw e0 }
+		_self.begin(_self)
+		? _self.addLit(_self, lit)
+		? _self.outBuilt(_self)
+	}
+
+	/** Appends the text built since `begin` to the new table. */
+	@pub
+	@throws
+	func outBuilt(_self: ref some mut self) void{
+		?catch(e0){ throw e0 }
+		? _self.outPush(_self, _self.cur, _self.used)
+	}
+
+	/** The new table replaces the current one. */
+	@pub
+	func outCommit(_self: ref some mut self) void{
+		let a = mut _self.ls
+		_self.ls = _self.ls2
+		_self.ls2 = a
+		let b = mut _self.le
+		_self.le = _self.le2
+		_self.le2 = b
+		_self.n = _self.n2
+	}
+
+	/** Cuts the NEW table to `m` lines. */
+	@pub
+	func outTruncate(_self: ref some mut self, m: mut u64) void{
+		if m < _self.n2{
+			_self.n2 = m
+		}
+	}
+
+	/** Cuts the table to `m` lines. */
+	@pub
+	func truncate(_self: ref some mut self, m: mut u64) void{
+		if m < _self.n{
+			_self.n = m
+		}
+	}
+
+	/** Remembers the range of line `i` in scratch slot `slot` (0..63), so a pass can move lines around in place. */
+	@pub
+	func stash(_self: ref some mut self, slot: mut u64, i: mut u64) void{
+		let a = mut _self.lineStart(_self, i)
+		let b = mut _self.lineEnd(_self, i)
+		let x = mut (slot * 2)
+		let y = mut (x + 1)
+		match x into _self.tmp{
+			_self.tmp[x] = a
+		}
+		match y into _self.tmp{
+			_self.tmp[y] = b
+		}
+	}
+
+	/** Points line `to` at the range remembered in `slot`. */
+	@pub
+	func unstash(_self: ref some mut self, slot: mut u64, to: mut u64) void{
+		let x = mut (slot * 2)
+		let y = mut (x + 1)
+		let a = mut 0
+		let b = mut 0
+		match x in _self.tmp{
+			a = _self.tmp[x]
+		}
+		match y in _self.tmp{
+			b = _self.tmp[y]
+		}
+		_self.setRange(_self, to, a, b)
+	}
+
+	// ---- a small plan list (line, token mask) for the window passes; lives in tmp[32..127] ----
+
+	@pub
+	func planClear(_self: ref some mut self) void{
+		match 31 into _self.tmp{
+			_self.tmp[31] = 0
+		}
+	}
+
+	@pub
+	func planCount(_self: ref some imut self) mut u64{
+		match 31 in _self.tmp{
+			return _self.tmp[31]
+		}
+		return 0
+	}
+
+	@pub
+	func planAdd(_self: ref some mut self, line: mut u64, mask: mut u64) void{
+		let c = mut _self.planCount(_self)
+		let x = mut (32 + c * 2)
+		let y = mut (x + 1)
+		match x into _self.tmp{
+			_self.tmp[x] = line
+		}
+		match y into _self.tmp{
+			_self.tmp[y] = mask
+		}
+		match 31 into _self.tmp{
+			_self.tmp[31] = c + 1
+		}
+	}
+
+	@pub
+	func planLine(_self: ref some imut self, e: mut u64) mut u64{
+		let x = mut (32 + e * 2)
+		match x in _self.tmp{
+			return _self.tmp[x]
+		}
+		return 0
+	}
+
+	@pub
+	func planMask(_self: ref some imut self, e: mut u64) mut u64{
+		let y = mut (33 + e * 2)
+		match y in _self.tmp{
+			return _self.tmp[y]
+		}
+		return 0
+	}
+
+	/** Makes line `to` the same range as line `from`. */
+	@pub
+	func copyLine(_self: ref some mut self, from: mut u64, to: mut u64) void{
+		let a = mut _self.lineStart(_self, from)
+		let b = mut _self.lineEnd(_self, from)
+		_self.setRange(_self, to, a, b)
+	}
+
+	/** Marks line `i` deleted (a pass that deletes lines in a window scan calls `compactGone` at its end). */
+	@pub
+	func kill(_self: ref some mut self, i: mut u64) void{
+		match i in _self.le{
+			let v = mut bits_or(_self.le[i], 4611686018427387904)
+			match i into _self.le{
+				_self.le[i] = v
+			}
+		}
+	}
+
+	@pub
+	func isGone(_self: ref some imut self, i: mut u64) mut bool{
+		match i in _self.le{
+			return bits_and(_self.le[i], 4611686018427387904) != 0
+		}
+		return false
+	}
+
+	/** Removes the lines marked with `kill`, keeping the order. */
+	@pub
+	func compactGone(_self: ref some mut self) void{
+		let w = mut 0
+		let total = mut _self.n
+		for r in 0..total{
+			if _self.isGone(_self, r) == false{
+				if w != r{
+					_self.copyLine(_self, r, w)
+				}
+				w += 1
+			}
+		}
+		_self.n = w
+	}
+
+	// ---- reading line i in place ----
+
+	@pub
+	func len(_self: ref some imut self, i: mut u64) mut u64{
+		return _self.lineEnd(_self, i) - _self.lineStart(_self, i)
+	}
+
+	@pub
+	func count(_self: ref some imut self, i: mut u64) mut u64{
+		return Ln.count(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i))
+	}
+
+	@pub
+	func opEq(_self: ref some imut self, i: mut u64, lit: static imut string) mut bool{
+		return Ln.opEq(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), lit)
+	}
+
+	@pub
+	func eqLit(_self: ref some imut self, i: mut u64, k: mut u64, lit: static imut string) mut bool{
+		return Ln.eqLit(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k, lit)
+	}
+
+	@pub
+	func startsWith(_self: ref some imut self, i: mut u64, k: mut u64, lit: static imut string) mut bool{
+		return Ln.startsWith(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k, lit)
+	}
+
+	@pub
+	func numTok(_self: ref some imut self, i: mut u64, k: mut u64) mut s64{
+		return Ln.numTok(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k)
+	}
+
+	/** Some token from token `fromTok` on of line `j` has the text of the `w` characters at `a`. */
+	@pub
+	func mentionsRange(_self: ref some imut self, j: mut u64, a: mut u64, w: mut u64, fromTok: mut u64) mut bool{
+		let s = mut _self.lineStart(_self, j)
+		let e = mut _self.lineEnd(_self, j)
+		let x = mut s
+		let idx = mut 0
+		let guard = mut (e + 1)
+		for st in 0..guard{
+			if x >= e{
+				break
+			}
+			if _self.buf.charAt(_self.buf, x) == ' '{
+				x += 1
+				continue
+			}
+			let q = mut Ln.tokEnd(_self.buf, x, e)
+			if idx >= fromTok &&then q - x == w{
+				let same = mut true
+				for d in 0..w{
+					if _self.buf.charAt(_self.buf, x + d) != _self.buf.charAt(_self.buf, a + d){
+						same = false
+						break
+					}
+				}
+				if same{
+					return true
+				}
+			}
+			idx += 1
+			x = q
+		}
+		return false
+	}
+
+	/** Line `j` (tokens 1 on) mentions the token `k` of line `i`. */
+	@pub
+	func mentions(_self: ref some imut self, j: mut u64, i: mut u64, k: mut u64) mut bool{
+		let p = mut _self.tokPos(_self, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(_self.buf, a, _self.lineEnd(_self, i))
+		return _self.mentionsRange(_self, j, a, q - a, 1)
+	}
+
+	/** Java `Long.decode` of token `k` of line `i` after its first character (the `#`): the value; whether it parsed is in `decodeOk`. */
+	@pub
+	func decodeImm(_self: ref some mut self, i: mut u64, k: mut u64) mut s64{
+		match 100 into _self.tmp{ _self.tmp[100] = 0 }
+		let p = mut _self.tokPos(_self, i, k)
+		if p < 0{
+			return 0
+		}
+		let a = mut wrap:<u64>(p)
+		let e = mut _self.lineEnd(_self, i)
+		let q = mut Ln.tokEnd(_self.buf, a, e)
+		let x = mut (a + 1)
+		if x >= q{
+			return 0
+		}
+		let neg = mut false
+		let c0 = mut _self.buf.charAt(_self.buf, x)
+		if c0 == '-'{
+			neg = true
+			x += 1
+		} else if c0 == '+'{
+			x += 1
+		}
+		let radix = mut 10
+		if x + 1 < q &&then _self.buf.charAt(_self.buf, x) == '0' &&then (_self.buf.charAt(_self.buf, x + 1) == 'x' || _self.buf.charAt(_self.buf, x + 1) == 'X'){
+			x += 2
+			radix = 16
+		} else if x < q &&then _self.buf.charAt(_self.buf, x) == '#'{
+			x += 1
+			radix = 16
+		} else if x < q &&then _self.buf.charAt(_self.buf, x) == '0' &&then x + 1 < q{
+			x += 1
+			radix = 8
+		}
+		if x >= q{
+			return 0
+		}
+		let limit = mut 9223372036854775807
+		if neg{
+			limit = 9223372036854775808
+		}
+		let cut = mut 0
+		if radix == 10{
+			cut = limit / 10
+		} else if radix == 16{
+			cut = limit / 16
+		} else {
+			cut = limit / 8
+		}
+		let rem = mut (limit - cut * radix)
+		let acc = mut 0
+		for y in x..q{
+			let c = mut _self.buf.charAt(_self.buf, y)
+			let dv = mut 99
+			if c >= '0' &&then c <= '9'{
+				dv = String.charCode(c) - 48
+			} else if c >= 'a' &&then c <= 'f'{
+				dv = String.charCode(c) - 87
+			} else if c >= 'A' &&then c <= 'F'{
+				dv = String.charCode(c) - 55
+			}
+			if dv >= radix{
+				return 0
+			}
+			if acc > cut{
+				return 0
+			}
+			if acc == cut &&then dv > rem{
+				return 0
+			}
+			acc = acc * radix + dv
+		}
+		match 100 into _self.tmp{ _self.tmp[100] = 1 }
+		if neg{
+			if acc == 9223372036854775808{
+				return wrap:<s64>(acc)
+			}
+			return 0 - wrap:<s64>(acc)
+		}
+		return wrap:<s64>(acc)
+	}
+
+	@pub
+	func decodeOk(_self: ref some imut self) mut bool{
+		match 100 in _self.tmp{
+			return _self.tmp[100] == 1
+		}
+		return false
+	}
+
+	/** Token `k` of line `i` equals token `m` of line `j`. */
+	@pub
+	func tokEq(_self: ref some imut self, i: mut u64, k: mut u64, j: mut u64, m: mut u64) mut bool{
+		return Ln.tokEq(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k, _self.lineStart(_self, j), _self.lineEnd(_self, j), m)
+	}
+
+	/** Absolute offset of token `k` of line `i`, -1 if absent. */
+	@pub
+	func tokPos(_self: ref some imut self, i: mut u64, k: mut u64) mut s64{
+		return Ln.start(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k)
+	}
+
+	/** Token `k` of line `i` after skipping `skip` characters, as a signed decimal; the sentinel -4611686018427387904 if absent or not one. */
+	@pub
+	func signedTok(_self: ref some imut self, i: mut u64, k: mut u64, skip: mut u64) mut s64{
+		let p = mut _self.tokPos(_self, i, k)
+		if p < 0{
+			return -4611686018427387904
+		}
+		return Ln.signedTok(_self.buf, wrap:<u64>(p), _self.lineEnd(_self, i), skip)
+	}
+
+	/** The token at absolute offset `p` of line `i` is exactly `lit`. */
+	@pub
+	func tokIsAt(_self: ref some imut self, p: mut u64, i: mut u64, lit: static imut string) mut bool{
+		return Ln.tokIs(_self.buf, p, _self.lineEnd(_self, i), lit)
+	}
+
+	/** Token `k` of line `i` starts with the character `c` (false if absent). */
+	@pub
+	func tokStartsCh(_self: ref some imut self, i: mut u64, k: mut u64, c: mut char) mut bool{
+		let p = mut Ln.start(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k)
+		if p < 0{
+			return false
+		}
+		return _self.buf.charAt(_self.buf, wrap:<u64>(p)) == c
+	}
+
+	/** Token `k` of line `i` is exactly `<token m of line j>` followed by `suffix` (one char). */
+	@pub
+	func tokIsOtherPlus(_self: ref some imut self, i: mut u64, k: mut u64, j: mut u64, m: mut u64, suffix: mut char) mut bool{
+		let a = mut Ln.start(_self.buf, _self.lineStart(_self, i), _self.lineEnd(_self, i), k)
+		let c = mut Ln.start(_self.buf, _self.lineStart(_self, j), _self.lineEnd(_self, j), m)
+		if a < 0 || c < 0{
+			return false
+		}
+		let ei = mut _self.lineEnd(_self, i)
+		let ej = mut _self.lineEnd(_self, j)
+		let pa = mut wrap:<u64>(a)
+		let pc = mut wrap:<u64>(c)
+		let qa = mut Ln.tokEnd(_self.buf, pa, ei)
+		let qc = mut Ln.tokEnd(_self.buf, pc, ej)
+		if qa - pa != qc - pc + 1{
+			return false
+		}
+		let w = mut (qc - pc)
+		for d in 0..w{
+			if _self.buf.charAt(_self.buf, pa + d) != _self.buf.charAt(_self.buf, pc + d){
+				return false
+			}
+		}
+		return _self.buf.charAt(_self.buf, pa + w) == suffix
+	}
+
+	// ---- building new text at the end of the buffer ----
+
+	/** Makes room for `extra` more characters. */
+	@pub
+	@throws
+	func reserve(_self: ref some mut self, extra: mut u64) void{
+		?catch(e0){ throw e0 }
+		let cap = mut _self.buf.length(_self.buf)
+		let need = mut (_self.used + extra)
+		if need > cap{
+			let nc = mut (cap * 2)
+			if nc < need{
+				nc = need + 4096
+			}
+			let sp = mut ' '
+			let g = mut ? resize(_self.buf.chars.backing, nc, sp)
+			_self.buf.chars.backing = g
+		}
+	}
+
+	/** Starts a new line at the end of the buffer. */
+	@pub
+	func begin(_self: ref some mut self) void{
+		_self.cur = _self.used
+	}
+
+	/** Appends the separating space unless this is the first token of the line being built. */
+	@throws
+	func sep(_self: ref some mut self) void{
+		?catch(e0){ throw e0 }
+		if _self.used > _self.cur{
+			? _self.reserve(_self, 1)
+			_self.buf.setCharAt(_self.buf, _self.used, ' ')
+			_self.used += 1
+		}
+	}
+
+	/** Appends token `k` of line `i` to the line being built. */
+	@pub
+	@throws
+	func addTok(_self: ref some mut self, i: mut u64, k: mut u64) void{
+		?catch(e0){ throw e0 }
+		let s = mut _self.lineStart(_self, i)
+		let e = mut _self.lineEnd(_self, i)
+		let p = mut Ln.start(_self.buf, s, e, k)
+		if p < 0{
+			return
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(_self.buf, a, e)
+		let w = mut (z - a)
+		? _self.sep(_self)
+		? _self.reserve(_self, w)
+		let u = mut _self.used
+		for d in 0..w{
+			_self.buf.setCharAt(_self.buf, u + d, _self.buf.charAt(_self.buf, a + d))
+		}
+		_self.used = u + w
+	}
+
+	/** Appends the characters [a, z) of the buffer as one token of the line being built. */
+	@pub
+	@throws
+	func addRange(_self: ref some mut self, a: mut u64, z: mut u64) void{
+		?catch(e0){ throw e0 }
+		let w = mut (z - a)
+		? _self.sep(_self)
+		? _self.reserve(_self, w)
+		let u = mut _self.used
+		for d in 0..w{
+			_self.buf.setCharAt(_self.buf, u + d, _self.buf.charAt(_self.buf, a + d))
+		}
+		_self.used = u + w
+	}
+
+	/** Appends the characters [a, z) of the buffer to the token just built (no separator). */
+	@pub
+	@throws
+	func glueRange(_self: ref some mut self, a: mut u64, z: mut u64) void{
+		?catch(e0){ throw e0 }
+		let w = mut (z - a)
+		? _self.reserve(_self, w)
+		let u = mut _self.used
+		for d in 0..w{
+			_self.buf.setCharAt(_self.buf, u + d, _self.buf.charAt(_self.buf, a + d))
+		}
+		_self.used = u + w
+	}
+
+	/** Appends token `k` of the text [s, e) (not necessarily a line of the table) to the line being built. */
+	@pub
+	@throws
+	func addTokOf(_self: ref some mut self, s: mut u64, e: mut u64, k: mut u64) void{
+		?catch(e0){ throw e0 }
+		let p = mut Ln.start(_self.buf, s, e, k)
+		if p < 0{
+			return
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(_self.buf, a, e)
+		? _self.addRange(_self, a, z)
+	}
+
+	/** Appends all tokens of line `i`, with token `k` replaced by token `m` of line `j`. */
+	@pub
+	@throws
+	func addLineReplacing(_self: ref some mut self, i: mut u64, k: mut u64, j: mut u64, m: mut u64) void{
+		?catch(e0){ throw e0 }
+		let c = mut _self.count(_self, i)
+		for t in 0..c{
+			if t == k{
+				? _self.addTok(_self, j, m)
+			} else {
+				? _self.addTok(_self, i, t)
+			}
+		}
+	}
+
+	/** Appends all tokens of line `i` from token `k` on. */
+	@pub
+	@throws
+	func addTokensFrom(_self: ref some mut self, i: mut u64, k: mut u64) void{
+		?catch(e0){ throw e0 }
+		let s = mut _self.lineStart(_self, i)
+		let e = mut _self.lineEnd(_self, i)
+		let p = mut Ln.start(_self.buf, s, e, k)
+		if p < 0{
+			return
+		}
+		let a = mut wrap:<u64>(p)
+		let w = mut (e - a)
+		? _self.sep(_self)
+		? _self.reserve(_self, w)
+		let u = mut _self.used
+		for d in 0..w{
+			_self.buf.setCharAt(_self.buf, u + d, _self.buf.charAt(_self.buf, a + d))
+		}
+		_self.used = u + w
+	}
+
+	/** Appends a literal (one or more tokens separated by single spaces, under 256 bytes) to the line being built. */
+	@pub
+	@throws
+	func addLit(_self: ref some mut self, lit: static imut string) void{
+		?catch(e0){ throw e0 }
+		? _self.sep(_self)
+		? _self.reserve(_self, 256)
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		let u = mut _self.used
+		let w = mut 0
+		for step in 0..256{
+			let q = mut (lp + w)
+			let lc = mut '\0'
+			unsafe memcopy raw{
+				memcopy(raw lc, mut 1, q)
+			}
+			if lc == '\0'{
+				break
+			}
+			_self.buf.setCharAt(_self.buf, u + w, lc)
+			w += 1
+		}
+		_self.used = u + w
+	}
+
+	@pub
+	static func dig(d: mut u64) mut char{
+		if d == 0{ return '0' }
+		if d == 1{ return '1' }
+		if d == 2{ return '2' }
+		if d == 3{ return '3' }
+		if d == 4{ return '4' }
+		if d == 5{ return '5' }
+		if d == 6{ return '6' }
+		if d == 7{ return '7' }
+		if d == 8{ return '8' }
+		return '9'
+	}
+
+	/** Appends the decimal text of `v` as a token. */
+	@pub
+	@throws
+	func addS64(_self: ref some mut self, v: mut s64) void{
+		?catch(e0){ throw e0 }
+		? _self.sep(_self)
+		? _self.putS64(_self, v)
+	}
+
+	/** Appends `+` and the decimal text of `v` to the token just built (no separator). */
+	@pub
+	@throws
+	func gluePlusS64(_self: ref some mut self, v: mut s64) void{
+		?catch(e0){ throw e0 }
+		? _self.reserve(_self, 1)
+		_self.buf.setCharAt(_self.buf, _self.used, '+')
+		_self.used += 1
+		? _self.putS64(_self, v)
+	}
+
+	/** Appends the decimal text of `v` to the token just built (no separator). */
+	@pub
+	@throws
+	func glueS64(_self: ref some mut self, v: mut s64) void{
+		?catch(e0){ throw e0 }
+		? _self.putS64(_self, v)
+	}
+
+	/** Appends one character to the token just built (no separator). */
+	@pub
+	@throws
+	func glueCh(_self: ref some mut self, c: mut char) void{
+		?catch(e0){ throw e0 }
+		? _self.reserve(_self, 1)
+		_self.buf.setCharAt(_self.buf, _self.used, c)
+		_self.used += 1
+	}
+
+	/** Appends a literal to the token just built (no separator). */
+	@pub
+	@throws
+	func glueLit(_self: ref some mut self, lit: static imut string) void{
+		?catch(e0){ throw e0 }
+		? _self.reserve(_self, 256)
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		let u = mut _self.used
+		let w = mut 0
+		for step in 0..256{
+			let q = mut (lp + w)
+			let lc = mut '\0'
+			unsafe memcopy raw{
+				memcopy(raw lc, mut 1, q)
+			}
+			if lc == '\0'{
+				break
+			}
+			_self.buf.setCharAt(_self.buf, u + w, lc)
+			w += 1
+		}
+		_self.used = u + w
+	}
+
+	/** Removes line `idx` of the NEW table (the later lines move up). */
+	@pub
+	func outRemoveAt(_self: ref some mut self, idx: mut u64) void{
+		let m = mut _self.n2
+		if idx >= m{
+			return
+		}
+		let lim = mut (m - 1)
+		for q in idx..lim{
+			let q1 = mut (q + 1)
+			let a = mut 0
+			let b = mut 0
+			match q1 in _self.ls2{ a = _self.ls2[q1] }
+			match q1 in _self.le2{ b = _self.le2[q1] }
+			match q into _self.ls2{ _self.ls2[q] = a }
+			match q into _self.le2{ _self.le2[q] = b }
+		}
+		_self.n2 = lim
+	}
+
+	/** The last `t` lines of the NEW table move to position `at` (the lines from `at` on move down). */
+	@pub
+	@throws
+	func outRotateTail(_self: ref some mut self, at: mut u64, t: mut u64) void{
+		?catch(e0){ throw e0 }
+		let m = mut _self.n2
+		if t == 0 || at + t > m{
+			return
+		}
+		let span = mut (m - at)
+		let keep = mut (span - t)
+		// copy the tail aside, shift the middle up, put the tail first
+		let tmpS = mut ? dyn:<u64>([])
+		let tmpE = mut ? dyn:<u64>([])
+		tmpS = ? resize(tmpS, t, 0)
+		tmpE = ? resize(tmpE, t, 0)
+		let tailStart = mut (m - t)
+		for q in 0..t{
+			let src = mut (tailStart + q)
+			let a = mut 0
+			let b = mut 0
+			match src in _self.ls2{ a = _self.ls2[src] }
+			match src in _self.le2{ b = _self.le2[src] }
+			match q into tmpS{ tmpS[q] = a }
+			match q into tmpE{ tmpE[q] = b }
+		}
+		for r in 0..keep{
+			let src = mut (tailStart - 1 - r)
+			let dst = mut (m - 1 - r)
+			let a = mut 0
+			let b = mut 0
+			match src in _self.ls2{ a = _self.ls2[src] }
+			match src in _self.le2{ b = _self.le2[src] }
+			match dst into _self.ls2{ _self.ls2[dst] = a }
+			match dst into _self.le2{ _self.le2[dst] = b }
+		}
+		for q in 0..t{
+			let dst = mut (at + q)
+			let a = mut 0
+			let b = mut 0
+			match q in tmpS{ a = tmpS[q] }
+			match q in tmpE{ b = tmpE[q] }
+			match dst into _self.ls2{ _self.ls2[dst] = a }
+			match dst into _self.le2{ _self.le2[dst] = b }
+		}
+	}
+
+	@throws
+	func putS64(_self: ref some mut self, v: mut s64) void{
+		?catch(e0){ throw e0 }
+		? _self.reserve(_self, 24)
+		let neg = mut (v < 0)
+		let m = mut v
+		if neg{
+			m = 0 - v
+		}
+		let digits = mut 1
+		let t = mut m
+		for q in 0..20{
+			if t >= 10{
+				t = t / 10
+				digits += 1
+			}
+		}
+		let total = mut wrap:<u64>(digits)
+		let u = mut _self.used
+		let start = mut u
+		if neg{
+			_self.buf.setCharAt(_self.buf, u, '-')
+			start = u + 1
+		}
+		let x = mut m
+		let pos = mut (start + total)
+		for q in 0..total{
+			pos -= 1
+			let dg = mut (x % 10)
+			_self.buf.setCharAt(_self.buf, pos, Prog.dig(wrap:<u64>(dg)))
+			x = x / 10
+		}
+		_self.used = start + total
+	}
+
+	/** Line `i` becomes the text built since `begin`. */
+	@pub
+	func setBuilt(_self: ref some mut self, i: mut u64) void{
+		_self.setRange(_self, i, _self.cur, _self.used)
+	}
+
+	/** Appends the built text as a new line. */
+	@pub
+	@throws
+	func pushBuilt(_self: ref some mut self) void{
+		?catch(e0){ throw e0 }
+		? _self.pushRange(_self, _self.cur, _self.used)
+	}
+
+	// ---- text in / out ----
+
+	/** Java `Files.readAllLines` split (\n, \r\n or \r end a line; no empty last line); every line is normalized into the buffer (BytecodeParser tokenization: whitespace separates tokens, a "..." string and a 'c' char literal are one token). */
+	@pub
+	@throws
+	static func parse(text: ref some imut String) owns some mut Prog{
+		?catch(e0){ throw e0 }
+		let tl = mut text.length(text)
+		let nl = mut 2
+		for x in 0..tl{
+			let c = mut text.charAt(text, x)
+			if c == '\n' || c == '\r'{
+				nl += 1
+			}
+		}
+		let slack = mut (tl / 8 + 4096)
+		let p = mut ? new Prog(tl + slack, nl)
+		let a = mut 0
+		let i = mut 0
+		let limit = mut (tl + 1)
+		for step in 0..limit{
+			if i >= tl{
+				break
+			}
+			let c = mut text.charAt(text, i)
+			if c == '\n' || c == '\r'{
+				? p.ingest(p, text, a, i)
+				if c == '\r' &&then i + 1 < tl &&then text.charAt(text, i + 1) == '\n'{
+					i += 1
+				}
+				i += 1
+				a = i
+			} else {
+				i += 1
+			}
+		}
+		if a < tl{
+			? p.ingest(p, text, a, tl)
+		}
+		return p
+	}
+
+	/** Normalizes the source range [a, z) of `text` onto the end of the buffer as one new line. */
+	@throws
+	func ingest(_self: ref some mut self, text: ref some imut String, a: mut u64, z: mut u64) void{
+		?catch(e0){ throw e0 }
+		let u = mut _self.used
+		// fast path: already normal (single spaces, no other whitespace, no quote that could hold a space or char literal)
+		let normal = mut true
+		let prevSp = mut true
+		for x in a..z{
+			let c = mut text.charAt(text, x)
+			if c == ' '{
+				if prevSp{
+					normal = false
+					break
+				}
+				prevSp = true
+			} else {
+				prevSp = false
+				if c == '"' || c == '\'' || Ln.isWs(c){
+					normal = false
+					break
+				}
+			}
+		}
+		if normal &&then z > a &&then prevSp{
+			normal = false
+		}
+		if normal{
+			let w = mut (z - a)
+			? _self.reserve(_self, w)
+			for d in 0..w{
+				_self.buf.setCharAt(_self.buf, u + d, text.charAt(text, a + d))
+			}
+			_self.used = u + w
+			? _self.pushRange(_self, u, u + w)
+			return
+		}
+		// general path (a port of the BytecodeParser tokenizer)
+		_self.cur = u
+		let i = mut a
+		let guard = mut (z + 1)
+		for step in 0..guard{
+			if i >= z{
+				break
+			}
+			let c = mut text.charAt(text, i)
+			if Ln.isWs(c){
+				i += 1
+				continue
+			}
+			let st = mut i
+			let stop = mut i
+			if c == '"'{
+				i += 1
+				for k in 0..z{
+					if i >= z{
+						break
+					}
+					if text.charAt(text, i) == '"'{
+						break
+					}
+					if text.charAt(text, i) == '\\' &&then i + 1 < z{
+						i += 1
+					}
+					i += 1
+				}
+				if i < z{
+					i += 1
+				}
+				stop = i
+				if stop > z{
+					stop = z
+				}
+			} else {
+				let end = mut 0
+				let found = mut false
+				if c == '\''{
+					if i + 3 < z &&then text.charAt(text, i + 1) == '\\' &&then text.charAt(text, i + 3) == '\''{
+						end = i + 4
+						found = true
+					} else if i + 2 < z &&then text.charAt(text, i + 2) == '\''{
+						end = i + 3
+						found = true
+					}
+				}
+				let accept = mut false
+				if found{
+					if end == z{
+						accept = true
+					} else {
+						accept = Ln.isWs(text.charAt(text, end))
+					}
+				}
+				if accept{
+					i = end
+					stop = end
+				} else {
+					for k in 0..z{
+						if i >= z{
+							break
+						}
+						if Ln.isWs(text.charAt(text, i)){
+							break
+						}
+						i += 1
+					}
+					stop = i
+				}
+			}
+			? _self.sep(_self)
+			let w = mut (stop - st)
+			? _self.reserve(_self, w)
+			let u2 = mut _self.used
+			for d in 0..w{
+				_self.buf.setCharAt(_self.buf, u2 + d, text.charAt(text, st + d))
+			}
+			_self.used = u2 + w
+		}
+		? _self.pushRange(_self, u, _self.used)
+	}
+
+	/** Every line followed by '\n' (BytecodeSerializer). */
+	@pub
+	@throws
+	func serialize(_self: ref some imut self) owns some mut String{
+		?catch(e0){ throw e0 }
+		let total = mut 0
+		let n = mut _self.n
+		for i in 0..n{
+			total += _self.len(_self, i) + 1
+		}
+		let out = mut ? new String()
+		if total > 0{
+			let sp = mut ' '
+			let g = mut ? resize(out.chars.backing, total, sp)
+			out.chars.backing = g
+		}
+		let w = mut 0
+		for i in 0..n{
+			let s = mut _self.lineStart(_self, i)
+			let e = mut _self.lineEnd(_self, i)
+			let m = mut (e - s)
+			for d in 0..m{
+				out.setCharAt(out, w + d, _self.buf.charAt(_self.buf, s + d))
+			}
+			w += m
+			out.setCharAt(out, w, '\n')
+			w += 1
+		}
+		return out
+	}
+}

@@ -1,0 +1,319 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+/** One calling convention of compiler.config: only what the passes read (register counts, shadow space, shared argument position). */
+@pub
+struct Convention{@pub{
+	name: owns some mut String
+	intCount: mut u64
+	floatCount: mut u64
+	shadowStack: mut s64
+	shared: mut bool
+}}
+
+impl constructor for Convention(name: owns some mut String) self{
+	return Convention{name= name, intCount= 0, floatCount= 0, shadowStack= 0, shared= false}
+}
+
+/** compiler.config (port of CompilerConfig): the stage switches and the calling conventions. */
+@pub
+struct Config{@pub{
+	deferredOperands: mut bool
+	variablesInRegisters: mut bool
+	floatVariablesInRegisters: mut bool
+	floatTemporariesInRegisters: mut bool
+	hoistArrayBases: mut bool
+	variablesInAllocFunctions: mut bool
+	fuseLengthCompare: mut bool
+	variablesInArgRegisters: mut bool
+	conditionalMove: mut bool
+	copyForward: mut bool
+	loopRotation: mut bool
+	conventions: owns some mut ObjectList<Convention>
+	defaults: owns some mut ObjectList<String>
+}}
+
+@throws
+impl constructor for Config() self{
+	?catch(e){ throw e }
+	let list = mut ? new ObjectList:<Convention>()
+	let dl = mut ? new ObjectList:<String>()
+	return Config{deferredOperands= false, variablesInRegisters= false, floatVariablesInRegisters= false, floatTemporariesInRegisters= false, hoistArrayBases= false, variablesInAllocFunctions= false, fuseLengthCompare= false, variablesInArgRegisters= false, conditionalMove= false, copyForward= false, loopRotation= false, conventions= list, defaults= dl}
+}
+
+@pub
+impl Config{
+	/** Index of the convention named `name`, -1 if none. */
+	@pub
+	func indexOfName(_self: ref some imut self, name: ref some imut String) mut s64{
+		let n = mut _self.conventions.size(_self.conventions)
+		for i in 0..n{
+			let c = mut _self.conventions.get(_self.conventions, i)
+			match Some(c){
+				if c.name.equals(c.name, name){
+					return wrap:<s64>(i)
+				}
+			}
+		}
+		return -1
+	}
+
+	/** Index of the default convention (-1 when unset or unknown). */
+	@pub
+	func defaultIndex(_self: ref some imut self) mut s64{
+		let n = mut _self.defaults.size(_self.defaults)
+		if n == 0{
+			return -1
+		}
+		let d = mut _self.defaults.get(_self.defaults, n - 1)
+		match Some(d){
+			return _self.indexOfName(_self, d)
+		}
+		return -1
+	}
+
+	/** Strips a surrounding "..." pair after trimming. */
+	@throws
+	static func unquote(text: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let t = mut ? text.trim(text)
+		let n = mut t.length(t)
+		if n >= 2 &&then t.charAt(t, 0) == '"' &&then t.charAt(t, n - 1) == '"'{
+			let inner = mut ? t.sub(t, 1, n - 1)
+			return inner
+		}
+		return t
+	}
+
+	/** The (trimmed) text after the first ':'. */
+	@throws
+	static func after(t: ref some imut String, c: imut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? t.substring(t, c + 1)
+		let v = mut ? r.trim(r)
+		return v
+	}
+
+	/** 0 no match, 1 an accepted-and-ignored Optimizer key, 2..12 the LowerOrder switches. */
+	static func switchCode(t: ref some imut String) mut s32{
+		if t.startsWith(t, "loop-unrolling:") || t.startsWith(t, "loop-unroll-") || t.startsWith(t, "function-inlining:") || t.startsWith(t, "inline-max-") || t.startsWith(t, "constant-folding:") || t.startsWith(t, "variable-elision:"){
+			return 1
+		}
+		if t.startsWith(t, "variable-shifting:") || t.startsWith(t, "struct-unpacking:") || t.startsWith(t, "dead-control-flow-removal:") || t.startsWith(t, "dead-function-removal:") || t.startsWith(t, "unused-declaration-removal:") || t.startsWith(t, "variable-allocation-reordering:") || t.startsWith(t, "struct-member-reordering:"){
+			return 1
+		}
+		if t.startsWith(t, "deferred-operands:"){ return 2 }
+		if t.startsWith(t, "variables-in-alloc-functions:"){ return 3 }
+		if t.startsWith(t, "variables-in-arg-registers:"){ return 4 }
+		if t.startsWith(t, "loop-rotation:"){ return 5 }
+		if t.startsWith(t, "copy-forward:"){ return 6 }
+		if t.startsWith(t, "conditional-move:"){ return 7 }
+		if t.startsWith(t, "fuse-length-compare:"){ return 8 }
+		if t.startsWith(t, "hoist-array-bases:"){ return 9 }
+		if t.startsWith(t, "float-temporaries-in-registers:"){ return 10 }
+		if t.startsWith(t, "float-variables-in-registers:"){ return 11 }
+		if t.startsWith(t, "variables-in-registers:"){ return 12 }
+		return 0
+	}
+
+	/** Number of items of a bracketed list `[ a, b ]`. */
+	@throws
+	static func listCount(text: ref some imut String) mut u64{
+		?catch(e){ throw e }
+		let n = mut text.length(text)
+		if n < 2 || text.charAt(text, 0) != '[' || text.charAt(text, n - 1) != ']'{
+			throw "config error in 'compiler.config': expected a '[...]' list"
+		}
+		let inner = mut ? text.sub(text, 1, n - 1)
+		let it = mut ? inner.trim(inner)
+		let m = mut it.length(it)
+		if m == 0{
+			return 0
+		}
+		let cnt = mut 1
+		for i in 0..m{
+			if it.charAt(it, i) == ','{
+				cnt += 1
+			}
+		}
+		return cnt
+	}
+
+	static func setSwitch(cfg: ref some mut Config, code: mut s32, on: mut bool) void{
+		if code == 2{ cfg.deferredOperands = on }
+		if code == 3{ cfg.variablesInAllocFunctions = on }
+		if code == 4{ cfg.variablesInArgRegisters = on }
+		if code == 5{ cfg.loopRotation = on }
+		if code == 6{ cfg.copyForward = on }
+		if code == 7{ cfg.conditionalMove = on }
+		if code == 8{ cfg.fuseLengthCompare = on }
+		if code == 9{ cfg.hoistArrayBases = on }
+		if code == 10{ cfg.floatTemporariesInRegisters = on }
+		if code == 11{ cfg.floatVariablesInRegisters = on }
+		if code == 12{ cfg.variablesInRegisters = on }
+	}
+
+	/** Applies one `field: value` line to a convention. */
+	@throws
+	static func setField(cur: ref some mut Convention, key: ref some imut String, val: ref some imut String) void{
+		?catch(e){ throw e }
+		if key.equals(key, "argument-registers"){
+			cur.intCount = ? Config.listCount(val)
+		} else if key.equals(key, "argument-registers-float"){
+			cur.floatCount = ? Config.listCount(val)
+		} else if key.equals(key, "shadow-stack"){
+			cur.shadowStack = ? val.parseS64(val)
+		} else if key.equals(key, "shared-argument-position"){
+			if val.equals(val, "true"){
+				cur.shared = true
+			} else if val.equals(val, "false"){
+				cur.shared = false
+			} else{
+				throw "config error in 'compiler.config': 'shared-argument-position' expects true or false"
+			}
+		} else if key.equals(key, "cleanup") || key.equals(key, "return-register") || key.equals(key, "return-register-float") || key.equals(key, "alignment"){
+			cur.shared = cur.shared
+		} else{
+			throw "config error in 'compiler.config': unknown calling-convention field"
+		}
+	}
+
+	/** Java `CompilerConfig.parse`. */
+	@pub
+	@throws
+	static func parse(src: ref some imut String) owns some mut Config{
+		?catch(e){ throw e }
+		let content = mut ? src.sub(src, 0, src.length(src))
+		let cfg = mut ? new Config()
+		let total = mut content.length(content)
+		let pos = mut 0
+		let inConv = mut false
+		let convIndent = mut -1
+		let fieldIndent = mut -1
+		let cur = mut -1
+		let guard = mut (total + 1)
+		for step in 0..guard{
+			if pos >= total{
+				break
+			}
+			let nl = mut content.indexOf(content, '\n', pos)
+			let e0 = mut total
+			if nl >= 0{
+				e0 = wrap:<u64>(nl)
+			}
+			let s0 = mut pos
+			pos = e0 + 1
+			if e0 > s0 &&then content.charAt(content, e0 - 1) == '\r'{
+				e0 -= 1
+			}
+			let k = mut s0
+			let span = mut (e0 - s0)
+			for q in 0..span{
+				if k < e0 &&then (content.charAt(content, k) == ' ' || content.charAt(content, k) == '\t'){
+					k += 1
+				}
+			}
+			let indent = mut (k - s0)
+			if k < e0 &&then content.charAt(content, k) == '#'{
+				e0 = k
+			}
+			let seg = mut ? content.sub(content, s0, e0)
+			let t = mut ? seg.trim(seg)
+			if t.length(t) == 0{
+				continue
+			}
+			if inConv == false{
+				if indent != 0{
+					throw "config error in 'compiler.config': unexpected indentation before 'CallingConventions:'"
+				}
+				let code = mut Config.switchCode(t)
+				if code == 1{
+					continue
+				}
+				if code >= 2{
+					let c = mut t.indexOf(t, ':')
+					let v = mut ? Config.after(t, wrap:<u64>(c))
+					if v.equals(v, "on"){
+						Config.setSwitch(cfg, code, true)
+					} else if v.equals(v, "off"){
+						Config.setSwitch(cfg, code, false)
+					} else{
+						throw "config error in 'compiler.config': a switch must be 'on' or 'off'"
+					}
+					continue
+				}
+				if t.equals(t, "CallingConventions:") == false{
+					throw "config error in 'compiler.config': expected top-level key 'CallingConventions:'"
+				}
+				inConv = true
+				continue
+			}
+			if indent == 0{
+				throw "config error in 'compiler.config': unexpected top-level content after 'CallingConventions:'"
+			}
+			if convIndent == -1{
+				convIndent = wrap:<s64>(indent)
+			}
+			if wrap:<s64>(indent) == convIndent{
+				cur = -1
+				if t.startsWith(t, "default:"){
+					let v = mut ? Config.after(t, 7)
+					let dq = mut ? Config.unquote(v)
+					? cfg.defaults.add(cfg.defaults, dq)
+					continue
+				}
+				if t.endsWith(t, ":") == false{
+					throw "config error in 'compiler.config': expected a calling-convention name ('name:') or 'default: name'"
+				}
+				let nm0 = mut ? t.sub(t, 0, t.length(t) - 1)
+				let nm = mut ? nm0.trim(nm0)
+				if cfg.indexOfName(cfg, nm) >= 0{
+					throw "config error in 'compiler.config': calling convention is already declared"
+				}
+				let conv = mut ? new Convention(nm)
+				? cfg.conventions.add(cfg.conventions, conv)
+				cur = wrap:<s64>(cfg.conventions.size(cfg.conventions)) - 1
+				continue
+			}
+			if fieldIndent == -1{
+				fieldIndent = wrap:<s64>(indent)
+			}
+			if wrap:<s64>(indent) != fieldIndent{
+				throw "config error in 'compiler.config': inconsistent indentation"
+			}
+			if cur < 0{
+				throw "config error in 'compiler.config': a field must be indented under a calling-convention name"
+			}
+			let colon = mut t.indexOf(t, ':')
+			if colon < 0{
+				throw "config error in 'compiler.config': expected 'field: value'"
+			}
+			let key0 = mut ? t.sub(t, 0, wrap:<u64>(colon))
+			let key = mut ? key0.trim(key0)
+			let val = mut ? Config.after(t, wrap:<u64>(colon))
+			let c = mut cfg.conventions.get(cfg.conventions, wrap:<u64>(cur))
+			match Some(c){
+				? Config.setField(c, key, val)
+			}
+		}
+		if inConv == false{
+			throw "config error in 'compiler.config': missing top-level 'CallingConventions:' key"
+		}
+		if cfg.conventions.isEmpty(cfg.conventions){
+			throw "config error in 'compiler.config': 'CallingConventions:' declares no calling conventions"
+		}
+		if cfg.defaultIndex(cfg) < 0{
+			throw "config error in 'compiler.config': missing or unknown 'default:' calling convention"
+		}
+		let nconv = mut cfg.conventions.size(cfg.conventions)
+		for ci in 0..nconv{
+			let c = mut cfg.conventions.get(cfg.conventions, ci)
+			match Some(c){
+				if c.intCount == 0{
+					throw "config error in 'compiler.config': a calling convention has no 'argument-registers'"
+				}
+			}
+		}
+		return cfg
+	}
+}

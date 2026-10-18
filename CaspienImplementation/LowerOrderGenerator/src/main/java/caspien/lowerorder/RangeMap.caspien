@@ -1,0 +1,225 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Map from a text range of the program buffer (compared by content) to two words; open addressing, grows at half load. Keys stay valid because the buffer is append-only. */
+@pub
+struct RangeMap{@pub{
+	hs: owns some mut dynarray(mut u64)
+	ks: owns some mut dynarray(mut u64)
+	ke: owns some mut dynarray(mut u64)
+	v1: owns some mut dynarray(mut u64)
+	v2: owns some mut dynarray(mut u64)
+	used: owns some mut dynarray(mut u64)
+	cap: mut u64
+	count: mut u64
+	epoch: mut u64
+}}
+
+@throws
+impl constructor for RangeMap() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 64, 0)
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 64, 0)
+	let c = mut ? dyn:<u64>([])
+	c = ? resize(c, 64, 0)
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 64, 0)
+	let f = mut ? dyn:<u64>([])
+	f = ? resize(f, 64, 0)
+	let g = mut ? dyn:<u64>([])
+	g = ? resize(g, 64, 0)
+	return RangeMap{hs= a, ks= b, ke= c, v1= d, v2= f, used= g, cap= 64, count= 0, epoch= 1}
+}
+
+@pub
+impl RangeMap{
+	static func hashRange(prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		let h = mut 0xcbf29ce484222325
+		for q in a..z{
+			h = bits_xor(h, String.charCode(prog.buf.charAt(prog.buf, q)))
+			h = h * 0x100000001b3
+		}
+		return h
+	}
+
+	@pub
+	static func sameText(prog: ref some imut Prog, a: mut u64, z: mut u64, b: mut u64, y: mut u64) mut bool{
+		if z - a != y - b{
+			return false
+		}
+		let w = mut (z - a)
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, a + d) != prog.buf.charAt(prog.buf, b + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Slot of the key [a, z), or -1. */
+	func slotOf(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		let h = mut RangeMap.hashRange(prog, a, z)
+		let mask = mut (_self.cap - 1)
+		let p = mut bits_and(h, mask)
+		let lim = mut (mask + 1)
+		for step in 0..lim{
+			let u = mut 0
+			match p in _self.used{ u = _self.used[p] }
+			if u != _self.epoch{
+				return -1
+			}
+			let hh = mut 0
+			match p in _self.hs{ hh = _self.hs[p] }
+			if hh == h{
+				let ka = mut 0
+				let kz = mut 0
+				match p in _self.ks{ ka = _self.ks[p] }
+				match p in _self.ke{ kz = _self.ke[p] }
+				if RangeMap.sameText(prog, ka, kz, a, z){
+					return wrap:<s64>(p)
+				}
+			}
+			p = bits_and(p + 1, mask)
+		}
+		return -1
+	}
+
+	/** First value of the key, or -1 when absent. */
+	@pub
+	func get1(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		let s = mut _self.slotOf(_self, prog, a, z)
+		if s < 0{
+			return -1
+		}
+		let k = mut wrap:<u64>(s)
+		let v = mut 0
+		match k in _self.v1{ v = _self.v1[k] }
+		return wrap:<s64>(v)
+	}
+
+	@pub
+	func get2(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		let s = mut _self.slotOf(_self, prog, a, z)
+		if s < 0{
+			return 0
+		}
+		let k = mut wrap:<u64>(s)
+		let v = mut 0
+		match k in _self.v2{ v = _self.v2[k] }
+		return v
+	}
+
+	@pub
+	func has(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		return _self.slotOf(_self, prog, a, z) >= 0
+	}
+
+	@throws
+	func grow(_self: ref some mut self, prog: ref some imut Prog) void{
+		?catch(e){ throw e }
+		let oc = mut _self.cap
+		let nc = mut (oc * 2)
+		let oh = mut _self.hs
+		let ok = mut _self.ks
+		let oe = mut _self.ke
+		let o1 = mut _self.v1
+		let o2 = mut _self.v2
+		let ou = mut _self.used
+		let a = mut ? dyn:<u64>([])
+		a = ? resize(a, nc, 0)
+		let b = mut ? dyn:<u64>([])
+		b = ? resize(b, nc, 0)
+		let c = mut ? dyn:<u64>([])
+		c = ? resize(c, nc, 0)
+		let d = mut ? dyn:<u64>([])
+		d = ? resize(d, nc, 0)
+		let f = mut ? dyn:<u64>([])
+		f = ? resize(f, nc, 0)
+		let g = mut ? dyn:<u64>([])
+		g = ? resize(g, nc, 0)
+		let mask = mut (nc - 1)
+		for q in 0..oc{
+			let u = mut 0
+			match q in ou{ u = ou[q] }
+			if u == _self.epoch{
+				let hh = mut 0
+				let ka = mut 0
+				let kz = mut 0
+				let x1 = mut 0
+				let x2 = mut 0
+				match q in oh{ hh = oh[q] }
+				match q in ok{ ka = ok[q] }
+				match q in oe{ kz = oe[q] }
+				match q in o1{ x1 = o1[q] }
+				match q in o2{ x2 = o2[q] }
+				let p = mut bits_and(hh, mask)
+				for step in 0..nc{
+					let w = mut 0
+					match p in g{ w = g[p] }
+					if w != _self.epoch{
+						break
+					}
+					p = bits_and(p + 1, mask)
+				}
+				match p into a{ a[p] = hh }
+				match p into b{ b[p] = ka }
+				match p into c{ c[p] = kz }
+				match p into d{ d[p] = x1 }
+				match p into f{ f[p] = x2 }
+				match p into g{ g[p] = _self.epoch }
+			}
+		}
+		_self.hs = a
+		_self.ks = b
+		_self.ke = c
+		_self.v1 = d
+		_self.v2 = f
+		_self.used = g
+		_self.cap = nc
+	}
+
+	/** Forgets every entry (O(1): occupancy is tied to an epoch). */
+	@pub
+	func clear(_self: ref some mut self) void{
+		_self.epoch += 1
+		_self.count = 0
+	}
+
+	/** Sets (or replaces) the values of the key [a, z). */
+	@pub
+	@throws
+	func put(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64, x1: mut u64, x2: mut u64) void{
+		?catch(e){ throw e }
+		let s = mut _self.slotOf(_self, prog, a, z)
+		if s >= 0{
+			let k = mut wrap:<u64>(s)
+			match k into _self.v1{ _self.v1[k] = x1 }
+			match k into _self.v2{ _self.v2[k] = x2 }
+			return
+		}
+		if (_self.count + 1) * 2 > _self.cap{
+			? _self.grow(_self, prog)
+		}
+		let h = mut RangeMap.hashRange(prog, a, z)
+		let mask = mut (_self.cap - 1)
+		let p = mut bits_and(h, mask)
+		let cap = mut _self.cap
+		for step in 0..cap{
+			let u = mut 0
+			match p in _self.used{ u = _self.used[p] }
+			if u != _self.epoch{
+				break
+			}
+			p = bits_and(p + 1, mask)
+		}
+		match p into _self.hs{ _self.hs[p] = h }
+		match p into _self.ks{ _self.ks[p] = a }
+		match p into _self.ke{ _self.ke[p] = z }
+		match p into _self.v1{ _self.v1[p] = x1 }
+		match p into _self.v2{ _self.v2[p] = x2 }
+		match p into _self.used{ _self.used[p] = _self.epoch }
+		_self.count += 1
+	}
+}

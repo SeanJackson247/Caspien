@@ -1,0 +1,144 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Token text -> count. Keys are character ranges of the program buffer (no copy, no object per key); open addressing; the capacity is fixed at build time and must exceed the number of distinct keys. */
+@pub
+struct TokMap{@pub{
+	hashes: owns some mut dynarray(mut u64)
+	starts: owns some mut dynarray(mut u64)
+	lens: owns some mut dynarray(mut u64)
+	vals: owns some mut dynarray(mut u64)
+	used: owns some mut dynarray(mut u64)
+	mask: mut u64
+}}
+
+@throws
+impl constructor for TokMap(cap: mut u64) self{
+	?catch(e){ throw e }
+	let h = mut ? dyn:<u64>([])
+	h = ? resize(h, cap, 0)
+	let s = mut ? dyn:<u64>([])
+	s = ? resize(s, cap, 0)
+	let l = mut ? dyn:<u64>([])
+	l = ? resize(l, cap, 0)
+	let v = mut ? dyn:<u64>([])
+	v = ? resize(v, cap, 0)
+	let u = mut ? dyn:<u64>([])
+	u = ? resize(u, cap, 0)
+	return TokMap{hashes= h, starts= s, lens= l, vals= v, used= u, mask= cap - 1}
+}
+
+@pub
+impl TokMap{
+	/** A map with room for `keys` distinct keys. */
+	@pub
+	@throws
+	static func forKeys(keys: mut u64) owns some mut TokMap{
+		?catch(e){ throw e }
+		let cap = mut 64
+		for st in 0..40{
+			if cap < keys * 2{
+				cap = cap * 2
+			}
+		}
+		let m = mut ? new TokMap(cap)
+		return m
+	}
+
+	static func hashRange(prog: ref some imut Prog, a: mut u64, w: mut u64) mut u64{
+		let h = mut 0xcbf29ce484222325
+		for d in 0..w{
+			h = bits_xor(h, String.charCode(prog.buf.charAt(prog.buf, a + d)))
+			h = h * 0x100000001b3
+		}
+		return h
+	}
+
+	func sameKey(_self: ref some imut self, prog: ref some imut Prog, slot: mut u64, a: mut u64, w: mut u64) mut bool{
+		let sa = mut 0
+		let sw = mut 0
+		match slot in _self.starts{ sa = _self.starts[slot] }
+		match slot in _self.lens{ sw = _self.lens[slot] }
+		if sw != w{
+			return false
+		}
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, sa + d) != prog.buf.charAt(prog.buf, a + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Adds `delta` to the count of the key spelled by the `w` characters at `a`. */
+	@pub
+	func add(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, w: mut u64, delta: mut u64) void{
+		let h = mut TokMap.hashRange(prog, a, w)
+		let pos = mut bits_and(h, _self.mask)
+		let cap = mut (_self.mask + 1)
+		for st in 0..cap{
+			let u = mut 0
+			match pos in _self.used{ u = _self.used[pos] }
+			if u == 0{
+				match pos into _self.used{ _self.used[pos] = 1 }
+				match pos into _self.hashes{ _self.hashes[pos] = h }
+				match pos into _self.starts{ _self.starts[pos] = a }
+				match pos into _self.lens{ _self.lens[pos] = w }
+				match pos into _self.vals{ _self.vals[pos] = delta }
+				return
+			}
+			let hv = mut 0
+			match pos in _self.hashes{ hv = _self.hashes[pos] }
+			if hv == h &&then _self.sameKey(_self, prog, pos, a, w){
+				let old = mut 0
+				match pos in _self.vals{ old = _self.vals[pos] }
+				match pos into _self.vals{ _self.vals[pos] = old + delta }
+				return
+			}
+			pos = bits_and(pos + 1, _self.mask)
+		}
+	}
+
+	/** Count of token `k` of line `i` (0 when absent). */
+	@pub
+	func get(_self: ref some imut self, prog: ref some imut Prog, i: mut u64, k: mut u64) mut u64{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return 0
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		let w = mut (q - a)
+		let h = mut TokMap.hashRange(prog, a, w)
+		let pos = mut bits_and(h, _self.mask)
+		let cap = mut (_self.mask + 1)
+		for st in 0..cap{
+			let u = mut 0
+			match pos in _self.used{ u = _self.used[pos] }
+			if u == 0{
+				return 0
+			}
+			let hv = mut 0
+			match pos in _self.hashes{ hv = _self.hashes[pos] }
+			if hv == h &&then _self.sameKey(_self, prog, pos, a, w){
+				let v = mut 0
+				match pos in _self.vals{ v = _self.vals[pos] }
+				return v
+			}
+			pos = bits_and(pos + 1, _self.mask)
+		}
+		return 0
+	}
+
+	/** Adds `delta` for token `k` of line `i`. */
+	@pub
+	func addTok(_self: ref some mut self, prog: ref some imut Prog, i: mut u64, k: mut u64, delta: mut u64) void{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		_self.add(_self, prog, a, q - a, delta)
+	}
+}

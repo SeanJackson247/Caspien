@@ -1,0 +1,751 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/**
+ * Port of FloatTempPass (step 14, float-temporaries-in-registers): a float temp that is produced by a float operation and consumed only by float operations lives in an xmm register
+ * %yK. Detection works on the original text of each function, the rewrites are in-place line edits in chain order (as the Java does on its token lists), and the pass ends with
+ * coalesceIntoVariables over the whole program.
+ */
+@pub
+struct FloatTempPass{@pub{
+}}
+
+impl constructor for FloatTempPass() self{
+	return FloatTempPass{}
+}
+
+@pub
+struct FtWork{@pub{
+	kind: owns some mut dynarray(mut u64)
+	bf: owns some mut dynarray(mut u64)
+	ib: owns some mut dynarray(mut u64)
+	openS: owns some mut dynarray(mut u64)
+	cDef: owns some mut dynarray(mut u64)
+	cLast: owns some mut dynarray(mut u64)
+	cOk: owns some mut dynarray(mut u64)
+	cFl: owns some mut dynarray(mut u64)
+	cY: owns some mut dynarray(mut u64)
+	cUs: owns some mut dynarray(mut u64)
+	cNu: owns some mut dynarray(mut u64)
+	uJ: owns some mut dynarray(mut u64)
+	uK: owns some mut dynarray(mut u64)
+	nc: mut u64
+	nu: mut u64
+	capU: mut u64
+}}
+
+@throws
+impl constructor for FtWork() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<u64>([])
+	let d = mut ? dyn:<u64>([])
+	let e1 = mut ? dyn:<u64>([])
+	let f = mut ? dyn:<u64>([])
+	let g = mut ? dyn:<u64>([])
+	let h = mut ? dyn:<u64>([])
+	let i = mut ? dyn:<u64>([])
+	let j = mut ? dyn:<u64>([])
+	let k = mut ? dyn:<u64>([])
+	let l = mut ? dyn:<u64>([])
+	let m = mut ? dyn:<u64>([])
+	return FtWork{kind= a, bf= b, ib= c, openS= d, cDef= e1, cLast= f, cOk= g, cFl= h, cY= i, cUs= j, cNu= k, uJ= l, uK= m, nc= 0, nu= 0, capU= 0}
+}
+
+@pub
+impl FloatTempPass{
+	/** 1..23 = the register-form mnemonics the Java KNOWN_R set lists, 24 CC_START, 25 CC_END, 0 anything else. */
+	static func kindOf(prog: ref some imut Prog, i: mut u64) mut u64{
+		if prog.opEq(prog, i, "CC_START"){
+			return 24
+		}
+		if prog.opEq(prog, i, "CC_END"){
+			return 25
+		}
+		if prog.startsWith(prog, i, 0, "R_") == false{
+			return 0
+		}
+		if prog.opEq(prog, i, "R_MOV"){ return 1 }
+		if prog.opEq(prog, i, "R_LD"){ return 2 }
+		if prog.opEq(prog, i, "R_ST"){ return 3 }
+		if prog.opEq(prog, i, "R_LEA"){ return 4 }
+		if prog.opEq(prog, i, "R_BIN"){ return 5 }
+		if prog.opEq(prog, i, "R_UN"){ return 6 }
+		if prog.opEq(prog, i, "R_FBIN"){ return 7 }
+		if prog.opEq(prog, i, "R_FCMP"){ return 8 }
+		if prog.opEq(prog, i, "R_RMW"){ return 9 }
+		if prog.opEq(prog, i, "R_ARG"){ return 10 }
+		if prog.opEq(prog, i, "R_ARGA"){ return 11 }
+		if prog.opEq(prog, i, "R_FARG"){ return 12 }
+		if prog.opEq(prog, i, "R_RET"){ return 13 }
+		if prog.opEq(prog, i, "R_RETF"){ return 14 }
+		if prog.opEq(prog, i, "R_PUSH"){ return 15 }
+		if prog.opEq(prog, i, "R_PUSHA"){ return 16 }
+		if prog.opEq(prog, i, "R_SETV"){ return 17 }
+		if prog.opEq(prog, i, "R_XTOG"){ return 18 }
+		if prog.opEq(prog, i, "R_GTOX"){ return 19 }
+		if prog.opEq(prog, i, "R_LDX"){ return 20 }
+		if prog.opEq(prog, i, "R_STX"){ return 21 }
+		if prog.opEq(prog, i, "R_FBINX"){ return 22 }
+		if prog.opEq(prog, i, "R_XMOV"){ return 23 }
+		return 0
+	}
+
+	static func dstOf(kd: mut u64) mut u64{
+		if kd == 2 || kd == 1 || kd == 18{
+			return 2
+		}
+		if kd == 4{
+			return 1
+		}
+		if kd == 5 || kd == 6 || kd == 7 || kd == 8{
+			return 3
+		}
+		return 0
+	}
+
+	static func kindAt(w: ref some imut FtWork, i: mut u64) mut u64{
+		let r = mut 0
+		match i in w.kind{ r = w.kind[i] }
+		return r
+	}
+
+	/** Operand k of line j (which reads the float temp of width token (d, wk)) can become an xmm register. */
+	static func consumerOk(prog: ref some imut Prog, j: mut u64, kj: mut u64, k: mut u64, d: mut u64, wk: mut u64) mut bool{
+		let c = mut prog.count(prog, j)
+		if kj == 7 || kj == 8 || kj == 22{
+			if c == 6 &&then prog.tokEq(prog, j, 2, d, wk) &&then (k == 4 || k == 5){
+				return true
+			}
+			return false
+		}
+		if kj == 12{
+			if c == 4 &&then prog.tokEq(prog, j, 2, d, wk) &&then k == 3{
+				return true
+			}
+			return false
+		}
+		if kj == 14{
+			if c == 2 &&then k == 1{
+				return true
+			}
+			return false
+		}
+		if kj == 3{
+			if c == 4 &&then prog.tokEq(prog, j, 1, d, wk) &&then k == 3 &&then prog.tokEq(prog, j, 2, j, 3) == false{
+				return true
+			}
+			return false
+		}
+		if kj == 19{
+			if c == 4 &&then prog.tokEq(prog, j, 1, d, wk) &&then k == 3{
+				return true
+			}
+			return false
+		}
+		return false
+	}
+
+	/** The float argument register index a line loads, or -1 (99 when malformed). */
+	static func fargIndex(prog: ref some imut Prog, i: mut u64, kd: mut u64) mut s64{
+		let c = mut prog.count(prog, i)
+		if kd == 12 &&then c > 1{
+			let v = mut prog.signedTok(prog, i, 1, 0)
+			if v == -4611686018427387904{
+				return 99
+			}
+			return v
+		}
+		if c > 1 &&then prog.opEq(prog, i, "POP") &&then prog.startsWith(prog, i, 1, "FARG"){
+			let v = mut prog.signedTok(prog, i, 1, 4)
+			if v == -4611686018427387904{
+				return 99
+			}
+			return v
+		}
+		return -1
+	}
+
+	@throws
+	static func addY(prog: ref some mut Prog, y: mut u64) void{
+		?catch(e){ throw e }
+		if y == 0{
+			? prog.addLit(prog, "%y0")
+		} else if y == 1{
+			? prog.addLit(prog, "%y1")
+		} else if y == 2{
+			? prog.addLit(prog, "%y2")
+		} else {
+			? prog.addLit(prog, "%y3")
+		}
+	}
+
+	/** Rewrites line i with token k replaced by: %y<y> (y < 4), the literal R_FBINX (y == 10), R_STX (y == 11), or token sk of line sj (y == 99). */
+	@throws
+	static func editTok(prog: ref some mut Prog, i: mut u64, k: mut u64, y: mut u64, sj: mut u64, sk: mut u64) void{
+		?catch(e){ throw e }
+		let c = mut prog.count(prog, i)
+		prog.begin(prog)
+		for t in 0..c{
+			if t == k{
+				if y < 4{
+					? FloatTempPass.addY(prog, y)
+				} else if y == 10{
+					? prog.addLit(prog, "R_FBINX")
+				} else if y == 11{
+					? prog.addLit(prog, "R_STX")
+				} else {
+					? prog.addTok(prog, sj, sk)
+				}
+			} else {
+				? prog.addTok(prog, i, t)
+			}
+		}
+		prog.setBuilt(prog, i)
+	}
+
+	static func writesXmm(prog: ref some imut Prog, j: mut u64, d: mut u64, xk: mut u64) mut bool{
+		let c = mut prog.count(prog, j)
+		if prog.opEq(prog, j, "R_FBINX"){
+			if c > 3 &&then prog.tokEq(prog, j, 3, d, xk){
+				return true
+			}
+			return false
+		}
+		if prog.opEq(prog, j, "R_GTOX") || prog.opEq(prog, j, "R_LDX") || prog.opEq(prog, j, "R_POPX") || prog.opEq(prog, j, "R_GETRETF"){
+			if c > 2 &&then prog.tokEq(prog, j, 2, d, xk){
+				return true
+			}
+			return false
+		}
+		if prog.opEq(prog, j, "R_XMOV"){
+			if c > 1 &&then prog.tokEq(prog, j, 1, d, xk){
+				return true
+			}
+			return false
+		}
+		return false
+	}
+
+	@throws
+	static func ensureU(w: ref some mut FtWork, need: mut u64) void{
+		?catch(e){ throw e }
+		if need > w.capU{
+			let nc2 = mut (w.capU * 2)
+			if nc2 < need{
+				nc2 = need
+			}
+			if nc2 < 64{
+				nc2 = 64
+			}
+			w.uJ = ? resize(w.uJ, nc2, 0)
+			w.uK = ? resize(w.uK, nc2, 0)
+			w.capU = nc2
+		}
+	}
+
+	/** One function [fs, fe); true when something was rewritten. */
+	@throws
+	static func processFunction(prog: ref some mut Prog, w: ref some mut FtWork, fs: mut u64, fe: mut u64) mut bool{
+		?catch(e){ throw e }
+		for i in fs..fe{
+			let kd = mut FloatTempPass.kindOf(prog, i)
+			match i into w.kind{ w.kind[i] = kd }
+			match i into w.bf{ w.bf[i] = 0 }
+			match i into w.ib{ w.ib[i] = 0 }
+		}
+		// call brackets
+		let sp = mut 0
+		for i in fs..fe{
+			let kd = mut FloatTempPass.kindAt(w, i)
+			if kd == 24{
+				match sp into w.openS{ w.openS[sp] = i }
+				sp += 1
+			} else if kd == 25{
+				if sp > 0{
+					sp -= 1
+				}
+			}
+			if sp > 0{
+				let f = mut FloatTempPass.fargIndex(prog, i, kd)
+				if f >= 0{
+					let fv = mut wrap:<u64>(f + 1)
+					for q in 0..sp{
+						let o = mut 0
+						match q in w.openS{ o = w.openS[q] }
+						let cur = mut 0
+						match o in w.bf{ cur = w.bf[o] }
+						if fv > cur{
+							match o into w.bf{ w.bf[o] = fv }
+						}
+					}
+				}
+			}
+		}
+		sp = 0
+		for i in fs..fe{
+			let kd = mut FloatTempPass.kindAt(w, i)
+			if kd == 24{
+				match sp into w.openS{ w.openS[sp] = i }
+				sp += 1
+			} else if kd == 25{
+				if sp > 0{
+					sp -= 1
+				}
+			}
+			let mx = mut 0
+			for q in 0..sp{
+				let o = mut 0
+				match q in w.openS{ o = w.openS[q] }
+				let cur = mut 0
+				match o in w.bf{ cur = w.bf[o] }
+				if cur > mx{
+					mx = cur
+				}
+			}
+			match i into w.ib{ w.ib[i] = mx }
+		}
+		// chains
+		w.nc = 0
+		w.nu = 0
+		for d in fs..fe{
+			let kd = mut FloatTempPass.kindAt(w, d)
+			if kd != 7 &&then kd != 2 &&then kd != 18{
+				continue
+			}
+			let cd = mut prog.count(prog, d)
+			if cd != 6 &&then cd != 4{
+				continue
+			}
+			let tmpK = mut 0
+			let wk = mut 0
+			if kd == 7 &&then cd == 6 &&then (prog.eqLit(prog, d, 2, "4") || prog.eqLit(prog, d, 2, "8")){
+				tmpK = 3
+				wk = 2
+			} else if kd == 2 &&then cd == 4 &&then (prog.eqLit(prog, d, 1, "4") || prog.eqLit(prog, d, 1, "8")){
+				tmpK = 2
+				wk = 1
+			} else if kd == 18 &&then cd == 4{
+				tmpK = 2
+				wk = 1
+			}
+			if tmpK == 0{
+				continue
+			}
+			if prog.startsWith(prog, d, tmpK, "%t") == false{
+				continue
+			}
+			let ok = mut true
+			let floatUse = mut (kd == 7)
+			let last = mut 0
+			let nUse = mut 0
+			let us = mut w.nu
+			let jstart = mut (d + 1)
+			for j in jstart..fe{
+				let kj = mut FloatTempPass.kindAt(w, j)
+				let cj = mut prog.count(prog, j)
+				if kj == 0 || kj > 23{
+					for k in 1..cj{
+						if prog.tokEq(prog, j, k, d, tmpK){
+							ok = false
+						}
+					}
+					break
+				}
+				let dst = mut FloatTempPass.dstOf(kj)
+				let writes = mut false
+				for k in 1..cj{
+					if prog.tokEq(prog, j, k, d, tmpK){
+						if k == dst{
+							writes = true
+						} else {
+							if FloatTempPass.consumerOk(prog, j, kj, k, d, wk) == false{
+								ok = false
+							}
+							if kj == 7 || kj == 8 || kj == 22 || kj == 12 || kj == 14{
+								floatUse = true
+							}
+							let nu1 = mut (w.nu + 1)
+							? FloatTempPass.ensureU(w, nu1)
+							let at = mut w.nu
+							match at into w.uJ{ w.uJ[at] = j }
+							match at into w.uK{ w.uK[at] = k }
+							w.nu = nu1
+							nUse += 1
+							last = j
+						}
+					}
+				}
+				if writes{
+					break
+				}
+			}
+			if nUse == 0 || floatUse == false{
+				ok = false
+			}
+			if ok{
+				let b1 = mut 0
+				match d in w.ib{ b1 = w.ib[d] }
+				if b1 >= 4{
+					ok = false
+				}
+			}
+			if ok &&then nUse > 0{
+				let b2 = mut 0
+				match last in w.ib{ b2 = w.ib[last] }
+				if b2 >= 4{
+					ok = false
+				}
+			}
+			let ci = mut w.nc
+			let need = mut (ci + 1)
+			if need > len(w.cDef){
+				let ncap = mut (need * 2)
+				w.cDef = ? resize(w.cDef, ncap, 0)
+				w.cLast = ? resize(w.cLast, ncap, 0)
+				w.cOk = ? resize(w.cOk, ncap, 0)
+				w.cFl = ? resize(w.cFl, ncap, 0)
+				w.cY = ? resize(w.cY, ncap, 0)
+				w.cUs = ? resize(w.cUs, ncap, 0)
+				w.cNu = ? resize(w.cNu, ncap, 0)
+			}
+			let okv = mut 0
+			if ok{
+				okv = 1
+			}
+			match ci into w.cDef{ w.cDef[ci] = d }
+			match ci into w.cLast{ w.cLast[ci] = last }
+			match ci into w.cOk{ w.cOk[ci] = okv }
+			match ci into w.cUs{ w.cUs[ci] = us }
+			match ci into w.cNu{ w.cNu[ci] = nUse }
+			w.nc = need
+		}
+		// assign %y registers
+		let bu0 = mut 0
+		let bu1 = mut 0
+		let bu2 = mut 0
+		let bu3 = mut 0
+		let hasBusy = mut false
+		let lim_nc = mut w.nc
+		for ci in 0..lim_nc{
+			let okv = mut 0
+			match ci in w.cOk{ okv = w.cOk[ci] }
+			if okv == 0{
+				continue
+			}
+			let d = mut 0
+			let last = mut 0
+			match ci in w.cDef{ d = w.cDef[ci] }
+			match ci in w.cLast{ last = w.cLast[ci] }
+			// busyUntil starts at -1, i.e. free for every def; stored +1 so 0 means "free"
+			let pick = mut 9
+			if bu0 <= d{
+				pick = 0
+			} else if bu1 <= d{
+				pick = 1
+			} else if bu2 <= d{
+				pick = 2
+			} else if bu3 <= d{
+				pick = 3
+			}
+			if pick == 9{
+				match ci into w.cOk{ w.cOk[ci] = 0 }
+				continue
+			}
+			match ci into w.cY{ w.cY[ci] = pick }
+			if pick == 0{
+				bu0 = last
+			} else if pick == 1{
+				bu1 = last
+			} else if pick == 2{
+				bu2 = last
+			} else {
+				bu3 = last
+			}
+			hasBusy = true
+		}
+		if hasBusy == false{
+			return false
+		}
+		// rewrite the chains in order
+		let changed = mut false
+		for ci in 0..lim_nc{
+			let okv = mut 0
+			match ci in w.cOk{ okv = w.cOk[ci] }
+			if okv == 0{
+				continue
+			}
+			let d = mut 0
+			let last = mut 0
+			let y = mut 0
+			let us = mut 0
+			let nUse = mut 0
+			match ci in w.cDef{ d = w.cDef[ci] }
+			match ci in w.cLast{ last = w.cLast[ci] }
+			match ci in w.cY{ y = w.cY[ci] }
+			match ci in w.cUs{ us = w.cUs[ci] }
+			match ci in w.cNu{ nUse = w.cNu[ci] }
+			let kd = mut FloatTempPass.kindAt(w, d)
+			// 0 = FBIN def, 1 = LD def, 2 = XTOG read directly, 3 = XTOG into %y
+			let mode = mut 0
+			let direct = mut false
+			if kd == 2{
+				mode = 1
+			} else if kd == 18{
+				let rewritten = mut false
+				let j0 = mut (d + 1)
+				let jl = mut (last + 1)
+				for j in j0..jl{
+					if rewritten == false{
+						if FloatTempPass.writesXmm(prog, j, d, 3){
+							rewritten = true
+						}
+					}
+				}
+				if rewritten{
+					mode = 3
+				} else {
+					mode = 2
+					direct = true
+				}
+			}
+			let ulim = mut (us + nUse)
+			for u in us..ulim{
+				let uj = mut 0
+				let uk = mut 0
+				match u in w.uJ{ uj = w.uJ[u] }
+				match u in w.uK{ uk = w.uK[u] }
+				let ukd = mut FloatTempPass.kindAt(w, uj)
+				if direct{
+					? FloatTempPass.editTok(prog, uj, uk, 99, d, 3)
+				} else {
+					? FloatTempPass.editTok(prog, uj, uk, y, 0, 0)
+				}
+				if ukd == 3{
+					? FloatTempPass.editTok(prog, uj, 0, 11, 0, 0)
+				} else if ukd == 19{
+					prog.begin(prog)
+					? prog.addLit(prog, "R_XMOV")
+					? prog.addTok(prog, uj, 2)
+					? prog.addTok(prog, uj, 3)
+					prog.setBuilt(prog, uj)
+				}
+			}
+			if mode == 0{
+				? FloatTempPass.editTok(prog, d, 0, 10, 0, 0)
+				? FloatTempPass.editTok(prog, d, 3, y, 0, 0)
+			} else if mode == 1{
+				prog.begin(prog)
+				? prog.addLit(prog, "R_LDX")
+				? prog.addTok(prog, d, 1)
+				? FloatTempPass.addY(prog, y)
+				? prog.addTok(prog, d, 3)
+				prog.setBuilt(prog, d)
+			} else if mode == 2{
+				prog.begin(prog)
+				? prog.addLit(prog, "R_XMOV")
+				? prog.addTok(prog, d, 3)
+				? prog.addTok(prog, d, 3)
+				prog.setBuilt(prog, d)
+			} else {
+				prog.begin(prog)
+				? prog.addLit(prog, "R_XMOV")
+				? FloatTempPass.addY(prog, y)
+				? prog.addTok(prog, d, 3)
+				prog.setBuilt(prog, d)
+			}
+			changed = true
+		}
+		return changed
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let w = mut ? new FtWork()
+		let cap = mut (n + 2)
+		w.kind = ? resize(w.kind, cap, 0)
+		w.bf = ? resize(w.bf, cap, 0)
+		w.ib = ? resize(w.ib, cap, 0)
+		w.openS = ? resize(w.openS, cap, 0)
+		prog.outReset(prog)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			let stop = mut (end + 1)
+			if stop > n{
+				stop = n
+			}
+			let changed = mut ? FloatTempPass.processFunction(prog, w, i, stop)
+			for q in i..stop{
+				if changed &&then prog.count(prog, q) == 3 &&then prog.opEq(prog, q, "R_XMOV") &&then prog.tokEq(prog, q, 1, q, 2){
+					continue
+				}
+				? prog.outLine(prog, q)
+			}
+			i = stop
+		}
+		prog.outCommit(prog)
+		? FloatTempPass.coalesce(prog)
+	}
+
+	static func countMention(prog: ref some imut Prog, q: mut u64, a: mut u64, ak: mut u64) mut u64{
+		let c = mut prog.count(prog, q)
+		let m = mut 0
+		for t in 1..c{
+			if prog.tokEq(prog, q, t, a, ak){
+				m += 1
+			}
+		}
+		return m
+	}
+
+	@throws
+	static func coalesce(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		for j in 0..n{
+			if prog.count(prog, j) != 6{
+				continue
+			}
+			if prog.opEq(prog, j, "R_FBINX") == false{
+				continue
+			}
+			if prog.startsWith(prog, j, 3, "%x") == false{
+				continue
+			}
+			if prog.startsWith(prog, j, 4, "%y") == false{
+				continue
+			}
+			// xd = (j,3), y = (j,4), w = (j,2)
+			if prog.tokEq(prog, j, 5, j, 3) || prog.tokEq(prog, j, 5, j, 4){
+				continue
+			}
+			let k = mut j
+			let walking = mut true
+			for st in 0..j{
+				if walking == false{
+					break
+				}
+				if k == 0{
+					k = 0
+					walking = false
+					break
+				}
+				let p = mut (k - 1)
+				if prog.count(prog, p) == 6 &&then prog.opEq(prog, p, "R_FBINX") &&then prog.tokEq(prog, p, 3, j, 4) &&then prog.tokEq(prog, p, 4, j, 4) &&then prog.tokEq(prog, p, 2, j, 2){
+					k = p
+				} else {
+					walking = false
+				}
+			}
+			// k is the first line of the "%y = %y op b" run (or j); the producer is the line before it
+			if k == 0{
+				continue
+			}
+			let pk = mut (k - 1)
+			let prodBinx = mut false
+			if prog.count(prog, pk) == 6 &&then prog.opEq(prog, pk, "R_FBINX") &&then prog.tokEq(prog, pk, 3, j, 4) &&then prog.tokEq(prog, pk, 2, j, 2){
+				prodBinx = true
+			}
+			if prodBinx &&then (prog.tokEq(prog, pk, 4, j, 4) || prog.tokEq(prog, pk, 5, j, 4)){
+				continue
+			}
+			let prodLd = mut false
+			if prog.count(prog, pk) == 4 &&then prog.opEq(prog, pk, "R_LDX") &&then prog.tokEq(prog, pk, 2, j, 4) &&then prog.tokEq(prog, pk, 1, j, 2){
+				prodLd = true
+			}
+			if prodBinx == false &&then prodLd == false{
+				continue
+			}
+			let ok = mut true
+			let swapAt = mut j
+			let hasSwap = mut false
+			for q in pk..j{
+				if ok == false{
+					break
+				}
+				let mentions = mut FloatTempPass.countMention(prog, q, j, 3)
+				if mentions == 0{
+					continue
+				}
+				if q == pk &&then prodBinx &&then mentions == 1 &&then prog.tokEq(prog, q, 4, j, 3){
+					continue
+				}
+				if q > pk &&then hasSwap == false &&then mentions == 1 &&then prog.count(prog, q) == 6 &&then prog.opEq(prog, q, "R_FBINX") &&then prog.tokEq(prog, q, 3, j, 4) &&then prog.tokEq(prog, q, 4, j, 4) &&then prog.tokEq(prog, q, 5, j, 3) &&then (prog.eqLit(prog, q, 1, "MUL") || prog.eqLit(prog, q, 1, "ADD")){
+					hasSwap = true
+					swapAt = q
+					continue
+				}
+				ok = false
+			}
+			if ok == false{
+				continue
+			}
+			// %y dead after line j until redefined
+			let after = mut (j + 1)
+			for q in after..n{
+				let m = mut FloatTempPass.countMention(prog, q, j, 4)
+				if m == 0{
+					continue
+				}
+				let redef = mut false
+				if prog.opEq(prog, q, "R_FBINX") &&then prog.count(prog, q) == 6 &&then prog.tokEq(prog, q, 3, j, 4) &&then prog.tokEq(prog, q, 4, j, 4) == false &&then prog.tokEq(prog, q, 5, j, 4) == false{
+					redef = true
+				} else if prog.opEq(prog, q, "R_LDX") &&then prog.count(prog, q) == 4 &&then prog.tokEq(prog, q, 2, j, 4){
+					redef = true
+				}
+				if redef == false{
+					ok = false
+				}
+				break
+			}
+			if ok == false{
+				continue
+			}
+			let from = mut pk
+			if hasSwap{
+				from = swapAt
+			}
+			let jl = mut (j + 1)
+			for q in from..jl{
+				let c = mut prog.count(prog, q)
+				prog.begin(prog)
+				for a in 0..c{
+					if q == swapAt &&then hasSwap{
+						if a == 3 || a == 4{
+							? prog.addTok(prog, j, 3)
+						} else if a == 5{
+							? prog.addTok(prog, j, 4)
+						} else {
+							? prog.addTok(prog, q, a)
+						}
+					} else if a > 0 &&then prog.tokEq(prog, q, a, j, 4){
+						? prog.addTok(prog, j, 3)
+					} else {
+						? prog.addTok(prog, q, a)
+					}
+				}
+				prog.setBuilt(prog, q)
+			}
+		}
+	}
+}

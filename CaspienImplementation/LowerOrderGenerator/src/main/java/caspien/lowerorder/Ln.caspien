@@ -1,0 +1,365 @@
+import "stdlib/string.caspien"
+
+/**
+ * Reads of a program line in place. A line is a range [s, e) of the program's text buffer `b` (see Prog): its tokens joined by single spaces, a quoted string or char literal kept as one token.
+ * Nothing here allocates and no function creates a reference to a line object (the program owns ONE buffer and two offset arrays; a String per line costs thousands of instructions per `ref` in the ghost table).
+ */
+@pub
+struct Ln{@pub{
+}}
+
+impl constructor for Ln() self{
+	return Ln{}
+}
+
+@pub
+impl Ln{
+	/** Java `Character.isWhitespace` on an ASCII char (space, 9..13, 28..31). */
+	@pub
+	static func isWs(c: mut char) bool{
+		let v = mut String.charCode(c)
+		return v == 32 || (v >= 9 && v <= 13) || (v >= 28 && v <= 31)
+	}
+
+	/** End (exclusive) of the token that starts at `p` in a normalized line that ends at `e`. */
+	@pub
+	static func tokEnd(b: ref some imut String, p: mut u64, e: mut u64) mut u64{
+		let i = mut p
+		let c = mut b.charAt(b, p)
+		if c == '"'{
+			i += 1
+			for k in 0..e{
+				if i >= e{
+					break
+				}
+				let d = mut b.charAt(b, i)
+				if d == '"'{
+					break
+				}
+				if d == '\\' &&then i + 1 < e{
+					i += 1
+				}
+				i += 1
+			}
+			if i < e{
+				i += 1
+			}
+			if i > e{
+				i = e
+			}
+			return i
+		}
+		if c == '\''{
+			if p + 3 < e &&then b.charAt(b, p + 1) == '\\' &&then b.charAt(b, p + 3) == '\''{
+				let e4 = mut (p + 4)
+				if e4 == e || b.charAt(b, e4) == ' '{
+					return e4
+				}
+			} else if p + 2 < e &&then b.charAt(b, p + 2) == '\''{
+				let e3 = mut (p + 3)
+				if e3 == e || b.charAt(b, e3) == ' '{
+					return e3
+				}
+			}
+		}
+		for k in 0..e{
+			if i >= e{
+				break
+			}
+			if b.charAt(b, i) == ' '{
+				break
+			}
+			i += 1
+		}
+		return i
+	}
+
+	/** Number of tokens of the line [s, e). */
+	@pub
+	static func count(b: ref some imut String, s: mut u64, e: mut u64) mut u64{
+		let i = mut s
+		let cnt = mut 0
+		let guard = mut (e + 1)
+		for step in 0..guard{
+			if i >= e{
+				break
+			}
+			if b.charAt(b, i) == ' '{
+				i += 1
+				continue
+			}
+			i = Ln.tokEnd(b, i, e)
+			cnt += 1
+		}
+		return cnt
+	}
+
+	/** Absolute offset of token `k` of the line [s, e), or -1 when the line has fewer tokens. */
+	@pub
+	static func start(b: ref some imut String, s: mut u64, e: mut u64, k: mut u64) mut s64{
+		let i = mut s
+		let cnt = mut 0
+		let guard = mut (e + 1)
+		for step in 0..guard{
+			if i >= e{
+				break
+			}
+			if b.charAt(b, i) == ' '{
+				i += 1
+				continue
+			}
+			if cnt == k{
+				return wrap:<s64>(i)
+			}
+			i = Ln.tokEnd(b, i, e)
+			cnt += 1
+		}
+		return -1
+	}
+
+	/** Compares the literal with the text from `p`: false at the first mismatch or when the line (end `e`) runs out first; when `whole`, the literal must also end at the end of a token. */
+	@pub
+	static func litAtPos(b: ref some imut String, p: mut u64, e: mut u64, lit: static imut string, whole: mut bool) mut bool{
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		let pos = mut p
+		let bound = mut (e + 1)
+		for step in 0..bound{
+			let q = mut (lp + (pos - p))
+			let lc = mut '\0'
+			unsafe memcopy raw{
+				memcopy(raw lc, mut 1, q)
+			}
+			if lc == '\0'{
+				if whole == false || pos == e{
+					return true
+				}
+				return b.charAt(b, pos) == ' '
+			}
+			if pos >= e{
+				return false
+			}
+			if b.charAt(b, pos) != lc{
+				return false
+			}
+			pos = pos + 1
+		}
+		return false
+	}
+
+	/** A token that starts at `p` (line end `e`) is exactly the literal `lit`. */
+	@pub
+	static func tokIs(b: ref some imut String, p: mut u64, e: mut u64, lit: static imut string) mut bool{
+		return Ln.litAtPos(b, p, e, lit, true)
+	}
+
+	/** Token `k` equals the literal. */
+	@pub
+	static func eqLit(b: ref some imut String, s: mut u64, e: mut u64, k: mut u64, lit: static imut string) mut bool{
+		let p = mut Ln.start(b, s, e, k)
+		if p < 0{
+			return false
+		}
+		return Ln.litAtPos(b, wrap:<u64>(p), e, lit, true)
+	}
+
+	/** Token `k` is exactly `a` or exactly `b`. */
+	@pub
+	static func eqLit2(b: ref some imut String, s: mut u64, e: mut u64, k: mut u64, a: static imut string, c: static imut string) mut bool{
+		if Ln.eqLit(b, s, e, k, a){
+			return true
+		}
+		return Ln.eqLit(b, s, e, k, c)
+	}
+
+	/** The first token is exactly `lit` (false for an empty line). */
+	@pub
+	static func opEq(b: ref some imut String, s: mut u64, e: mut u64, lit: static imut string) mut bool{
+		if s >= e{
+			return false
+		}
+		return Ln.litAtPos(b, s, e, lit, true)
+	}
+
+	/** Token `k` starts with `lit`. */
+	@pub
+	static func startsWith(b: ref some imut String, s: mut u64, e: mut u64, k: mut u64, lit: static imut string) mut bool{
+		let p = mut Ln.start(b, s, e, k)
+		if p < 0{
+			return false
+		}
+		return Ln.litAtPos(b, wrap:<u64>(p), e, lit, false)
+	}
+
+	/** Token `i` of the line [s1, e1) equals token `j` of the line [s2, e2) (false when either is missing). */
+	@pub
+	static func tokEq(b: ref some imut String, s1: mut u64, e1: mut u64, i: mut u64, s2: mut u64, e2: mut u64, j: mut u64) mut bool{
+		let a = mut Ln.start(b, s1, e1, i)
+		let c = mut Ln.start(b, s2, e2, j)
+		if a < 0 || c < 0{
+			return false
+		}
+		let p1 = mut wrap:<u64>(a)
+		let p2 = mut wrap:<u64>(c)
+		let q1 = mut Ln.tokEnd(b, p1, e1)
+		let q2 = mut Ln.tokEnd(b, p2, e2)
+		if q1 - p1 != q2 - p2{
+			return false
+		}
+		let w = mut (q1 - p1)
+		for d in 0..w{
+			if b.charAt(b, p1 + d) != b.charAt(b, p2 + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Token `k` as a non-negative decimal of at most 18 digits (its value), else -1. */
+	@pub
+	static func numTok(b: ref some imut String, s: mut u64, e: mut u64, k: mut u64) mut s64{
+		let a = mut Ln.start(b, s, e, k)
+		if a < 0{
+			return -1
+		}
+		let p = mut wrap:<u64>(a)
+		let q = mut Ln.tokEnd(b, p, e)
+		if q == p || q - p > 18{
+			return -1
+		}
+		let:<mut s64> v = mut 0
+		for x in p..q{
+			let c = mut b.charAt(b, x)
+			if c < '0' || c > '9'{
+				return -1
+			}
+			v = v * 10 + wrap:<s64>(String.charCode(c) - 48)
+		}
+		return v
+	}
+
+	/** The token starting at `p` (line end `e`) is `$` followed by the canonical decimal text of `v` (no sign for a non-negative `v`, no leading zeros). */
+	@pub
+	static func tokIsSlot(b: ref some imut String, p: mut u64, e: mut u64, v: mut s64) mut bool{
+		let q = mut Ln.tokEnd(b, p, e)
+		if b.charAt(b, p) != '$'{
+			return false
+		}
+		let digitsAt = mut (p + 1)
+		let m = mut v
+		if v < 0{
+			if b.charAt(b, digitsAt) != '-'{
+				return false
+			}
+			digitsAt += 1
+			m = 0 - v
+		}
+		// number of digits of m
+		let nd = mut 1
+		let t = mut m
+		for k in 0..20{
+			if t >= 10{
+				t = t / 10
+				nd += 1
+			}
+		}
+		let ndu = mut wrap:<u64>(nd)
+		if q - digitsAt != ndu{
+			return false
+		}
+		let x = mut m
+		let pos = mut q
+		for k in 0..ndu{
+			pos -= 1
+			let dg = mut (x % 10)
+			let want = mut b.charAt(b, pos)
+			if String.charCode(want) != wrap:<u64>(dg) + 48{
+				return false
+			}
+			x = x / 10
+		}
+		return true
+	}
+
+	/** Token at `p` (line end `e`) is a signed decimal after its first character (`$-8`, `$16`, `$+5`): its value; `ok` is false in the second part of the result. Returns the sentinel -4611686018427387904 when it is not one. */
+	@pub
+	static func slotValue(b: ref some imut String, p: mut u64, e: mut u64) mut s64{
+		let q = mut Ln.tokEnd(b, p, e)
+		if b.charAt(b, p) != '$' || q - p < 2{
+			return -4611686018427387904
+		}
+		let i = mut (p + 1)
+		let neg = mut false
+		let c0 = mut b.charAt(b, i)
+		if c0 == '-' || c0 == '+'{
+			neg = c0 == '-'
+			i += 1
+		}
+		if i >= q || q - i > 18{
+			return -4611686018427387904
+		}
+		let:<mut s64> v = mut 0
+		for x in i..q{
+			let c = mut b.charAt(b, x)
+			if c < '0' || c > '9'{
+				return -4611686018427387904
+			}
+			v = v * 10 + wrap:<s64>(String.charCode(c) - 48)
+		}
+		if neg{
+			v = 0 - v
+		}
+		return v
+	}
+
+	/** Two tokens (at `p1` to the end `e1`, at `p2` to `e2`) have the same text. */
+	@pub
+	static func sameTok(b: ref some imut String, p1: mut u64, e1: mut u64, p2: mut u64, e2: mut u64) mut bool{
+		let q1 = mut Ln.tokEnd(b, p1, e1)
+		let q2 = mut Ln.tokEnd(b, p2, e2)
+		if q1 - p1 != q2 - p2{
+			return false
+		}
+		let w = mut (q1 - p1)
+		for d in 0..w{
+			if b.charAt(b, p1 + d) != b.charAt(b, p2 + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** The token at `p` (line end `e`), after skipping `skip` characters, as an optionally signed decimal of at most 18 digits (Java Long.parseLong); the sentinel -4611686018427387904 when it is not one. */
+	@pub
+	static func signedTok(b: ref some imut String, p: mut u64, e: mut u64, skip: mut u64) mut s64{
+		let q = mut Ln.tokEnd(b, p, e)
+		let i = mut (p + skip)
+		if i >= q{
+			return -4611686018427387904
+		}
+		let neg = mut false
+		let c0 = mut b.charAt(b, i)
+		if c0 == '-' || c0 == '+'{
+			neg = c0 == '-'
+			i += 1
+		}
+		if i >= q || q - i > 18{
+			return -4611686018427387904
+		}
+		let:<mut s64> v = mut 0
+		for x in i..q{
+			let c = mut b.charAt(b, x)
+			if c < '0' || c > '9'{
+				return -4611686018427387904
+			}
+			v = v * 10 + wrap:<s64>(String.charCode(c) - 48)
+		}
+		if neg{
+			v = 0 - v
+		}
+		return v
+	}
+}

@@ -1,0 +1,101 @@
+import "stdlib/string.caspien"
+
+/**
+ * Iteration order of a Java HashMap/HashSet (default capacity 16, load factor 0.75, a bin reaching 9 nodes in a table below 64 buckets resizes it) filled by `put` in the
+ * given order: `keys[z]` is the 32-bit hash of the z-th key put; afterwards `order[z]` is the put index of the key visited z-th.
+ */
+@pub
+struct HashOrder{@pub{
+	keys: owns some mut dynarray(mut u64)
+	order: owns some mut dynarray(mut u64)
+	bk: owns some mut dynarray(mut u64)
+}}
+
+@throws
+impl constructor for HashOrder() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<u64>([])
+	return HashOrder{keys= a, order= b, bk= c}
+}
+
+@pub
+impl HashOrder{
+	/** HashMap.hash + bucket mask for a 32-bit hashCode. */
+	static func bucket(h: mut u64, cap: mut u64) mut u64{
+		let sp = mut bits_xor(h, bits_right(h, 16))
+		return bits_and(sp, cap - 1)
+	}
+
+	/** Java String.hashCode of the characters [a, z) of `b`. */
+	@pub
+	static func stringHash(b: ref some imut String, a: mut u64, z: mut u64) mut u64{
+		let h = mut 0
+		for x in a..z{
+			h = bits_and(h * 31 + String.charCode(b.charAt(b, x)), 4294967295)
+		}
+		return h
+	}
+
+	/** Computes `order` for the first `m` keys. */
+	@pub
+	@throws
+	static func compute(ho: ref some mut HashOrder, m: mut u64) void{
+		?catch(e){ throw e }
+		ho.order = ? resize(ho.order, m + 1, 0)
+		ho.bk = ? resize(ho.bk, m + 1, 0)
+		let cap = mut 16
+		for z in 0..m{
+			let hz = mut 0
+			match z in ho.keys{ hz = ho.keys[z] }
+			let bz0 = mut HashOrder.bucket(hz, cap)
+			let same = mut 0
+			for j in 0..z{
+				let hj = mut 0
+				match j in ho.keys{ hj = ho.keys[j] }
+				if HashOrder.bucket(hj, cap) == bz0{
+					same += 1
+				}
+			}
+			if same >= 8 && cap < 64{
+				cap = cap * 2
+			}
+			if (z + 1) * 4 > cap * 3{
+				cap = cap * 2
+			}
+		}
+		for z in 0..m{
+			let hz = mut 0
+			match z in ho.keys{ hz = ho.keys[z] }
+			match z into ho.order{ ho.order[z] = z }
+			match z into ho.bk{ ho.bk[z] = HashOrder.bucket(hz, cap) }
+		}
+		for z in 1..m{
+			let zz = mut z
+			for q in 0..m{
+				if zz == 0{
+					break
+				}
+				let prev = mut (zz - 1)
+				let bp = mut 0
+				let bz = mut 0
+				match prev in ho.bk{ bp = ho.bk[prev] }
+				match zz in ho.bk{ bz = ho.bk[zz] }
+				if bp > bz{
+					let op = mut 0
+					let oz = mut 0
+					match prev in ho.order{ op = ho.order[prev] }
+					match zz in ho.order{ oz = ho.order[zz] }
+					match prev into ho.order{ ho.order[prev] = oz }
+					match zz into ho.order{ ho.order[zz] = op }
+					match prev into ho.bk{ ho.bk[prev] = bz }
+					match zz into ho.bk{ ho.bk[zz] = bp }
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+	}
+}

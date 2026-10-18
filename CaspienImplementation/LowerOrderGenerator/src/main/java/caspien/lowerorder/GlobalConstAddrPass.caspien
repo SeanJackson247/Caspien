@@ -1,0 +1,166 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "RegOps.caspien"
+
+/** Port of GlobalConstAddrPass: `R_LEA %tX &sym #k scale [d] ; R_LD/R_ST/R_LDX/R_STX .. %tX` -> an access to `&sym+N`. */
+@pub
+struct GlobalConstAddrPass{@pub{
+}}
+
+impl constructor for GlobalConstAddrPass() self{
+	return GlobalConstAddrPass{}
+}
+
+@pub
+impl GlobalConstAddrPass{
+	/** N of `&sym+N` for `R_LEA %tX &sym #k scale [extra]` (N = k*scale + extra >= 0), or the sentinel. */
+	static func offsetOf(prog: ref some imut Prog, i: mut u64) mut s64{
+		let sentinel = mut -4611686018427387904
+		let c = mut prog.count(prog, i)
+		if c != 5 && c != 6{
+			return sentinel
+		}
+		if prog.opEq(prog, i, "R_LEA") == false || prog.startsWith(prog, i, 1, "%t") == false || prog.tokStartsCh(prog, i, 2, '&') == false || prog.tokStartsCh(prog, i, 3, '#') == false{
+			return sentinel
+		}
+		// the symbol must not already carry a '+'
+		let p2 = mut wrap:<u64>(prog.tokPos(prog, i, 2))
+		let q2 = mut Ln.tokEnd(prog.buf, p2, prog.lineEnd(prog, i))
+		for x in p2..q2{
+			if prog.buf.charAt(prog.buf, x) == '+'{
+				return sentinel
+			}
+		}
+		let k = mut prog.signedTok(prog, i, 3, 1)
+		let scale = mut prog.signedTok(prog, i, 4, 0)
+		let:<mut s64> extra = mut 0
+		if c == 6{
+			extra = prog.signedTok(prog, i, 5, 0)
+		}
+		if k == sentinel || scale == sentinel || extra == sentinel{
+			return sentinel
+		}
+		if scale != 1 &&then scale != 2 &&then scale != 4 &&then scale != 8{
+			return sentinel
+		}
+		let off = mut (k * scale + extra)
+		if off < 0 || off > 2147483647{
+			return sentinel
+		}
+		return off
+	}
+
+	static func okWidth(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, i, k, "1") || prog.eqLit(prog, i, k, "2") || prog.eqLit(prog, i, k, "4") || prog.eqLit(prog, i, k, "8"){
+			return true
+		}
+		return false
+	}
+
+	static func isXyz(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.startsWith(prog, i, k, "%x") || prog.startsWith(prog, i, k, "%y") || prog.startsWith(prog, i, k, "%z"){
+			return true
+		}
+		return false
+	}
+
+	/** 0 none, 1 R_LD, 2 R_ST, 3 R_LDX, 4 R_STX. */
+	static func kindOf(prog: ref some imut Prog, lea: mut u64, l: mut u64) mut u64{
+		if prog.count(prog, l) != 4{
+			return 0
+		}
+		if prog.opEq(prog, l, "R_LD") &&then GlobalConstAddrPass.okWidth(prog, l, 1) &&then prog.tokEq(prog, l, 3, lea, 1){
+			return 1
+		}
+		if prog.opEq(prog, l, "R_ST") &&then GlobalConstAddrPass.okWidth(prog, l, 1) &&then prog.tokEq(prog, l, 2, lea, 1) &&then prog.tokEq(prog, l, 3, lea, 1) == false{
+			return 2
+		}
+		let w48 = mut false
+		if prog.eqLit(prog, l, 1, "4") || prog.eqLit(prog, l, 1, "8"){
+			w48 = true
+		}
+		if prog.opEq(prog, l, "R_LDX") &&then w48 &&then prog.tokEq(prog, l, 3, lea, 1) &&then GlobalConstAddrPass.isXyz(prog, l, 2){
+			return 3
+		}
+		if prog.opEq(prog, l, "R_STX") &&then w48 &&then prog.tokEq(prog, l, 2, lea, 1) &&then GlobalConstAddrPass.isXyz(prog, l, 3){
+			return 4
+		}
+		return 0
+	}
+
+	@throws
+	static func addSym(prog: ref some mut Prog, lea: mut u64, off: mut s64) void{
+		?catch(e){ throw e }
+		? prog.addTok(prog, lea, 2)
+		if off != 0{
+			? prog.gluePlusS64(prog, off)
+		}
+	}
+
+	@throws
+	static func build(prog: ref some mut Prog, lea: mut u64, l: mut u64, kind: mut u64, off: mut s64, to: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addTok(prog, l, 0)
+		? prog.addTok(prog, l, 1)
+		if kind == 1 || kind == 3{
+			? prog.addTok(prog, l, 2)
+			? GlobalConstAddrPass.addSym(prog, lea, off)
+		} else {
+			? GlobalConstAddrPass.addSym(prog, lea, off)
+			? prog.addTok(prog, l, 3)
+		}
+		prog.setBuilt(prog, to)
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let killed = mut false
+		let sentinel = mut -4611686018427387904
+		for i in 0..n{
+			if prog.isGone(prog, i){
+				continue
+			}
+			let off = mut GlobalConstAddrPass.offsetOf(prog, i)
+			if off == sentinel{
+				continue
+			}
+			let j = mut (i + 1)
+			for st in 0..41{
+				if j >= n || j - i > 40{
+					break
+				}
+				if prog.isGone(prog, j){
+					j += 1
+					continue
+				}
+				if prog.mentions(prog, j, i, 1) == false{
+					if RegOps.passable(prog, j, i, 1) == false{
+						break
+					}
+					j += 1
+					continue
+				}
+				let kind = mut GlobalConstAddrPass.kindOf(prog, i, j)
+				if kind != 0{
+					let selfDef = mut false
+					if kind == 1 &&then prog.tokEq(prog, j, 2, i, 1){
+						selfDef = true
+					}
+					if RegOps.deadAfter(prog, j + 1, i, 1, selfDef){
+						? GlobalConstAddrPass.build(prog, i, j, kind, off, j)
+						prog.kill(prog, i)
+						killed = true
+					}
+				}
+				break
+			}
+		}
+		if killed{
+			prog.compactGone(prog)
+		}
+	}
+}

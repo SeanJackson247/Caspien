@@ -1,0 +1,1765 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "LabelIndex.caspien"
+
+/**
+ * Port of RegVarPromotionPass: hinted frame slots (`REGHINT off size weight [f]`) whose every mention can be renamed live in variable registers %vK / float registers %xK.
+ * Per function: hints -> ADDR/ASSIGN store pairs -> ban unrenameable slots -> choose by weight (or colour by liveness when there are more candidates than registers) -> rewrite.
+ * Float functions are afterwards peepholed by `fuse` (a second sweep over the committed table).
+ * Hint flags (hFlags bits): 1 banned, 2 isFloat, 4 xmm, 8 volOk, 16 argSafe, 32 rdxOk, 64 rcxOk.
+ */
+@pub
+struct RegVarPromotionPass{@pub{
+}}
+
+impl constructor for RegVarPromotionPass() self{
+	return RegVarPromotionPass{}
+}
+
+@pub
+struct RvWork{@pub{
+	hOff: owns some mut dynarray(mut s64)
+	hSize: owns some mut dynarray(mut u64)
+	hWeight: owns some mut dynarray(mut s64)
+	hFlags: owns some mut dynarray(mut u64)
+	hReg: owns some mut dynarray(mut s64)
+	hCh: owns some mut dynarray(mut u64)
+	hId: owns some mut dynarray(mut u64)
+	tabK: owns some mut dynarray(mut s64)
+	tabV: owns some mut dynarray(mut u64)
+	pI: owns some mut dynarray(mut u64)
+	pJ: owns some mut dynarray(mut u64)
+	pD: owns some mut dynarray(mut u64)
+	pR: owns some mut dynarray(mut u64)
+	pH: owns some mut dynarray(mut u64)
+	aprv: owns some mut dynarray(mut u64)
+	cI: owns some mut dynarray(mut u64)
+	cX: owns some mut dynarray(mut u64)
+	allIdx: owns some mut dynarray(mut u64)
+	padT: owns some mut dynarray(mut u64)
+	scS: owns some mut dynarray(mut u64)
+	scL: owns some mut dynarray(mut u64)
+	bits: owns some mut dynarray(mut u64)
+	dropK: owns some mut dynarray(mut u64)
+	dropH: owns some mut dynarray(mut u64)
+	nh: mut u64
+	tabCap: mut u64
+	nPairs: mut u64
+	nCI: mut u64
+	nCX: mut u64
+	nAll: mut u64
+	nPad: mut u64
+	nSc: mut u64
+	wd: mut u64
+	nn: mut u64
+	floatEnabled: mut bool
+	allocFunctions: mut bool
+	argRegs: mut bool
+	needFuse: mut bool
+}}
+
+@throws
+impl constructor for RvWork() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<s64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<s64>([])
+	let d = mut ? dyn:<u64>([])
+	let e1 = mut ? dyn:<s64>([])
+	let f = mut ? dyn:<u64>([])
+	let g = mut ? dyn:<u64>([])
+	let h = mut ? dyn:<s64>([])
+	let i = mut ? dyn:<u64>([])
+	let j = mut ? dyn:<u64>([])
+	let k = mut ? dyn:<u64>([])
+	let l = mut ? dyn:<u64>([])
+	let m = mut ? dyn:<u64>([])
+	let n = mut ? dyn:<u64>([])
+	let o = mut ? dyn:<u64>([])
+	let p = mut ? dyn:<u64>([])
+	let q = mut ? dyn:<u64>([])
+	let r = mut ? dyn:<u64>([])
+	let s = mut ? dyn:<u64>([])
+	let t = mut ? dyn:<u64>([])
+	let u = mut ? dyn:<u64>([])
+	let v = mut ? dyn:<u64>([])
+	let w = mut ? dyn:<u64>([])
+	let w2 = mut ? dyn:<u64>([])
+	return RvWork{hOff= a, hSize= b, hWeight= c, hFlags= d, hReg= e1, hCh= f, hId= g, tabK= h, tabV= i, pI= j, pJ= k, pD= l, pR= m, pH= n, aprv= o, cI= p, cX= q, allIdx= r, padT= s, scS= t, scL= u, bits= v, dropK= w, dropH= w2, nh= 0, tabCap= 0, nPairs= 0, nCI= 0, nCX= 0, nAll= 0, nPad= 0, nSc= 0, wd= 1, nn= 0, floatEnabled= false, allocFunctions= false, argRegs= false, needFuse= false}
+}
+
+@pub
+impl RegVarPromotionPass{
+	// ---- hint table ----
+
+	static func hashOff(off: mut s64, mask: mut u64) mut u64{
+		let u = mut wrap:<u64>(off)
+		return bits_and(bits_xor(u, bits_right(u, 17)), mask)
+	}
+
+	/** Index of the hint at frame offset `off`, or -1. */
+	static func findHint(w: ref some imut RvWork, off: mut s64) mut s64{
+		if w.tabCap == 0{
+			return -1
+		}
+		let mask = mut (w.tabCap - 1)
+		let at = mut RegVarPromotionPass.hashOff(off, mask)
+		let lim_st = mut w.tabCap
+		for st in 0..lim_st{
+			let v = mut wrap:<u64>(0)
+			match at in w.tabV{ v = w.tabV[at] }
+			if v == 0{
+				return -1
+			}
+			let k = mut off
+			match at in w.tabK{ k = w.tabK[at] }
+			if k == off{
+				return wrap:<s64>(v - 1)
+			}
+			at = bits_and(at + 1, mask)
+		}
+		return -1
+	}
+
+	/** The hint named by token k of line i (`$off` of a known hint), or -1. */
+	static func slotHint(prog: ref some imut Prog, w: ref some imut RvWork, i: mut u64, k: mut u64) mut s64{
+		if prog.tokStartsCh(prog, i, k, '$') == false{
+			return -1
+		}
+		let p = mut wrap:<u64>(prog.tokPos(prog, i, k))
+		let e = mut prog.lineEnd(prog, i)
+		if Ln.tokEnd(prog.buf, p, e) - p < 2{
+			return -1
+		}
+		let off = mut Ln.signedTok(prog.buf, p, e, 1)
+		if off == -4611686018427387904{
+			return -1
+		}
+		return RegVarPromotionPass.findHint(w, off)
+	}
+
+	static func hflag(w: ref some imut RvWork, h: mut u64, bit: mut u64) mut bool{
+		let f = mut 0
+		match h in w.hFlags{ f = w.hFlags[h] }
+		return bits_and(f, bit) != 0
+	}
+
+	static func hset(w: ref some mut RvWork, h: mut u64, bit: mut u64, on: mut bool) void{
+		let f = mut 0
+		match h in w.hFlags{ f = w.hFlags[h] }
+		if on{
+			f = bits_or(f, bit)
+		} else {
+			f = bits_and(f, bits_xor(f, bit))
+		}
+		match h into w.hFlags{ w.hFlags[h] = f }
+	}
+
+	static func hsize(w: ref some imut RvWork, h: mut u64) mut u64{
+		let r = mut 0
+		match h in w.hSize{ r = w.hSize[h] }
+		return r
+	}
+
+	static func hoff(w: ref some imut RvWork, h: mut u64) mut s64{
+		let:<mut s64> r = mut 0
+		match h in w.hOff{ r = w.hOff[h] }
+		return r
+	}
+
+	static func hweight(w: ref some imut RvWork, h: mut u64) mut s64{
+		let:<mut s64> r = mut 0
+		match h in w.hWeight{ r = w.hWeight[h] }
+		return r
+	}
+
+	static func hreg(w: ref some imut RvWork, h: mut u64) mut s64{
+		let:<mut s64> r = mut 0
+		match h in w.hReg{ r = w.hReg[h] }
+		return r
+	}
+
+	static func intOf(prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		let v = mut prog.signedTok(prog, i, k, 0)
+		if v == -4611686018427387904 || v > 2147483647 || v < -2147483648{
+			return -1
+		}
+		return v
+	}
+
+	/** Small code for the mnemonics mentionOk cares about. */
+	static func opCode(prog: ref some imut Prog, i: mut u64) mut u64{
+		if prog.opEq(prog, i, "R_MOV"){ return 1 }
+		if prog.opEq(prog, i, "R_LD"){ return 2 }
+		if prog.opEq(prog, i, "R_ST"){ return 3 }
+		if prog.opEq(prog, i, "R_LEA"){ return 4 }
+		if prog.opEq(prog, i, "R_BIN"){ return 5 }
+		if prog.opEq(prog, i, "R_UN"){ return 6 }
+		if prog.opEq(prog, i, "R_DIVC"){ return 7 }
+		if prog.opEq(prog, i, "R_FBIN"){ return 8 }
+		if prog.opEq(prog, i, "R_FCMP"){ return 9 }
+		if prog.opEq(prog, i, "R_RMW"){ return 10 }
+		if prog.opEq(prog, i, "R_ARG"){ return 11 }
+		if prog.opEq(prog, i, "R_FARG"){ return 12 }
+		if prog.opEq(prog, i, "R_RET"){ return 13 }
+		if prog.opEq(prog, i, "R_RETF"){ return 14 }
+		if prog.opEq(prog, i, "R_PUSH"){ return 15 }
+		if prog.opEq(prog, i, "PUSH"){ return 16 }
+		return 0
+	}
+
+	/** May operand k of line i (op code oc) name the integer-register hinted slot h? */
+	static func mentionOk(prog: ref some imut Prog, i: mut u64, oc: mut u64, c: mut u64, k: mut u64, size: mut u64) mut bool{
+		let sz = mut wrap:<s64>(size)
+		if oc == 1{
+			return size == 8 && c == 4 && (k == 2 || k == 3)
+		}
+		if oc == 2{
+			return c == 4 && k == 3 && RegVarPromotionPass.intOf(prog, i, 1) == sz
+		}
+		if oc == 3{
+			return c == 4 && k == 2 && RegVarPromotionPass.intOf(prog, i, 1) == sz
+		}
+		if oc == 4{
+			return (c == 5 || c == 6) && k == 3 && size == 8
+		}
+		if oc == 5{
+			return c == 6 && (k == 4 || k == 5) && size == 8 && RegVarPromotionPass.intOf(prog, i, 2) == 8
+		}
+		if oc == 6{
+			return c == 5 && k == 4 && size == 8
+		}
+		if oc == 7{
+			return c == 6 && k == 4 && size == 8
+		}
+		if oc == 8 || oc == 9{
+			return c == 6 && (k == 4 || k == 5) && RegVarPromotionPass.intOf(prog, i, 2) == sz
+		}
+		if oc == 10{
+			return size == 8 && (k == 3 || (k == 4 && c == 5))
+		}
+		if oc == 11 || oc == 12{
+			return c == 4 && k == 3 && RegVarPromotionPass.intOf(prog, i, 2) == sz
+		}
+		if oc == 13 || oc == 14{
+			return c == 2 && k == 1 && size == 8
+		}
+		if oc == 15{
+			return c == 3 && k == 2 && size == 8
+		}
+		return false
+	}
+
+	/** May operand k of line i name the float-register hinted slot h? */
+	static func mentionOkX(prog: ref some imut Prog, i: mut u64, oc: mut u64, c: mut u64, k: mut u64, size: mut u64) mut bool{
+		let sz = mut wrap:<s64>(size)
+		if oc == 2{
+			return c == 4 && k == 3 && RegVarPromotionPass.intOf(prog, i, 1) == sz
+		}
+		if oc == 3{
+			return c == 4 && k == 2 && RegVarPromotionPass.intOf(prog, i, 1) == sz
+		}
+		if oc == 1{
+			if c != 4 || size != 8 || RegVarPromotionPass.intOf(prog, i, 1) != 8{
+				return false
+			}
+			if k == 3{
+				return prog.startsWith(prog, i, 2, "%t")
+			}
+			if k == 2{
+				return prog.startsWith(prog, i, 3, "%t") || prog.startsWith(prog, i, 3, "#")
+			}
+			return false
+		}
+		if oc == 8 || oc == 9{
+			return c == 6 && (k == 4 || k == 5) && RegVarPromotionPass.intOf(prog, i, 2) == sz
+		}
+		if oc == 11 || oc == 12{
+			return c == 4 && k == 3 && RegVarPromotionPass.intOf(prog, i, 2) == sz
+		}
+		if oc == 14{
+			return c == 2 && k == 1
+		}
+		if oc == 16{
+			return c == 3 && k == 2 && RegVarPromotionPass.intOf(prog, i, 1) == sz
+		}
+		return false
+	}
+
+	static func isHintLine(prog: ref some imut Prog, i: mut u64) mut bool{
+		return prog.opEq(prog, i, "REGHINT") || prog.opEq(prog, i, "REGVAR")
+	}
+
+	/** Mnemonics whose backend code uses r13/r14 internally. */
+	static func isR13R14User(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "NEW") || prog.opEq(prog, i, "NEW_DYN") || prog.opEq(prog, i, "NEW_UDYN") || prog.opEq(prog, i, "NEW_FROM_STRING") || prog.opEq(prog, i, "NEW_FROM_USTRING"){
+			return true
+		}
+		if prog.opEq(prog, i, "CLONE") || prog.opEq(prog, i, "CLONE_DYN") || prog.opEq(prog, i, "RESIZE") || prog.opEq(prog, i, "URESIZE"){
+			return true
+		}
+		if prog.opEq(prog, i, "DOT") || prog.opEq(prog, i, "LOOKUP_ARRAY") || prog.opEq(prog, i, "ASM_START") || prog.opEq(prog, i, "ASM_END"){
+			return true
+		}
+		return false
+	}
+
+	/** Stack-form mnemonics that may sit between `ADDR n $x` and its ASSIGN. */
+	static func isValueOp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "PUSH") || prog.opEq(prog, i, "PUSH_RET_FLOAT") || prog.opEq(prog, i, "PUSH_RET_INT") || prog.opEq(prog, i, "PUSH_LABEL"){
+			return true
+		}
+		if prog.opEq(prog, i, "ADD_FLOAT") || prog.opEq(prog, i, "SUB_FLOAT") || prog.opEq(prog, i, "MUL_FLOAT") || prog.opEq(prog, i, "DIV_FLOAT"){
+			return true
+		}
+		if prog.opEq(prog, i, "ADD_INT") || prog.opEq(prog, i, "SUB_INT") || prog.opEq(prog, i, "MUL_INT") || prog.opEq(prog, i, "CC_START") || prog.opEq(prog, i, "CC_END") || prog.opEq(prog, i, "CALL"){
+			return true
+		}
+		if prog.opEq(prog, i, "VARARGS_XMM_COUNT") || prog.opEq(prog, i, "PROMOTE_F32_TO_F64") || prog.opEq(prog, i, "FCONV") || prog.opEq(prog, i, "NEG_FLOAT"){
+			return true
+		}
+		if prog.opEq(prog, i, "DIV_INT") || prog.opEq(prog, i, "MOD_INT") || prog.opEq(prog, i, "SDIV_INT") || prog.opEq(prog, i, "SMOD_INT"){
+			return true
+		}
+		if prog.opEq(prog, i, "SHL") || prog.opEq(prog, i, "SHR") || prog.opEq(prog, i, "SAR") || prog.opEq(prog, i, "ROTL") || prog.opEq(prog, i, "ROTR"){
+			return true
+		}
+		if prog.opEq(prog, i, "BITS_AND") || prog.opEq(prog, i, "BITS_OR") || prog.opEq(prog, i, "BITS_XOR") || prog.opEq(prog, i, "BITS_NOT") || prog.opEq(prog, i, "NEG") || prog.opEq(prog, i, "NOT"){
+			return true
+		}
+		if prog.opEq(prog, i, "INC_INT") || prog.opEq(prog, i, "DEC_INT") || prog.opEq(prog, i, "EQ_INT") || prog.opEq(prog, i, "NEQ_INT") || prog.opEq(prog, i, "LT_INT") || prog.opEq(prog, i, "LT_EQ_INT"){
+			return true
+		}
+		if prog.opEq(prog, i, "GT_INT") || prog.opEq(prog, i, "GT_EQ_INT") || prog.opEq(prog, i, "SLT_INT") || prog.opEq(prog, i, "SLT_EQ_INT") || prog.opEq(prog, i, "SGT_INT") || prog.opEq(prog, i, "SGT_EQ_INT"){
+			return true
+		}
+		if prog.opEq(prog, i, "AND") || prog.opEq(prog, i, "OR") || prog.opEq(prog, i, "ZEXT") || prog.opEq(prog, i, "TRUNC") || prog.opEq(prog, i, "DEREF") || prog.opEq(prog, i, "LEN"){
+			return true
+		}
+		if prog.opEq(prog, i, "LOOKUP_DYN") || prog.opEq(prog, i, "LOOKUP_ARRAY") || prog.opEq(prog, i, "DOT") || prog.opEq(prog, i, "PUSH_FIELDNAME") || prog.opEq(prog, i, "DOT_LHS"){
+			return true
+		}
+		if prog.opEq(prog, i, "LOOKUP_DYN_LHS") || prog.opEq(prog, i, "LOOKUP_ARRAY_LHS"){
+			return true
+		}
+		return false
+	}
+
+	static func isVolSafe(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_MOV") || prog.opEq(prog, i, "R_LD") || prog.opEq(prog, i, "R_ST") || prog.opEq(prog, i, "R_BIN") || prog.opEq(prog, i, "R_UN") || prog.opEq(prog, i, "R_DIVC"){
+			return true
+		}
+		if prog.opEq(prog, i, "R_POPV") || prog.opEq(prog, i, "R_GETRET") || prog.opEq(prog, i, "R_BRC") || prog.opEq(prog, i, "R_BRF") || prog.opEq(prog, i, "R_LEA") || prog.opEq(prog, i, "R_RMW"){
+			return true
+		}
+		if prog.opEq(prog, i, "R_SETV") || prog.opEq(prog, i, "R_LDX") || prog.opEq(prog, i, "R_STX") || prog.opEq(prog, i, "R_FBIN") || prog.opEq(prog, i, "R_FBINX") || prog.opEq(prog, i, "R_FCMP"){
+			return true
+		}
+		if prog.opEq(prog, i, "R_XTOG") || prog.opEq(prog, i, "R_GTOX") || prog.opEq(prog, i, "R_XMOV") || prog.opEq(prog, i, "R_PUSH") || prog.opEq(prog, i, "R_PUSHA") || prog.opEq(prog, i, "R_XVAR"){
+			return true
+		}
+		if prog.opEq(prog, i, "R_RET") || prog.opEq(prog, i, "R_RETF") || prog.opEq(prog, i, "JMP") || prog.opEq(prog, i, "CMP") || prog.opEq(prog, i, "ALLOC") || prog.opEq(prog, i, "FUNC_START") || prog.opEq(prog, i, "FUNC_END"){
+			return true
+		}
+		return false
+	}
+
+	static func noFallthrough(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "RET") || prog.opEq(prog, i, "RET_FLOAT") || prog.opEq(prog, i, "R_RET") || prog.opEq(prog, i, "R_RETF") || prog.opEq(prog, i, "GT_UNWIND"){
+			return true
+		}
+		if prog.opEq(prog, i, "EXIT") || prog.opEq(prog, i, "EXIT_THREAD") || prog.opEq(prog, i, "FUNC_END"){
+			return true
+		}
+		return false
+	}
+
+	static func mayUnwind(prog: ref some imut Prog, i: mut u64) mut bool{
+		return prog.opEq(prog, i, "CALL") || prog.opEq(prog, i, "INVOKE") || prog.opEq(prog, i, "EXTERN_CALL") || prog.opEq(prog, i, "SLEEP")
+	}
+
+	static func isLabelDef(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) != 1 || prog.tokStartsCh(prog, i, 0, '@') == false{
+			return false
+		}
+		return prog.buf.charAt(prog.buf, prog.lineEnd(prog, i) - 1) == ':'
+	}
+
+	// ---- bit rows ----
+
+	static func bitGet(w: ref some imut RvWork, base: mut u64, v: mut u64) mut bool{
+		let idx = mut (base + v / 64)
+		let x = mut 0
+		match idx in w.bits{ x = w.bits[idx] }
+		return bits_and(bits_right(x, v % 64), 1) == 1
+	}
+
+	static func bitSet(w: ref some mut RvWork, base: mut u64, v: mut u64) void{
+		let idx = mut (base + v / 64)
+		let x = mut 0
+		match idx in w.bits{ x = w.bits[idx] }
+		x = bits_or(x, bits_left(1, v % 64))
+		match idx into w.bits{ w.bits[idx] = x }
+	}
+
+	/** Any bit set in the row at `base`? */
+	static func rowAny(w: ref some imut RvWork, base: mut u64) mut bool{
+		let wd = mut w.wd
+		for q in 0..wd{
+			let x = mut 0
+			let idx = mut (base + q)
+			match idx in w.bits{ x = w.bits[idx] }
+			if x != 0{
+				return true
+			}
+		}
+		return false
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog, enabled: mut bool, floatEnabled: mut bool, allocFunctions: mut bool, argRegs: mut bool) void{
+		?catch(e){ throw e }
+		let w = mut ? new RvWork()
+		w.floatEnabled = false
+		w.allocFunctions = false
+		w.argRegs = false
+		if enabled{
+			w.floatEnabled = floatEnabled
+			w.allocFunctions = allocFunctions
+			w.argRegs = argRegs
+		}
+		let nFuse = mut 0
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let i = mut 0
+		let ord = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START"){
+				let end = mut i
+				for q in 0..n{
+					if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+						end += 1
+					} else {
+						break
+					}
+				}
+				let stop = mut (end + 1)
+				if stop > n{
+					stop = n
+				}
+				w.needFuse = false
+				? RegVarPromotionPass.processFunction(prog, w, enabled, i, stop)
+				if w.needFuse{
+					prog.fo = ? resize(prog.fo, nFuse + 1, 0)
+					match nFuse into prog.fo{ prog.fo[nFuse] = ord }
+					nFuse += 1
+				}
+				ord += 1
+				i = stop
+			} else if RegVarPromotionPass.isHintLine(prog, i){
+				i += 1
+			} else {
+				? prog.outLine(prog, i)
+				i += 1
+			}
+		}
+		prog.outCommit(prog)
+		if nFuse > 0{
+			? RegVarPromotionPass.fuseSweep(prog, nFuse)
+		}
+	}
+
+	@throws
+	static func copyNoHints(prog: ref some mut Prog, fs: mut u64, fe: mut u64) void{
+		?catch(e){ throw e }
+		for q in fs..fe{
+			if RegVarPromotionPass.isHintLine(prog, q) == false{
+				? prog.outLine(prog, q)
+			}
+		}
+	}
+
+	/** Compare for the weight sort: hint a goes after hint b (weight descending, offset ascending). */
+	static func after(w: ref some imut RvWork, a: mut u64, b: mut u64) mut bool{
+		let wa = mut RegVarPromotionPass.hweight(w, a)
+		let wb = mut RegVarPromotionPass.hweight(w, b)
+		if wa != wb{
+			return wb > wa
+		}
+		return RegVarPromotionPass.hoff(w, a) > RegVarPromotionPass.hoff(w, b)
+	}
+
+	@throws
+	static func processFunction(prog: ref some mut Prog, w: ref some mut RvWork, enabled: mut bool, fs: mut u64, fe: mut u64) void{
+		?catch(e){ throw e }
+		let sentinel = mut -4611686018427387904
+		let:<mut s64> zs = mut 0
+		let span = mut (fe - fs)
+		w.nh = 0
+		w.nPairs = 0
+		w.nCI = 0
+		w.nCX = 0
+		let blocked = mut false
+		let hardBlocked = mut false
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			if c == 0{
+				continue
+			}
+			if prog.opEq(prog, i, "REGHINT") &&then (c == 4 || c == 5){
+				let off = mut prog.signedTok(prog, i, 1, 0)
+				let size = mut prog.signedTok(prog, i, 2, 0)
+				let weight = mut prog.signedTok(prog, i, 3, 0)
+				if off == sentinel || size == sentinel || weight == sentinel{
+					continue
+				}
+				let isF = mut false
+				if c == 5 &&then prog.eqLit(prog, i, 4, "f"){
+					isF = true
+				}
+				if size == 1 || size == 2 || size == 4 || size == 8{
+					let isDup = mut false
+					let nh = mut w.nh
+					for q in 0..nh{
+						let o = mut zs
+						match q in w.hOff{ o = w.hOff[q] }
+						if o == off{
+							isDup = true
+						}
+					}
+					if isDup == false{
+						w.hOff = ? resize(w.hOff, nh + 1, zs)
+						w.hSize = ? resize(w.hSize, nh + 1, 0)
+						w.hWeight = ? resize(w.hWeight, nh + 1, zs)
+						w.hFlags = ? resize(w.hFlags, nh + 1, 0)
+						w.hReg = ? resize(w.hReg, nh + 1, zs)
+						w.hCh = ? resize(w.hCh, nh + 1, 0)
+						w.hId = ? resize(w.hId, nh + 1, 0)
+						let fl = mut 96
+						if isF{
+							fl = bits_or(fl, 2)
+							if w.floatEnabled &&then (size == 4 || size == 8){
+								fl = bits_or(fl, 4)
+							}
+						}
+						match nh into w.hOff{ w.hOff[nh] = off }
+						match nh into w.hSize{ w.hSize[nh] = wrap:<u64>(size) }
+						match nh into w.hWeight{ w.hWeight[nh] = weight }
+						match nh into w.hFlags{ w.hFlags[nh] = fl }
+						match nh into w.hReg{ w.hReg[nh] = -1 }
+						match nh into w.hCh{ w.hCh[nh] = 0 }
+						w.nh = nh + 1
+					}
+				}
+			} else if RegVarPromotionPass.isR13R14User(prog, i){
+				blocked = true
+				if prog.opEq(prog, i, "ASM_START") || prog.opEq(prog, i, "ASM_END"){
+					hardBlocked = true
+				}
+			}
+		}
+		if enabled == false || hardBlocked || w.nh == 0{
+			? RegVarPromotionPass.copyNoHints(prog, fs, fe)
+			return
+		}
+		// hint table
+		let nh = mut w.nh
+		let cap = mut 16
+		for z in 0..40{
+			if cap < nh * 2{
+				cap = cap * 2
+			}
+		}
+		w.tabK = ? resize(w.tabK, cap, zs)
+		w.tabV = ? resize(w.tabV, cap, 0)
+		for z in 0..cap{
+			match z into w.tabV{ w.tabV[z] = 0 }
+		}
+		w.tabCap = cap
+		let mask = mut (cap - 1)
+		for hz in 0..nh{
+			let o = mut zs
+			match hz in w.hOff{ o = w.hOff[hz] }
+			let at = mut RegVarPromotionPass.hashOff(o, mask)
+			for st in 0..cap{
+				let v = mut 0
+				match at in w.tabV{ v = w.tabV[at] }
+				if v == 0{
+					match at into w.tabK{ w.tabK[at] = o }
+					match at into w.tabV{ w.tabV[at] = hz + 1 }
+					break
+				}
+				at = bits_and(at + 1, mask)
+			}
+		}
+		// store pairs: ADDR n $x ... ASSIGN n n n
+		w.aprv = ? resize(w.aprv, span + 1, 0)
+		w.dropK = ? resize(w.dropK, span + 1, 0)
+		w.dropH = ? resize(w.dropH, span + 1, 0)
+		for z in 0..span{
+			match z into w.aprv{ w.aprv[z] = 0 }
+			match z into w.dropK{ w.dropK[z] = 0 }
+			match z into w.dropH{ w.dropH[z] = 0 }
+		}
+		for i in fs..fe{
+			if i + 1 >= fe{
+				break
+			}
+			if prog.count(prog, i) != 3 || prog.opEq(prog, i, "ADDR") == false{
+				continue
+			}
+			let asz = mut prog.signedTok(prog, i, 1, 0)
+			if asz != 1 && asz != 2 && asz != 4 && asz != 8{
+				continue
+			}
+			let hi = mut RegVarPromotionPass.slotHint(prog, w, i, 2)
+			if hi < 0{
+				continue
+			}
+			let h = mut wrap:<u64>(hi)
+			if wrap:<u64>(asz) != RegVarPromotionPass.hsize(w, h){
+				continue
+			}
+			let depth = mut 1
+			let j = mut (i + 1)
+			let ok = mut true
+			for st in 0..span{
+				if j >= fe{
+					break
+				}
+				if prog.count(prog, j) == 0{
+					j += 1
+					continue
+				}
+				if prog.opEq(prog, j, "ADDR"){
+					depth += 1
+				} else if prog.opEq(prog, j, "ASSIGN") || prog.opEq(prog, j, "ATOMIC_ASSIGN"){
+					depth -= 1
+					if depth == 0{
+						break
+					}
+				} else if prog.opEq(prog, j, "POP"){
+					if prog.count(prog, j) >= 2 &&then (prog.startsWith(prog, j, 1, "ARG") || prog.startsWith(prog, j, 1, "FARG")){
+						// fine
+					} else {
+						ok = false
+						break
+					}
+				} else if prog.startsWith(prog, j, 0, "R_") == false &&then RegVarPromotionPass.isValueOp(prog, j) == false{
+					ok = false
+					break
+				}
+				j += 1
+			}
+			if ok == false || j >= fe || depth != 0{
+				continue
+			}
+			if prog.count(prog, j) != 4 || prog.opEq(prog, j, "ASSIGN") == false{
+				continue
+			}
+			if RegVarPromotionPass.intOf(prog, j, 1) != asz || RegVarPromotionPass.intOf(prog, j, 2) != asz || RegVarPromotionPass.intOf(prog, j, 3) != asz{
+				continue
+			}
+			let direct = mut 0
+			let retIdx = mut 0
+			if j - 1 > i + 1 &&then prog.opEq(prog, i + 1, "CC_START") &&then prog.opEq(prog, j - 2, "CC_END"){
+				let isX = RegVarPromotionPass.hflag(w, h, 4)
+				let retOk = mut false
+				if prog.count(prog, j - 1) == 2{
+					if isX{
+						retOk = prog.opEq(prog, j - 1, "PUSH_RET_FLOAT")
+					} else {
+						retOk = prog.opEq(prog, j - 1, "PUSH_RET_INT")
+					}
+					if retOk{
+						retOk = RegVarPromotionPass.intOf(prog, j - 1, 1) == asz
+					}
+				}
+				if retOk{
+					let d2 = mut 0
+					let whole = mut true
+					let q = mut (i + 1)
+					let qe = mut (j - 1)
+					for st2 in 0..span{
+						if q >= qe{
+							break
+						}
+						if prog.opEq(prog, q, "CC_START"){
+							d2 += 1
+						} else if prog.opEq(prog, q, "CC_END"){
+							d2 -= 1
+							if d2 == 0 &&then q != j - 2{
+								whole = false
+								break
+							}
+						}
+						q += 1
+					}
+					if whole &&then d2 == 0{
+						direct = 1
+						retIdx = j - 1
+					}
+				}
+			}
+			let np = mut w.nPairs
+			w.pI = ? resize(w.pI, np + 1, 0)
+			w.pJ = ? resize(w.pJ, np + 1, 0)
+			w.pD = ? resize(w.pD, np + 1, 0)
+			w.pR = ? resize(w.pR, np + 1, 0)
+			w.pH = ? resize(w.pH, np + 1, 0)
+			match np into w.pI{ w.pI[np] = i }
+			match np into w.pJ{ w.pJ[np] = j }
+			match np into w.pD{ w.pD[np] = direct }
+			match np into w.pR{ w.pR[np] = retIdx }
+			match np into w.pH{ w.pH[np] = h }
+			w.nPairs = np + 1
+			let rel = mut (i - fs)
+			match rel into w.aprv{ w.aprv[rel] = 1 }
+		}
+		// pass 1: ban every hinted slot with a mention we cannot rewrite
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			let rel = mut (i - fs)
+			let ap = mut 0
+			match rel in w.aprv{ ap = w.aprv[rel] }
+			if c == 0 || ap == 1 || RegVarPromotionPass.isHintLine(prog, i){
+				continue
+			}
+			let oc = mut RegVarPromotionPass.opCode(prog, i)
+			for k in 1..c{
+				let hi = mut RegVarPromotionPass.slotHint(prog, w, i, k)
+				if hi >= 0{
+					let h = mut wrap:<u64>(hi)
+					let size = mut RegVarPromotionPass.hsize(w, h)
+					let good = mut false
+					if RegVarPromotionPass.hflag(w, h, 4){
+						good = RegVarPromotionPass.mentionOkX(prog, i, oc, c, k, size)
+					} else {
+						good = RegVarPromotionPass.mentionOk(prog, i, oc, c, k, size)
+					}
+					if good == false{
+						RegVarPromotionPass.hset(w, h, 1, true)
+					}
+				}
+			}
+		}
+		// candidates, heaviest first
+		w.cI = ? resize(w.cI, nh + 1, 0)
+		w.cX = ? resize(w.cX, nh + 1, 0)
+		for h in 0..nh{
+			if RegVarPromotionPass.hflag(w, h, 1) == false{
+				if RegVarPromotionPass.hflag(w, h, 4){
+					let at = mut w.nCX
+					match at into w.cX{ w.cX[at] = h }
+					w.nCX = at + 1
+				} else {
+					let at = mut w.nCI
+					match at into w.cI{ w.cI[at] = h }
+					w.nCI = at + 1
+				}
+			}
+		}
+		let nCI = mut w.nCI
+		let nCX = mut w.nCX
+		for z in 1..nCI{
+			let zz = mut z
+			for q in 0..nCI{
+				if zz == 0{
+					break
+				}
+				let p = mut (zz - 1)
+				let hp = mut 0
+				let hx = mut 0
+				match p in w.cI{ hp = w.cI[p] }
+				match zz in w.cI{ hx = w.cI[zz] }
+				if RegVarPromotionPass.after(w, hp, hx){
+					match p into w.cI{ w.cI[p] = hx }
+					match zz into w.cI{ w.cI[zz] = hp }
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+		for z in 1..nCX{
+			let zz = mut z
+			for q in 0..nCX{
+				if zz == 0{
+					break
+				}
+				let p = mut (zz - 1)
+				let hp = mut 0
+				let hx = mut 0
+				match p in w.cX{ hp = w.cX[p] }
+				match zz in w.cX{ hx = w.cX[zz] }
+				if RegVarPromotionPass.after(w, hp, hx){
+					match p into w.cX{ w.cX[p] = hx }
+					match zz into w.cX{ w.cX[zz] = hp }
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+		let noCallee = mut false
+		if blocked &&then w.allocFunctions == false{
+			noCallee = true
+		}
+		let intLimit = mut 2
+		if noCallee{
+			intLimit = 0
+		} else {
+			let uses3 = mut false
+			for i in fs..fe{
+				let c = mut prog.count(prog, i)
+				for k in 0..c{
+					if prog.eqLit(prog, i, k, "%t3"){
+						uses3 = true
+					}
+				}
+				if uses3{
+					break
+				}
+			}
+			if uses3 == false{
+				intLimit = 3
+			}
+		}
+		for z in 0..nh{
+			match z into w.hReg{ w.hReg[z] = -1 }
+			match z into w.hCh{ w.hCh[z] = 0 }
+		}
+		if nCI > intLimit || nCX > 6{
+			? RegVarPromotionPass.shareRegisters(prog, w, fs, fe, intLimit)
+		} else {
+			for k in 0..nCI{
+				if k < intLimit{
+					let h = mut 0
+					match k in w.cI{ h = w.cI[k] }
+					match h into w.hReg{ w.hReg[h] = wrap:<s64>(k) }
+				}
+			}
+			for k in 0..nCX{
+				if k < 6{
+					let h = mut 0
+					match k in w.cX{ h = w.cX[k] }
+					match h into w.hReg{ w.hReg[h] = wrap:<s64>(k) }
+				}
+			}
+		}
+		let anyInt = mut false
+		let anyX = mut false
+		for z in 0..nCI{
+			let h = mut 0
+			match z in w.cI{ h = w.cI[z] }
+			if RegVarPromotionPass.hreg(w, h) >= 0{
+				match h into w.hCh{ w.hCh[h] = 1 }
+				anyInt = true
+			}
+		}
+		for z in 0..nCX{
+			let h = mut 0
+			match z in w.cX{ h = w.cX[z] }
+			if RegVarPromotionPass.hreg(w, h) >= 0{
+				match h into w.hCh{ w.hCh[h] = 2 }
+				anyX = true
+			}
+		}
+		if anyInt == false &&then anyX == false{
+			? RegVarPromotionPass.copyNoHints(prog, fs, fe)
+			return
+		}
+		// pass 2: rewrite
+		let np = mut w.nPairs
+		for z in 0..np{
+			let pi = mut 0
+			let pj = mut 0
+			let pd = mut 0
+			let pr = mut 0
+			let ph = mut 0
+			match z in w.pI{ pi = w.pI[z] }
+			match z in w.pJ{ pj = w.pJ[z] }
+			match z in w.pD{ pd = w.pD[z] }
+			match z in w.pR{ pr = w.pR[z] }
+			match z in w.pH{ ph = w.pH[z] }
+			let ch = mut 0
+			match ph in w.hCh{ ch = w.hCh[ph] }
+			if ch == 0{
+				continue
+			}
+			let ri = mut (pi - fs)
+			match ri into w.dropK{ w.dropK[ri] = 1 }
+			if pd == 1{
+				let rj = mut (pj - fs)
+				let rr = mut (pr - fs)
+				match rj into w.dropK{ w.dropK[rj] = 1 }
+				match rr into w.dropK{ w.dropK[rr] = 2 }
+				match rr into w.dropH{ w.dropH[rr] = ph + 1 }
+			} else {
+				let rj = mut (pj - fs)
+				match rj into w.dropK{ w.dropK[rj] = 3 }
+				match rj into w.dropH{ w.dropH[rj] = ph + 1 }
+			}
+		}
+		for i in fs..fe{
+			if RegVarPromotionPass.isHintLine(prog, i){
+				continue
+			}
+			let rel = mut (i - fs)
+			let dk = mut 0
+			let dh = mut 0
+			match rel in w.dropK{ dk = w.dropK[rel] }
+			match rel in w.dropH{ dh = w.dropH[rel] }
+			if dk == 1{
+				continue
+			}
+			if dk == 2 || dk == 3{
+				let h = mut (dh - 1)
+				let sz = mut wrap:<s64>(RegVarPromotionPass.hsize(w, h))
+				let rg = mut RegVarPromotionPass.hreg(w, h)
+				let isX = RegVarPromotionPass.hflag(w, h, 4)
+				prog.begin(prog)
+				if dk == 2{
+					if isX{
+						? prog.addLit(prog, "R_GETRETF")
+					} else {
+						? prog.addLit(prog, "R_GETRET")
+					}
+				} else {
+					if isX{
+						? prog.addLit(prog, "R_POPX")
+					} else {
+						? prog.addLit(prog, "R_POPV")
+					}
+				}
+				? prog.addS64(prog, sz)
+				if isX{
+					? prog.addLit(prog, "%x")
+				} else {
+					? prog.addLit(prog, "%v")
+				}
+				? prog.glueS64(prog, rg)
+				? prog.outBuilt(prog)
+				continue
+			}
+			if anyX &&then RegVarPromotionPass.jumpsToCatchLabel(prog, i){
+				? prog.outPushLit(prog, "R_XSPILL")
+			}
+			? RegVarPromotionPass.emitRewritten(prog, w, i)
+			if i == fs &&then anyX{
+				for r in 0..6{
+					let best = mut -1
+					for h in 0..nh{
+						let ch = mut 0
+						match h in w.hCh{ ch = w.hCh[h] }
+						if ch == 2 &&then RegVarPromotionPass.hreg(w, h) == wrap:<s64>(r){
+							if best < 0{
+								best = wrap:<s64>(h)
+							} else {
+								let b = mut wrap:<u64>(best)
+								let wb = mut RegVarPromotionPass.hweight(w, b)
+								let wh = mut RegVarPromotionPass.hweight(w, h)
+								let better = mut false
+								if wh > wb{
+									better = true
+								} else if wh == wb &&then RegVarPromotionPass.hoff(w, h) < RegVarPromotionPass.hoff(w, b){
+									better = true
+								}
+								if better{
+									best = wrap:<s64>(h)
+								}
+							}
+						}
+					}
+					if best >= 0{
+						let b = mut wrap:<u64>(best)
+						prog.begin(prog)
+						? prog.addLit(prog, "R_XVAR %x")
+						? prog.glueS64(prog, wrap:<s64>(r))
+						? prog.addLit(prog, "$")
+						? prog.glueS64(prog, RegVarPromotionPass.hoff(w, b))
+						? prog.addS64(prog, wrap:<s64>(RegVarPromotionPass.hsize(w, b)))
+						? prog.outBuilt(prog)
+					}
+				}
+			}
+			if anyX &&then prog.count(prog, i) == 1 &&then prog.startsWith(prog, i, 0, "@catch_") &&then prog.buf.charAt(prog.buf, prog.lineEnd(prog, i) - 1) == ':'{
+				? prog.outPushLit(prog, "R_XRELOAD")
+			}
+		}
+		if anyX{
+			w.needFuse = true
+		}
+	}
+
+	static func jumpsToCatchLabel(prog: ref some imut Prog, i: mut u64) mut bool{
+		let c = mut prog.count(prog, i)
+		if c < 2{
+			return false
+		}
+		if prog.opEq(prog, i, "JMP") == false &&then prog.startsWith(prog, i, 0, "R_BR") == false{
+			return false
+		}
+		return prog.startsWith(prog, i, c - 1, "@catch_")
+	}
+
+	/** Line i with every chosen slot renamed to its register (and R_LD/R_ST/R_MOV forms adjusted). */
+	@throws
+	static func emitRewritten(prog: ref some mut Prog, w: ref some imut RvWork, i: mut u64) void{
+		?catch(e){ throw e }
+		let c = mut prog.count(prog, i)
+		let touchInt = mut false
+		let touchX = mut false
+		for k in 1..c{
+			let hi = mut RegVarPromotionPass.slotHint(prog, w, i, k)
+			if hi >= 0{
+				let ch = mut 0
+				let h = mut wrap:<u64>(hi)
+				match h in w.hCh{ ch = w.hCh[h] }
+				if ch == 1{
+					touchInt = true
+				} else if ch == 2{
+					touchX = true
+				}
+			}
+		}
+		if touchInt == false &&then touchX == false{
+			? prog.outLine(prog, i)
+			return
+		}
+		prog.begin(prog)
+		let isLd = mut prog.opEq(prog, i, "R_LD")
+		let isSt = mut prog.opEq(prog, i, "R_ST")
+		let isMov = mut prog.opEq(prog, i, "R_MOV")
+		let first = mut 0
+		if touchX{
+			if isLd{
+				? prog.addLit(prog, "R_XTOG")
+			} else if isSt{
+				? prog.addLit(prog, "R_GTOX")
+			} else if isMov{
+				// R_MOV 8 %tD %xK -> R_XTOG ; R_MOV 8 %xK src -> R_GTOX
+				let hi2 = mut RegVarPromotionPass.slotHint(prog, w, i, 2)
+				if hi2 >= 0{
+					? prog.addLit(prog, "R_GTOX")
+				} else {
+					? prog.addLit(prog, "R_XTOG")
+				}
+			} else {
+				? prog.addTok(prog, i, 0)
+			}
+		} else if isLd{
+			? prog.addLit(prog, "R_MOV 8")
+			first = 2
+		} else if isSt{
+			if prog.eqLit(prog, i, 1, "8"){
+				? prog.addLit(prog, "R_MOV")
+			} else {
+				? prog.addLit(prog, "R_SETV")
+			}
+		} else {
+			? prog.addTok(prog, i, 0)
+		}
+		if first == 0{
+			first = 1
+		}
+		for k in first..c{
+			let hi = mut RegVarPromotionPass.slotHint(prog, w, i, k)
+			let ch = mut 0
+			let rg = mut -1
+			if hi >= 0{
+				let h = mut wrap:<u64>(hi)
+				match h in w.hCh{ ch = w.hCh[h] }
+				rg = RegVarPromotionPass.hreg(w, h)
+			}
+			if ch == 1{
+				? prog.addLit(prog, "%v")
+				? prog.glueS64(prog, rg)
+			} else if ch == 2{
+				? prog.addLit(prog, "%x")
+				? prog.glueS64(prog, rg)
+			} else {
+				? prog.addTok(prog, i, k)
+			}
+		}
+		? prog.outBuilt(prog)
+	}
+
+	// ---- register sharing ----
+
+	@throws
+	static func shareRegisters(prog: ref some mut Prog, w: ref some mut RvWork, fs: mut u64, fe: mut u64, intLimit: mut u64) void{
+		?catch(e){ throw e }
+		let:<mut s64> zs = mut 0
+		let n = mut (fe - fs)
+		let nCI = mut w.nCI
+		let nCX = mut w.nCX
+		let nhc = mut (nCI + nCX)
+		w.nAll = nhc
+		w.allIdx = ? resize(w.allIdx, nhc + 1, 0)
+		let totalH = mut w.nh
+		for h in 0..totalH{
+			match h into w.hId{ w.hId[h] = 0 }
+		}
+		for z in 0..nCI{
+			let h = mut 0
+			match z in w.cI{ h = w.cI[z] }
+			match z into w.allIdx{ w.allIdx[z] = h }
+			match h into w.hId{ w.hId[h] = z + 1 }
+			match h into w.hReg{ w.hReg[h] = -1 }
+		}
+		for z in 0..nCX{
+			let h = mut 0
+			match z in w.cX{ h = w.cX[z] }
+			let at = mut (nCI + z)
+			match at into w.allIdx{ w.allIdx[at] = h }
+			match h into w.hId{ w.hId[h] = at + 1 }
+			match h into w.hReg{ w.hReg[h] = -1 }
+		}
+		let wd = mut ((nhc + 63) / 64)
+		if wd == 0{
+			wd = 1
+		}
+		w.wd = wd
+		let rows = mut (4 * n + nhc + 6)
+		let total = mut (rows * wd)
+		w.bits = ? resize(w.bits, total + 1, 0)
+		for z in 0..total{
+			match z into w.bits{ w.bits[z] = 0 }
+		}
+		let labels = mut ? LabelIndex.buildRange(prog, fs, fe)
+		// landing pads: labels referenced by a non-jump line
+		w.nPad = 0
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			if c == 0 || RegVarPromotionPass.isLabelDef(prog, i){
+				continue
+			}
+			if prog.opEq(prog, i, "JMP") || prog.opEq(prog, i, "R_BRC") || prog.opEq(prog, i, "R_BRF"){
+				continue
+			}
+			for k in 1..c{
+				if prog.tokStartsCh(prog, i, k, '@'){
+					let d = mut labels.find(labels, prog, i, k)
+					if d >= 0{
+						let seen = mut false
+						let np = mut w.nPad
+						for q in 0..np{
+							let x = mut 0
+							match q in w.padT{ x = w.padT[q] }
+							if x == wrap:<u64>(d) - fs{
+								seen = true
+							}
+						}
+						if seen == false{
+							w.padT = ? resize(w.padT, np + 1, 0)
+							match np into w.padT{ w.padT[np] = wrap:<u64>(d) - fs }
+							w.nPad = np + 1
+						}
+					}
+				}
+			}
+		}
+		// successors (CSR)
+		w.scS = ? resize(w.scS, n + 2, 0)
+		w.scL = ? resize(w.scL, 16, 0)
+		w.nSc = 0
+		for r in 0..n{
+			let i = mut (fs + r)
+			let c = mut prog.count(prog, i)
+			match r into w.scS{ w.scS[r] = w.nSc }
+			let fall = mut (RegVarPromotionPass.noFallthrough(prog, i) == false)
+			if c == 0{
+				fall = true
+			}
+			if prog.opEq(prog, i, "JMP") &&then c == 2{
+				let cond = mut false
+				if r > 0 &&then prog.count(prog, i - 1) == 1 &&then prog.opEq(prog, i - 1, "CMP"){
+					cond = true
+				}
+				let tg = mut labels.find(labels, prog, i, 1)
+				if tg >= 0{
+					? RegVarPromotionPass.addSucc(w, wrap:<u64>(tg) - fs)
+				}
+				fall = cond
+			} else if prog.opEq(prog, i, "R_BRC") || prog.opEq(prog, i, "R_BRF"){
+				if c >= 3{
+					let tg = mut labels.find(labels, prog, i, c - 1)
+					if tg >= 0{
+						? RegVarPromotionPass.addSucc(w, wrap:<u64>(tg) - fs)
+					}
+				}
+			}
+			if fall &&then r + 1 < n{
+				? RegVarPromotionPass.addSucc(w, r + 1)
+			}
+			if RegVarPromotionPass.mayUnwind(prog, i){
+				let np = mut w.nPad
+				for q in 0..np{
+					let x = mut 0
+					match q in w.padT{ x = w.padT[q] }
+					? RegVarPromotionPass.addSucc(w, x)
+				}
+			}
+		}
+		match n into w.scS{ w.scS[n] = w.nSc }
+		// uses and defs
+		let defBase = mut (n * wd)
+		let lim_z = mut w.nPairs
+		for z in 0..lim_z{
+			let ph = mut 0
+			let pd = mut 0
+			let pj = mut 0
+			let pr = mut 0
+			match z in w.pH{ ph = w.pH[z] }
+			match z in w.pD{ pd = w.pD[z] }
+			match z in w.pJ{ pj = w.pJ[z] }
+			match z in w.pR{ pr = w.pR[z] }
+			let id1 = mut 0
+			match ph in w.hId{ id1 = w.hId[ph] }
+			if id1 == 0{
+				continue
+			}
+			let at = mut (pj - fs)
+			if pd == 1{
+				at = pr - fs
+			}
+			RegVarPromotionPass.bitSet(w, defBase + at * wd, id1 - 1)
+		}
+		for r in 0..n{
+			let i = mut (fs + r)
+			let c = mut prog.count(prog, i)
+			let ap = mut 0
+			match r in w.aprv{ ap = w.aprv[r] }
+			if c == 0 || ap == 1 || RegVarPromotionPass.isHintLine(prog, i){
+				continue
+			}
+			let isStoreOp = mut false
+			if c == 4 &&then (prog.opEq(prog, i, "R_ST") || prog.opEq(prog, i, "R_MOV")){
+				isStoreOp = true
+			}
+			for k in 1..c{
+				let hi = mut RegVarPromotionPass.slotHint(prog, w, i, k)
+				if hi < 0{
+					continue
+				}
+				let h = mut wrap:<u64>(hi)
+				let id1 = mut 0
+				match h in w.hId{ id1 = w.hId[h] }
+				if id1 == 0{
+					continue
+				}
+				if isStoreOp &&then k == 2{
+					RegVarPromotionPass.bitSet(w, defBase + r * wd, id1 - 1)
+				} else {
+					RegVarPromotionPass.bitSet(w, r * wd, id1 - 1)
+				}
+			}
+		}
+		// backward liveness
+		let inB = mut (2 * n * wd)
+		let outB = mut (3 * n * wd)
+		let tmpO = mut ((4 * n + nhc) * wd)
+		let tmpI = mut (tmpO + wd)
+		let changed = mut true
+		for it in 0..1000000{
+			if changed == false{
+				break
+			}
+			changed = false
+			for rr in 0..n{
+				let r = mut (n - 1 - rr)
+				for q in 0..wd{
+					let at = mut (tmpO + q)
+					match at into w.bits{ w.bits[at] = 0 }
+				}
+				let s0 = mut 0
+				let s1 = mut 0
+				match r in w.scS{ s0 = w.scS[r] }
+				let r1 = mut (r + 1)
+				match r1 in w.scS{ s1 = w.scS[r1] }
+				for sx in s0..s1{
+					let sidx = mut 0
+					match sx in w.scL{ sidx = w.scL[sx] }
+					for q in 0..wd{
+						let a1 = mut (tmpO + q)
+						let a2 = mut (inB + sidx * wd + q)
+						let x1 = mut 0
+						let x2 = mut 0
+						match a1 in w.bits{ x1 = w.bits[a1] }
+						match a2 in w.bits{ x2 = w.bits[a2] }
+						match a1 into w.bits{ w.bits[a1] = bits_or(x1, x2) }
+					}
+				}
+				for q in 0..wd{
+					// ni = (o & ~def) | use
+					let ao = mut (tmpO + q)
+					let ad = mut (defBase + r * wd + q)
+					let au = mut (r * wd + q)
+					let xo = mut 0
+					let xd = mut 0
+					let xu = mut 0
+					match ao in w.bits{ xo = w.bits[ao] }
+					match ad in w.bits{ xd = w.bits[ad] }
+					match au in w.bits{ xu = w.bits[au] }
+					let ni = mut bits_or(bits_and(xo, bits_xor(xo, bits_and(xo, xd))), xu)
+					let aout = mut (outB + r * wd + q)
+					let ain = mut (inB + r * wd + q)
+					let oo = mut 0
+					let oi = mut 0
+					match aout in w.bits{ oo = w.bits[aout] }
+					match ain in w.bits{ oi = w.bits[ain] }
+					if oo != xo{
+						match aout into w.bits{ w.bits[aout] = xo }
+						changed = true
+					}
+					if oi != ni{
+						match ain into w.bits{ w.bits[ain] = ni }
+						changed = true
+					}
+				}
+			}
+		}
+		// interference
+		let adjB = mut (4 * n * wd)
+		for r in 0..n{
+			if RegVarPromotionPass.rowAny(w, defBase + r * wd) == false{
+				continue
+			}
+			for d in 0..nhc{
+				if RegVarPromotionPass.bitGet(w, defBase + r * wd, d){
+					for v in 0..nhc{
+						if v != d &&then RegVarPromotionPass.bitGet(w, outB + r * wd, v){
+							RegVarPromotionPass.bitSet(w, adjB + d * wd, v)
+							RegVarPromotionPass.bitSet(w, adjB + v * wd, d)
+						}
+					}
+				}
+			}
+		}
+		if n > 0{
+			for a in 0..nhc{
+				if RegVarPromotionPass.bitGet(w, inB, a){
+					for b in 0..nhc{
+						if a != b &&then RegVarPromotionPass.bitGet(w, inB, b){
+							RegVarPromotionPass.bitSet(w, adjB + a * wd, b)
+						}
+					}
+				}
+			}
+		}
+		// which candidates may use the caller-saved registers
+		let sysv = mut true
+		for i in fs..fe{
+			if prog.opEq(prog, i, "CC_START") &&then prog.count(prog, i) > 1 &&then prog.eqLit(prog, i, 1, "sysv_x64") == false{
+				sysv = false
+			}
+		}
+		// volRegOk bits 0..6: r8, r9, r10, rsi, rdi, rdx, rcx
+		let vm = mut 7
+		if w.argRegs{
+			vm = bits_or(vm, 24)
+			if sysv{
+				vm = bits_or(vm, 96)
+			}
+		}
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			if c == 0{
+				continue
+			}
+			if prog.opEq(prog, i, "PUSH_RET_FLOAT") || prog.opEq(prog, i, "R_GETRETF"){
+				vm = bits_and(vm, bits_xor(vm, 4))
+			}
+			for k in 1..c{
+				let p = mut wrap:<u64>(prog.tokPos(prog, i, k))
+				let z = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+				if z - p > 3 &&then prog.buf.charAt(prog.buf, p) == 'A' &&then prog.buf.charAt(prog.buf, p + 1) == 'R' &&then prog.buf.charAt(prog.buf, p + 2) == 'G' &&then prog.buf.charAt(prog.buf, p + 3) >= '0' &&then prog.buf.charAt(prog.buf, p + 3) <= '9'{
+					let v = mut Ln.signedTok(prog.buf, p, prog.lineEnd(prog, i), 3)
+					if v == -4611686018427387904 || v > 2147483647{
+						vm = bits_and(vm, bits_xor(vm, 7))
+					} else if v >= 2{
+						vm = bits_and(vm, bits_xor(vm, 3))
+					}
+				}
+			}
+		}
+		// accumulate "live somewhere forbidden" rows
+		let notVol = mut ((4 * n + nhc + 2) * wd)
+		let notArg = mut (notVol + wd)
+		let notRdx = mut (notArg + wd)
+		let notRcx = mut (notRdx + wd)
+		let depth = mut 0
+		for r in 0..n{
+			let i = mut (fs + r)
+			let c = mut prog.count(prog, i)
+			let isLabel = mut RegVarPromotionPass.isLabelDef(prog, i)
+			let isHint = mut false
+			if c > 0{
+				isHint = RegVarPromotionPass.isHintLine(prog, i)
+			}
+			let volRow = mut false
+			if c > 0 &&then isLabel == false &&then isHint == false &&then RegVarPromotionPass.isVolSafe(prog, i) == false{
+				volRow = true
+			}
+			let isCCStart = mut false
+			let isCCEnd = mut false
+			if c > 0{
+				isCCStart = prog.opEq(prog, i, "CC_START")
+				isCCEnd = prog.opEq(prog, i, "CC_END")
+			}
+			if isCCStart{
+				depth += 1
+			}
+			let argRow = mut false
+			if w.argRegs &&then depth > 0{
+				argRow = true
+			}
+			let usesRdx = mut false
+			let usesRcx = mut false
+			if c > 0{
+				usesRdx = prog.opEq(prog, i, "R_DIVC")
+				if prog.opEq(prog, i, "R_BIN") &&then c > 5{
+					if prog.eqLit(prog, i, 1, "SHL") || prog.eqLit(prog, i, 1, "SHR") || prog.eqLit(prog, i, 1, "SAR") || prog.eqLit(prog, i, 1, "ROTL") || prog.eqLit(prog, i, 1, "ROTR"){
+						if prog.startsWith(prog, i, 5, "#") == false{
+							usesRcx = true
+						}
+					}
+				}
+			}
+			if volRow || argRow || usesRdx || usesRcx{
+				for q in 0..wd{
+					let xi = mut 0
+					let xo = mut 0
+					let xd = mut 0
+					let a1 = mut (inB + r * wd + q)
+					let a2 = mut (outB + r * wd + q)
+					let a3 = mut (defBase + r * wd + q)
+					match a1 in w.bits{ xi = w.bits[a1] }
+					match a2 in w.bits{ xo = w.bits[a2] }
+					match a3 in w.bits{ xd = w.bits[a3] }
+					let m = mut bits_or(xi, bits_or(xo, xd))
+					if volRow{
+						let t = mut (notVol + q)
+						let cur = mut 0
+						match t in w.bits{ cur = w.bits[t] }
+						match t into w.bits{ w.bits[t] = bits_or(cur, m) }
+					}
+					if argRow{
+						let t = mut (notArg + q)
+						let cur = mut 0
+						match t in w.bits{ cur = w.bits[t] }
+						match t into w.bits{ w.bits[t] = bits_or(cur, m) }
+					}
+					if usesRdx{
+						let t = mut (notRdx + q)
+						let cur = mut 0
+						match t in w.bits{ cur = w.bits[t] }
+						match t into w.bits{ w.bits[t] = bits_or(cur, m) }
+					}
+					if usesRcx{
+						let t = mut (notRcx + q)
+						let cur = mut 0
+						match t in w.bits{ cur = w.bits[t] }
+						match t into w.bits{ w.bits[t] = bits_or(cur, m) }
+					}
+				}
+			}
+			if isCCEnd &&then depth > 0{
+				depth -= 1
+			}
+		}
+		for v in 0..nhc{
+			let h = mut 0
+			match v in w.allIdx{ h = w.allIdx[v] }
+			let argOk = mut false
+			if w.argRegs{
+				argOk = RegVarPromotionPass.bitGet(w, notArg, v) == false
+			}
+			RegVarPromotionPass.hset(w, h, 8, RegVarPromotionPass.bitGet(w, notVol, v) == false)
+			RegVarPromotionPass.hset(w, h, 16, argOk)
+			RegVarPromotionPass.hset(w, h, 32, RegVarPromotionPass.bitGet(w, notRdx, v) == false)
+			RegVarPromotionPass.hset(w, h, 64, RegVarPromotionPass.bitGet(w, notRcx, v) == false)
+		}
+		// colour the integer candidates, heaviest first
+		for z in 0..nCI{
+			let h = mut 0
+			match z in w.cI{ h = w.cI[z] }
+			let id1 = mut 0
+			match h in w.hId{ id1 = w.hId[h] }
+			let id = mut (id1 - 1)
+			let taken = mut 0
+			for v in 0..nhc{
+				if RegVarPromotionPass.bitGet(w, adjB + id * wd, v){
+					let o = mut 0
+					match v in w.allIdx{ o = w.allIdx[v] }
+					let rg = mut RegVarPromotionPass.hreg(w, o)
+					if rg >= 0 &&then rg < 10 &&then RegVarPromotionPass.hflag(w, o, 4) == false{
+						taken = bits_or(taken, bits_left(1, wrap:<u64>(rg)))
+					}
+				}
+			}
+			let done = mut false
+			if RegVarPromotionPass.hflag(w, h, 8){
+				for r in 0..7{
+					if done{
+						break
+					}
+					if bits_and(bits_right(vm, r), 1) == 1{
+						let okArg = mut (r < 3 || RegVarPromotionPass.hflag(w, h, 16))
+						let okDx = mut (r != 5 || RegVarPromotionPass.hflag(w, h, 32))
+						let okCx = mut (r != 6 || RegVarPromotionPass.hflag(w, h, 64))
+						if okArg &&then okDx &&then okCx{
+							let reg = mut (3 + r)
+							if bits_and(bits_right(taken, reg), 1) == 0{
+								match h into w.hReg{ w.hReg[h] = wrap:<s64>(reg) }
+								done = true
+							}
+						}
+					}
+				}
+			}
+			for r in 0..intLimit{
+				if done{
+					break
+				}
+				if bits_and(bits_right(taken, r), 1) == 0{
+					match h into w.hReg{ w.hReg[h] = wrap:<s64>(r) }
+					done = true
+				}
+			}
+		}
+		// colour the float candidates
+		let widths = mut 0
+		let widthOf = mut ? dyn:<u64>([])
+		widthOf = ? resize(widthOf, 6, 0)
+		for z in 0..nCX{
+			let h = mut 0
+			match z in w.cX{ h = w.cX[z] }
+			let id1 = mut 0
+			match h in w.hId{ id1 = w.hId[h] }
+			let id = mut (id1 - 1)
+			let taken = mut 0
+			for v in 0..nhc{
+				if RegVarPromotionPass.bitGet(w, adjB + id * wd, v){
+					let o = mut 0
+					match v in w.allIdx{ o = w.allIdx[v] }
+					let rg = mut RegVarPromotionPass.hreg(w, o)
+					if rg >= 0 &&then rg < 6 &&then RegVarPromotionPass.hflag(w, o, 4){
+						taken = bits_or(taken, bits_left(1, wrap:<u64>(rg)))
+					}
+				}
+			}
+			let hs = mut RegVarPromotionPass.hsize(w, h)
+			let done = mut false
+			for r in 0..6{
+				if done{
+					break
+				}
+				if bits_and(bits_right(taken, r), 1) == 1{
+					continue
+				}
+				let wr = mut 0
+				match r in widthOf{ wr = widthOf[r] }
+				if wr != 0 &&then wr != hs{
+					continue
+				}
+				match h into w.hReg{ w.hReg[h] = wrap:<s64>(r) }
+				match r into widthOf{ widthOf[r] = hs }
+				done = true
+			}
+		}
+	}
+
+	@throws
+	static func addSucc(w: ref some mut RvWork, x: mut u64) void{
+		?catch(e){ throw e }
+		let at = mut w.nSc
+		let cap = mut len(w.scL)
+		if at >= cap{
+			w.scL = ? resize(w.scL, cap * 2 + 16, 0)
+		}
+		match at into w.scL{ w.scL[at] = x }
+		w.nSc = at + 1
+	}
+
+	// ---- float peephole (a sweep over the committed table, only the functions that got float variables) ----
+
+	/** Operand position of the destination temp of a register-form instruction, or 0. */
+	static func dstIndex(prog: ref some imut Prog, i: mut u64) mut u64{
+		if prog.opEq(prog, i, "R_LD") || prog.opEq(prog, i, "R_MOV") || prog.opEq(prog, i, "R_XTOG"){
+			return 2
+		}
+		if prog.opEq(prog, i, "R_LEA"){
+			return 1
+		}
+		if prog.opEq(prog, i, "R_BIN") || prog.opEq(prog, i, "R_UN") || prog.opEq(prog, i, "R_FBIN") || prog.opEq(prog, i, "R_FCMP") || prog.opEq(prog, i, "R_DIVC"){
+			return 3
+		}
+		return 0
+	}
+
+	static func isBlockEnd(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "JMP") || prog.opEq(prog, i, "R_BRF") || prog.opEq(prog, i, "R_RET") || prog.opEq(prog, i, "R_RETF") || prog.opEq(prog, i, "RET") || prog.opEq(prog, i, "RET_FLOAT"){
+			return true
+		}
+		if prog.opEq(prog, i, "GT_UNWIND") || prog.opEq(prog, i, "THROW") || prog.opEq(prog, i, "CC_START") || prog.opEq(prog, i, "CC_END") || prog.opEq(prog, i, "CALL") || prog.opEq(prog, i, "INVOKE") || prog.opEq(prog, i, "FUNC_END"){
+			return true
+		}
+		return false
+	}
+
+	/** Temp (token `tk` of line `a`) is not read again at or after line `from` (looking at most 60 lines ahead, within [.., fe)). */
+	static func tempDeadAfter(prog: ref some imut Prog, from: mut u64, fe: mut u64, a: mut u64, tk: mut u64) mut bool{
+		let lim = mut (from + 60)
+		if lim > fe{
+			lim = fe
+		}
+		for i in from..lim{
+			let c = mut prog.count(prog, i)
+			if c == 0{
+				continue
+			}
+			if RegVarPromotionPass.isLabelDef(prog, i){
+				return true
+			}
+			if RegVarPromotionPass.isBlockEnd(prog, i){
+				for k in 1..c{
+					if prog.tokEq(prog, i, k, a, tk){
+						return false
+					}
+				}
+				return true
+			}
+			let dst = mut RegVarPromotionPass.dstIndex(prog, i)
+			let read = mut false
+			let write = mut false
+			for k in 1..c{
+				if prog.tokEq(prog, i, k, a, tk){
+					if k == dst{
+						write = true
+					} else {
+						read = true
+					}
+				}
+			}
+			if read{
+				return false
+			}
+			if write{
+				return true
+			}
+		}
+		return true
+	}
+
+	/** R_GTOX/R_XTOG folding in the functions listed in fuseOrd (function ordinals). */
+	@throws
+	static func fuseSweep(prog: ref some mut Prog, nFuse: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let ri = mut 0
+		let wi = mut 0
+		let ord = mut 0
+		let fc = mut 0
+		for step in 0..n{
+			if ri >= n{
+				break
+			}
+			if prog.opEq(prog, ri, "FUNC_START") == false{
+				prog.copyLine(prog, ri, wi)
+				ri += 1
+				wi += 1
+				continue
+			}
+			let end = mut ri
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			let stop = mut (end + 1)
+			if stop > n{
+				stop = n
+			}
+			let flagged = mut false
+			if fc < nFuse{
+				let fo = mut 0
+				match fc in prog.fo{ fo = prog.fo[fc] }
+				if fo == ord{
+					flagged = true
+					fc += 1
+				}
+			}
+			ord += 1
+			if flagged == false{
+				for q in ri..stop{
+					prog.copyLine(prog, q, wi)
+					wi += 1
+				}
+				ri = stop
+				continue
+			}
+			let i = mut ri
+			for st in 0..n{
+				if i >= stop{
+					break
+				}
+				let has2 = mut (i + 1 < stop)
+				if has2 &&then prog.count(prog, i + 1) == 4 &&then prog.opEq(prog, i + 1, "R_GTOX") &&then prog.startsWith(prog, i + 1, 3, "%t"){
+					let b = mut (i + 1)
+					// a = line i; tmp = token 3 of b; xk = token 2 of b; bw = token 1 of b
+					if prog.opEq(prog, i, "R_LD") &&then prog.count(prog, i) == 4 &&then prog.tokEq(prog, i, 1, b, 1) &&then prog.tokEq(prog, i, 2, b, 3) &&then RegVarPromotionPass.tempDeadAfter(prog, i + 2, stop, b, 3){
+						prog.begin(prog)
+						? prog.addLit(prog, "R_LDX")
+						? prog.addTok(prog, b, 1)
+						? prog.addTok(prog, b, 2)
+						? prog.addTok(prog, i, 3)
+						prog.setBuilt(prog, wi)
+						wi += 1
+						i += 2
+						continue
+					}
+					if prog.opEq(prog, i, "R_FBIN") &&then prog.count(prog, i) == 6 &&then prog.tokEq(prog, i, 2, b, 1) &&then prog.tokEq(prog, i, 3, b, 3) &&then RegVarPromotionPass.tempDeadAfter(prog, i + 2, stop, b, 3){
+						prog.begin(prog)
+						? prog.addLit(prog, "R_FBINX")
+						? prog.addTok(prog, i, 1)
+						? prog.addTok(prog, b, 1)
+						? prog.addTok(prog, b, 2)
+						? prog.addTok(prog, i, 4)
+						? prog.addTok(prog, i, 5)
+						prog.setBuilt(prog, wi)
+						wi += 1
+						i += 2
+						continue
+					}
+				}
+				if prog.opEq(prog, i, "R_XTOG") &&then prog.count(prog, i) == 4 &&then has2 &&then prog.count(prog, i + 1) == 4 &&then prog.opEq(prog, i + 1, "R_ST"){
+					let b = mut (i + 1)
+					if prog.tokEq(prog, b, 1, i, 1) &&then prog.tokEq(prog, b, 3, i, 2) &&then prog.tokEq(prog, b, 2, i, 2) == false &&then RegVarPromotionPass.tempDeadAfter(prog, i + 2, stop, i, 2){
+						prog.begin(prog)
+						? prog.addLit(prog, "R_STX")
+						? prog.addTok(prog, i, 1)
+						? prog.addTok(prog, b, 2)
+						? prog.addTok(prog, i, 3)
+						prog.setBuilt(prog, wi)
+						wi += 1
+						i += 2
+						continue
+					}
+				}
+				prog.copyLine(prog, i, wi)
+				wi += 1
+				i += 1
+			}
+			ri = stop
+		}
+		prog.truncate(prog, wi)
+	}
+}

@@ -1,0 +1,118 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/**
+ * Line templates for the glue generators (clone, drop, address lowering helpers): a literal with `%0`..`%9`, `%a`..`%f` placeholders that are replaced by ranges of the program buffer
+ * set beforehand with `set`/`lit`/`cat`; the finished line is appended to the new line table. Placeholders are copied verbatim (no separators added).
+ */
+@pub
+struct Tpl{@pub{
+	rs: owns some mut dynarray(mut u64)
+	re: owns some mut dynarray(mut u64)
+	counter: mut u64
+}}
+
+@throws
+impl constructor for Tpl() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 16, 0)
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 16, 0)
+	return Tpl{rs= a, re= b, counter= 0}
+}
+
+@pub
+impl Tpl{
+	/** Placeholder k becomes the range [s, e). */
+	@pub
+	func set(_self: ref some mut self, k: mut u64, s: mut u64, e: mut u64) void{
+		match k into _self.rs{ _self.rs[k] = s }
+		match k into _self.re{ _self.re[k] = e }
+	}
+
+	@pub
+	func getS(_self: ref some imut self, k: mut u64) mut u64{
+		let v = mut 0
+		match k in _self.rs{ v = _self.rs[k] }
+		return v
+	}
+
+	@pub
+	func getE(_self: ref some imut self, k: mut u64) mut u64{
+		let v = mut 0
+		match k in _self.re{ v = _self.re[k] }
+		return v
+	}
+
+	/** Copies the template text to the end of the buffer (placeholders expanded) and leaves it as the line being built. */
+	@pub
+	@throws
+	func build(_self: ref some imut self, prog: ref some mut Prog, lit: static imut string) void{
+		?catch(e0){ throw e0 }
+		? prog.reserve(prog, 256)
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		prog.cur = prog.used
+		let w = mut 0
+		let lim = mut 256
+		for step in 0..lim{
+			let q = mut (lp + w)
+			let lc = mut '\0'
+			unsafe memcopy raw{
+				memcopy(raw lc, mut 1, q)
+			}
+			if lc == '\0'{
+				break
+			}
+			w += 1
+			if lc == '%'{
+				let q2 = mut (lp + w)
+				let dc = mut '\0'
+				unsafe memcopy raw{
+					memcopy(raw dc, mut 1, q2)
+				}
+				w += 1
+				let k = mut (String.charCode(dc) - 48)
+				if dc >= 'a'{
+					k = String.charCode(dc) - 87
+				}
+				let s = mut _self.getS(_self, k)
+				let e = mut _self.getE(_self, k)
+				let width = mut (e - s)
+				? prog.reserve(prog, width + 300)
+				let u = mut prog.used
+				for d in 0..width{
+					prog.buf.setCharAt(prog.buf, u + d, prog.buf.charAt(prog.buf, s + d))
+				}
+				prog.used = u + width
+			} else {
+				? prog.reserve(prog, 300)
+				let u = mut prog.used
+				prog.buf.setCharAt(prog.buf, u, lc)
+				prog.used = u + 1
+			}
+		}
+	}
+
+	/** Builds the template and appends it as a line of the new table. */
+	@pub
+	@throws
+	func emit(_self: ref some imut self, prog: ref some mut Prog, lit: static imut string) void{
+		?catch(e0){ throw e0 }
+		? _self.build(_self, prog, lit)
+		? prog.outBuilt(prog)
+	}
+
+	/** Placeholder k becomes the text of the template (a name or type fragment). */
+	@pub
+	@throws
+	func lit(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, text: static imut string) void{
+		?catch(e0){ throw e0 }
+		? _self.build(_self, prog, text)
+		_self.set(_self, k, prog.cur, prog.used)
+	}
+}

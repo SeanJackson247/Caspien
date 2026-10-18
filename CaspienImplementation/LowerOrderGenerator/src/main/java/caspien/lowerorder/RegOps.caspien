@@ -1,0 +1,146 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Register-form facts shared by the peephole passes (IndexedAccessPass.DEST / PURE_DEF and the helpers built on them). */
+@pub
+struct RegOps{@pub{
+}}
+
+impl constructor for RegOps() self{
+	return RegOps{}
+}
+
+@pub
+impl RegOps{
+	/** Position of the register mnemonic of line `j` writes: -1 writes none, -2 unknown mnemonic (IndexedAccessPass.DEST). */
+	@pub
+	static func destPos(prog: ref some imut Prog, j: mut u64) mut s32{
+		if prog.opEq(prog, j, "R_MOV"){ return 2 }
+		if prog.opEq(prog, j, "R_LD"){ return 2 }
+		if prog.opEq(prog, j, "R_BIN"){ return 3 }
+		if prog.opEq(prog, j, "R_LEA"){ return 1 }
+		if prog.opEq(prog, j, "R_ST"){ return -1 }
+		if prog.opEq(prog, j, "R_LDI"){ return 2 }
+		if prog.opEq(prog, j, "R_STI"){ return -1 }
+		if prog.opEq(prog, j, "R_UN"){ return 3 }
+		if prog.opEq(prog, j, "R_SETV"){ return 2 }
+		if prog.opEq(prog, j, "R_RMW"){ return 3 }
+		if prog.opEq(prog, j, "R_FBIN"){ return 3 }
+		if prog.opEq(prog, j, "R_FCMP"){ return 3 }
+		if prog.opEq(prog, j, "R_XTOG"){ return 2 }
+		if prog.opEq(prog, j, "R_GTOX"){ return -1 }
+		if prog.opEq(prog, j, "R_LDX"){ return -1 }
+		if prog.opEq(prog, j, "R_STX"){ return -1 }
+		if prog.opEq(prog, j, "R_FBINX"){ return -1 }
+		if prog.opEq(prog, j, "R_XMOV"){ return -1 }
+		if prog.opEq(prog, j, "R_LDXI"){ return -1 }
+		if prog.opEq(prog, j, "R_STXI"){ return -1 }
+		return -2
+	}
+
+	/** PURE_DEF: R_MOV R_LD R_LDI R_LEA R_BIN R_UN R_FBIN R_FCMP R_XTOG. */
+	@pub
+	static func pureDef(prog: ref some imut Prog, j: mut u64) mut bool{
+		if prog.opEq(prog, j, "R_MOV") || prog.opEq(prog, j, "R_LD") || prog.opEq(prog, j, "R_LDI") || prog.opEq(prog, j, "R_LEA") || prog.opEq(prog, j, "R_BIN"){
+			return true
+		}
+		if prog.opEq(prog, j, "R_UN") || prog.opEq(prog, j, "R_FBIN") || prog.opEq(prog, j, "R_FCMP") || prog.opEq(prog, j, "R_XTOG"){
+			return true
+		}
+		return false
+	}
+
+	/** IndexedAccessPass.passable: line `j` has a known mnemonic and does not write the register that is token `k` of line `i`. */
+	@pub
+	static func passable(prog: ref some imut Prog, j: mut u64, i: mut u64, k: mut u64) mut bool{
+		let d = mut RegOps.destPos(prog, j)
+		if d == -2{
+			return false
+		}
+		if d < 0{
+			return true
+		}
+		let du = mut wrap:<u64>(d)
+		if du >= prog.count(prog, j){
+			return true
+		}
+		return prog.tokEq(prog, j, du, i, k) == false
+	}
+
+	/** IndexedAccessPass.deadAfter: the register that is token `k` of line `i` is dead from line `from` on (skipping killed lines). */
+	@pub
+	static func deadAfter(prog: ref some imut Prog, from: mut u64, i: mut u64, k: mut u64, selfDefined: mut bool) mut bool{
+		if selfDefined{
+			return true
+		}
+		let n = mut prog.size(prog)
+		let j = mut from
+		let span = mut (n + 1)
+		for st in 0..span{
+			if j >= n{
+				break
+			}
+			if prog.isGone(prog, j){
+				j += 1
+				continue
+			}
+			if prog.count(prog, j) == 1 &&then prog.tokStartsCh(prog, j, 0, '@'){
+				return true
+			}
+			if prog.opEq(prog, j, "JMP"){
+				return true
+			}
+			if prog.mentions(prog, j, i, k) == false{
+				j += 1
+				continue
+			}
+			if RegOps.pureDef(prog, j) == false{
+				return false
+			}
+			let d = mut RegOps.destPos(prog, j)
+			let du = mut wrap:<u64>(d)
+			let cnt = mut prog.count(prog, j)
+			if du >= cnt || prog.tokEq(prog, j, du, i, k) == false{
+				return false
+			}
+			// no other occurrence of the register on the line
+			for t in 1..cnt{
+				if t != du &&then prog.tokEq(prog, j, t, i, k){
+					return false
+				}
+			}
+			return true
+		}
+		return true
+	}
+
+	/** 1..10: which compare name token `k` of line `i` is, in the order EQ NEQ LT GT_EQ LT_EQ GT SLT SGT_EQ SLT_EQ SGT; 0 if none of them. */
+	@pub
+	static func cmpId(prog: ref some imut Prog, i: mut u64, k: mut u64) mut u64{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return 0
+		}
+		let q = mut wrap:<u64>(p)
+		if prog.tokIsAt(prog, q, i, "EQ"){ return 1 }
+		if prog.tokIsAt(prog, q, i, "NEQ"){ return 2 }
+		if prog.tokIsAt(prog, q, i, "LT"){ return 3 }
+		if prog.tokIsAt(prog, q, i, "GT_EQ"){ return 4 }
+		if prog.tokIsAt(prog, q, i, "LT_EQ"){ return 5 }
+		if prog.tokIsAt(prog, q, i, "GT"){ return 6 }
+		if prog.tokIsAt(prog, q, i, "SLT"){ return 7 }
+		if prog.tokIsAt(prog, q, i, "SGT_EQ"){ return 8 }
+		if prog.tokIsAt(prog, q, i, "SLT_EQ"){ return 9 }
+		if prog.tokIsAt(prog, q, i, "SGT"){ return 10 }
+		return 0
+	}
+
+	/** Appends the opposite compare name of `id` (see cmpId) as a token. */
+	@pub
+	@throws
+	static func addOpposite(prog: ref some mut Prog, id: mut u64) void{
+		?catch(e){ throw e }
+		if id == 1{ ? prog.addLit(prog, "NEQ") } else if id == 2{ ? prog.addLit(prog, "EQ") } else if id == 3{ ? prog.addLit(prog, "GT_EQ") } else if id == 4{ ? prog.addLit(prog, "LT") } else if id == 5{ ? prog.addLit(prog, "GT") } else if id == 6{ ? prog.addLit(prog, "LT_EQ") } else if id == 7{ ? prog.addLit(prog, "SGT_EQ") } else if id == 8{ ? prog.addLit(prog, "SLT") } else if id == 9{ ? prog.addLit(prog, "SGT") }
+		else{ ? prog.addLit(prog, "SLT_EQ") }
+	}
+}

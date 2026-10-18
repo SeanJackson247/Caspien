@@ -1,0 +1,2120 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "FloatText.caspien"
+
+/**
+ * Port of RegisterFormPass ("deferred operands"): a compile-time model of the operand stack turns the stack-form lines into three-address `R_*` lines.
+ * The model is `Rf`: entries are ten words each in one array (see the field constants below), the output goes to the program's new line table.
+ * Entry kinds: 0 K constant, 1 M frame value, 2 A address, 3 T temp register.
+ */
+@pub
+struct RegisterFormPass{@pub{
+}}
+
+impl constructor for RegisterFormPass() self{
+	return RegisterFormPass{}
+}
+
+/** Model state. Entry fields (word f of entry i is ent[i*10+f]): 0 kind, 1 orig start, 2 orig end, 3 text start, 4 text end, 5 off / constant value, 6 temp, 7 size, 8 global, 9 zx. */
+@pub
+struct Rf{@pub{
+	ent: owns some mut dynarray(mut u64)
+	haz: owns some mut dynarray(mut u64)
+	htS: owns some mut dynarray(mut u64)
+	htE: owns some mut dynarray(mut u64)
+	hcap: mut u64
+	sp: mut u64
+	usedMask: mut u64
+	cpIn: mut u64
+	cpOut: mut u64
+	risky: mut u64
+	pv: mut u64
+	rs: mut u64
+	re: mut u64
+}}
+
+@throws
+impl constructor for Rf() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 400, 0)
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 64, 0)
+	let c = mut ? dyn:<u64>([])
+	let d = mut ? dyn:<u64>([])
+	return Rf{ent= a, haz= b, htS= c, htE= d, hcap= 0, sp= 0, usedMask= 0, cpIn= 0, cpOut= 0, risky= 0, pv= 0, rs= 0, re= 0}
+}
+
+@pub
+impl RegisterFormPass{
+	// ---- entry access ----
+
+	static func g(st: ref some imut Rf, i: mut u64, f: mut u64) mut u64{
+		let r = mut 0
+		let k = mut (i * 10 + f)
+		match k in st.ent{ r = st.ent[k] }
+		return r
+	}
+
+	static func gs(st: ref some imut Rf, i: mut u64, f: mut u64) mut s64{
+		return wrap:<s64>(RegisterFormPass.g(st, i, f))
+	}
+
+	static func put(st: ref some mut Rf, i: mut u64, f: mut u64, v: mut u64) void{
+		let k = mut (i * 10 + f)
+		match k into st.ent{ st.ent[k] = v }
+	}
+
+	/** Pushes an entry; the caller sets orig/text through the arguments. */
+	@throws
+	static func push(st: ref some mut Rf, kind: mut u64, os: mut u64, oe: mut u64, ts: mut u64, te: mut u64, off: mut s64, temp: mut u64, size: mut u64, gl: mut u64, zx: mut u64) void{
+		?catch(e){ throw e }
+		let at = mut st.sp
+		let need = mut ((at + 1) * 10)
+		let cap = mut len(st.ent)
+		if need > cap{
+			let g1 = mut ? resize(st.ent, cap * 2 + 40, 0)
+			st.ent = g1
+		}
+		RegisterFormPass.put(st, at, 0, kind)
+		RegisterFormPass.put(st, at, 1, os)
+		RegisterFormPass.put(st, at, 2, oe)
+		RegisterFormPass.put(st, at, 3, ts)
+		RegisterFormPass.put(st, at, 4, te)
+		RegisterFormPass.put(st, at, 5, wrap:<u64>(off))
+		RegisterFormPass.put(st, at, 6, temp)
+		RegisterFormPass.put(st, at, 7, size)
+		RegisterFormPass.put(st, at, 8, gl)
+		RegisterFormPass.put(st, at, 9, zx)
+		st.sp = at + 1
+	}
+
+	static func freeTemps(st: ref some imut Rf) mut u64{
+		let n = mut 0
+		let m = mut st.usedMask
+		for t in 0..4{
+			if bits_and(m, 1) == 0{
+				n += 1
+			}
+			m = bits_right(m, 1)
+		}
+		return n
+	}
+
+	static func allocTemp(st: ref some mut Rf) mut u64{
+		for t in 0..4{
+			if bits_and(bits_right(st.usedMask, t), 1) == 0{
+				st.usedMask = bits_or(st.usedMask, bits_left(1, t))
+				return t
+			}
+		}
+		return 4
+	}
+
+	static func freeTemp(st: ref some mut Rf, t: mut u64) void{
+		st.usedMask = bits_and(st.usedMask, bits_xor(15, bits_left(1, t)))
+	}
+
+	// ---- parsing helpers (token text is a range of the program buffer) ----
+
+	/** Java parseIntLiteral (`null` -> 0, Long.parseLong, else Long.parseUnsignedLong) or, with signedOnly, Long.parseLong; the value (bit pattern) goes to st.pv. */
+	static func parseLit(prog: ref some imut Prog, st: ref some mut Rf, s: mut u64, e: mut u64, signedOnly: mut bool) mut bool{
+		if e <= s{
+			return false
+		}
+		if signedOnly == false &&then e - s == 4 &&then prog.buf.charAt(prog.buf, s) == 'n' &&then prog.buf.charAt(prog.buf, s + 1) == 'u' &&then prog.buf.charAt(prog.buf, s + 2) == 'l' &&then prog.buf.charAt(prog.buf, s + 3) == 'l'{
+			st.pv = 0
+			return true
+		}
+		let neg = mut false
+		let a = mut s
+		let c0 = mut prog.buf.charAt(prog.buf, s)
+		if c0 == '-' || c0 == '+'{
+			neg = c0 == '-'
+			a += 1
+		}
+		if a >= e{
+			return false
+		}
+		let v = mut 0
+		for x in a..e{
+			let c = mut prog.buf.charAt(prog.buf, x)
+			if c < '0' || c > '9'{
+				return false
+			}
+			let d = mut (String.charCode(c) - 48)
+			if v > 1844674407370955161{
+				return false
+			}
+			if v == 1844674407370955161 &&then d > 5{
+				return false
+			}
+			v = v * 10 + d
+		}
+		if neg{
+			if v > 9223372036854775808{
+				return false
+			}
+			if v == 9223372036854775808{
+				st.pv = v
+			} else {
+				st.pv = wrap:<u64>(0 - wrap:<s64>(v))
+			}
+			return true
+		}
+		if signedOnly &&then v > 9223372036854775807{
+			return false
+		}
+		st.pv = v
+		return true
+	}
+
+	/** Java Integer.parseInt of the token, -1 when it is not one. */
+	static func parseSize(prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		let v = mut prog.signedTok(prog, i, k, 0)
+		if v == -4611686018427387904 || v > 2147483647 || v < -2147483648{
+			return -1
+		}
+		return v
+	}
+
+	static func isWidth(n: mut s64) mut bool{
+		return n == 1 || n == 2 || n == 4 || n == 8
+	}
+
+	/** -?\d+\.\d+([eE][+-]?\d+)? */
+	@pub
+	static func isDecimal(prog: ref some imut Prog, s: mut u64, e: mut u64) mut bool{
+		let i = mut s
+		if i < e &&then prog.buf.charAt(prog.buf, i) == '-'{
+			i += 1
+		}
+		let st0 = mut i
+		for q in 0..e{
+			if i < e &&then prog.buf.charAt(prog.buf, i) >= '0' &&then prog.buf.charAt(prog.buf, i) <= '9'{
+				i += 1
+			} else {
+				break
+			}
+		}
+		if i == st0 || i >= e || prog.buf.charAt(prog.buf, i) != '.'{
+			return false
+		}
+		i += 1
+		st0 = i
+		for q in 0..e{
+			if i < e &&then prog.buf.charAt(prog.buf, i) >= '0' &&then prog.buf.charAt(prog.buf, i) <= '9'{
+				i += 1
+			} else {
+				break
+			}
+		}
+		if i == st0{
+			return false
+		}
+		if i == e{
+			return true
+		}
+		let ch = mut prog.buf.charAt(prog.buf, i)
+		if ch != 'e' && ch != 'E'{
+			return false
+		}
+		i += 1
+		if i < e &&then (prog.buf.charAt(prog.buf, i) == '+' || prog.buf.charAt(prog.buf, i) == '-'){
+			i += 1
+		}
+		st0 = i
+		for q in 0..e{
+			if i < e &&then prog.buf.charAt(prog.buf, i) >= '0' &&then prog.buf.charAt(prog.buf, i) <= '9'{
+				i += 1
+			} else {
+				break
+			}
+		}
+		if i == st0 || i != e{
+			return false
+		}
+		return true
+	}
+
+	/** Token `k` of line `i` is `$<long>`: its range goes to st.rs/st.re, the number to st.pv. */
+	static func slotTok(prog: ref some imut Prog, st: ref some mut Rf, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		if prog.buf.charAt(prog.buf, a) != '$'{
+			return false
+		}
+		if RegisterFormPass.parseLit(prog, st, a + 1, z, true) == false{
+			return false
+		}
+		st.rs = a
+		st.re = z
+		return true
+	}
+
+	static func tokRange(prog: ref some imut Prog, st: ref some mut Rf, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		st.rs = a
+		st.re = Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		return true
+	}
+
+	static func rangeEq(prog: ref some imut Prog, a: mut u64, ae: mut u64, b: mut u64, be: mut u64) mut bool{
+		if ae - a != be - b{
+			return false
+		}
+		let w = mut (ae - a)
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, a + d) != prog.buf.charAt(prog.buf, b + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	static func hashRange(prog: ref some imut Prog, s: mut u64, e: mut u64) mut u64{
+		let h = mut 7
+		for x in s..e{
+			h = bits_and(h * 31 + String.charCode(prog.buf.charAt(prog.buf, x)), 281474976710655)
+		}
+		return h
+	}
+
+	// ---- emission ----
+
+	@throws
+	static func aT(prog: ref some mut Prog, t: mut u64) void{
+		?catch(e){ throw e }
+		? prog.addLit(prog, "%t")
+		? prog.glueCh(prog, Prog.dig(t))
+	}
+
+	/** The operand text of value entry `idx`: `#imm`, `$off`, `%tN`. */
+	@throws
+	static func aOperand(prog: ref some mut Prog, st: ref some imut Rf, idx: mut u64) void{
+		?catch(e){ throw e }
+		let k = mut RegisterFormPass.g(st, idx, 0)
+		if k == 0{
+			? prog.addLit(prog, "#")
+			? prog.glueRange(prog, RegisterFormPass.g(st, idx, 3), RegisterFormPass.g(st, idx, 4))
+		} else if k == 1{
+			? prog.addRange(prog, RegisterFormPass.g(st, idx, 3), RegisterFormPass.g(st, idx, 4))
+		} else {
+			? RegisterFormPass.aT(prog, RegisterFormPass.g(st, idx, 6))
+		}
+	}
+
+	/** isAddress: an address entry or an 8-byte pointer value. */
+	static func isAddress(st: ref some imut Rf, idx: mut u64) mut bool{
+		let k = mut RegisterFormPass.g(st, idx, 0)
+		if k == 2{
+			return true
+		}
+		if k == 1 || k == 3{
+			return RegisterFormPass.g(st, idx, 7) == 8
+		}
+		return false
+	}
+
+	static func isValue(st: ref some imut Rf, idx: mut u64) mut bool{
+		return RegisterFormPass.g(st, idx, 0) != 2
+	}
+
+	/** K value `v` fits a signed 32-bit immediate. */
+	static func fitsImm32(v: mut s64) mut bool{
+		return v >= -2147483648 && v <= 2147483647
+	}
+
+	@throws
+	static func loadInto(prog: ref some mut Prog, st: ref some mut Rf, idx: mut u64) void{
+		?catch(e){ throw e }
+		let t = mut RegisterFormPass.allocTemp(st)
+		let kind = mut RegisterFormPass.g(st, idx, 0)
+		prog.begin(prog)
+		if kind == 1{
+			let sz = mut RegisterFormPass.g(st, idx, 7)
+			if sz == 8{
+				? prog.addLit(prog, "R_MOV 8")
+			} else {
+				? prog.addLit(prog, "R_LD")
+				? prog.addS64(prog, wrap:<s64>(sz))
+			}
+			? RegisterFormPass.aT(prog, t)
+			? prog.addRange(prog, RegisterFormPass.g(st, idx, 3), RegisterFormPass.g(st, idx, 4))
+		} else {
+			? prog.addLit(prog, "R_MOV 8")
+			? RegisterFormPass.aT(prog, t)
+			? RegisterFormPass.aOperand(prog, st, idx)
+		}
+		? prog.outBuilt(prog)
+		RegisterFormPass.put(st, idx, 0, 3)
+		RegisterFormPass.put(st, idx, 6, t)
+		if kind == 1{
+			RegisterFormPass.put(st, idx, 9, 1)
+		} else {
+			RegisterFormPass.put(st, idx, 9, 0)
+		}
+	}
+
+	/** Pushes a temp entry (zx: loaded zero-extended). */
+	@throws
+	static func pushTemp(st: ref some mut Rf, t: mut u64, size: mut u64, zx: mut u64) void{
+		?catch(e){ throw e }
+		? RegisterFormPass.push(st, 3, 0, 0, 0, 0, 0, t, size, 0, zx)
+	}
+
+	/** Writes every remembered entry back out, bottom to top, then empties the model. */
+	@throws
+	static func flush(prog: ref some mut Prog, st: ref some mut Rf, tempLiveAbove: mut bool) void{
+		?catch(e){ throw e }
+		let lastT = mut -1
+		let nsp = mut st.sp
+		for i in 0..nsp{
+			if RegisterFormPass.g(st, i, 0) == 3{
+				lastT = wrap:<s64>(i)
+			}
+		}
+		for i in 0..nsp{
+			let k = mut RegisterFormPass.g(st, i, 0)
+			if k == 3{
+				prog.begin(prog)
+				? prog.addLit(prog, "R_PUSH 8")
+				? RegisterFormPass.aT(prog, RegisterFormPass.g(st, i, 6))
+				? prog.outBuilt(prog)
+				RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, i, 6))
+			} else if tempLiveAbove || wrap:<s64>(i) < lastT{
+				prog.begin(prog)
+				if k == 2{
+					? prog.addLit(prog, "R_PUSHA 8")
+					? prog.addRange(prog, RegisterFormPass.g(st, i, 3), RegisterFormPass.g(st, i, 4))
+				} else {
+					? prog.addLit(prog, "R_PUSH 8")
+					? RegisterFormPass.aOperand(prog, st, i)
+				}
+				? prog.outBuilt(prog)
+			} else {
+				? prog.outPush(prog, RegisterFormPass.g(st, i, 1), RegisterFormPass.g(st, i, 2))
+			}
+		}
+		st.sp = 0
+	}
+
+	/** Discards this region's output and emits its original input lines [cpIn, upTo) instead. */
+	@throws
+	static func rollback(prog: ref some mut Prog, st: ref some mut Rf, upTo: mut u64) void{
+		?catch(e){ throw e }
+		prog.outTruncate(prog, st.cpOut)
+		let c0 = mut st.cpIn
+		for z in c0..upTo{
+			? prog.outLine(prog, z)
+		}
+		st.sp = 0
+		st.usedMask = 0
+	}
+
+	static func plainWords(st: ref some imut Rf) mut bool{
+		let nsp = mut st.sp
+		for i in 0..nsp{
+			if RegisterFormPass.g(st, i, 7) != 8{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Builds `text` at the end of the buffer as its own token: the range goes to st.rs/st.re. */
+	@throws
+	static func buildU64Text(prog: ref some mut Prog, st: ref some mut Rf, v: mut u64) void{
+		?catch(e){ throw e }
+		let t = mut ? String.fromU64(v)
+		prog.begin(prog)
+		let w = mut t.length(t)
+		for x in 0..w{
+			? prog.glueCh(prog, t.charAt(t, x))
+		}
+		st.rs = prog.cur
+		st.re = prog.used
+	}
+
+	/** The line [os, oe) was just built: remember it as an entry's orig. */
+	static func isGlobal(prog: ref some imut Prog, st: ref some imut Rf, s: mut u64, e: mut u64) mut bool{
+		if st.hcap == 0{
+			return false
+		}
+		let h = mut RegisterFormPass.hashRange(prog, s, e)
+		let mask = mut (st.hcap - 1)
+		let at = mut bits_and(h, mask)
+		let hc = mut st.hcap
+		for step in 0..hc{
+			let hs = mut 0
+			let he = mut 0
+			match at in st.htS{ hs = st.htS[at] }
+			match at in st.htE{ he = st.htE[at] }
+			if he == 0{
+				return false
+			}
+			if RegisterFormPass.rangeEq(prog, hs, he, s, e){
+				return true
+			}
+			at = bits_and(at + 1, mask)
+		}
+		return false
+	}
+
+	static func addGlobal(prog: ref some imut Prog, st: ref some mut Rf, s: mut u64, e: mut u64) void{
+		let h = mut RegisterFormPass.hashRange(prog, s, e)
+		let mask = mut (st.hcap - 1)
+		let at = mut bits_and(h, mask)
+		let hc = mut st.hcap
+		for step in 0..hc{
+			let he = mut 0
+			match at in st.htE{ he = st.htE[at] }
+			if he == 0{
+				match at into st.htS{ st.htS[at] = s }
+				match at into st.htE{ st.htE[at] = e }
+				return
+			}
+			at = bits_and(at + 1, mask)
+		}
+	}
+
+	// ---- handlers (each returns the number of input lines consumed, 0 to decline) ----
+
+	/** The bits of the decimal literal [s, z) from the table `generate` filled before any pass ran (a float in the low 32 bits); goes to st.pv. */
+	static func floatLookup(prog: ref some imut Prog, st: ref some mut Rf, s: mut u64, z: mut u64, isD: mut bool) mut bool{
+		let nf = mut prog.nf
+		let want = mut 0
+		if isD{
+			want = 1
+		}
+		for k in 0..nf{
+			let ks = mut 0
+			let ke = mut 0
+			let kd = mut 0
+			let kb = mut 0
+			let b0 = mut (k * 4)
+			let b1 = mut (k * 4 + 1)
+			let b2 = mut (k * 4 + 2)
+			let b3 = mut (k * 4 + 3)
+			match b0 in prog.fv{ ks = prog.fv[b0] }
+			match b1 in prog.fv{ ke = prog.fv[b1] }
+			match b2 in prog.fv{ kd = prog.fv[b2] }
+			match b3 in prog.fv{ kb = prog.fv[b3] }
+			if kd != want || ke - ks != z - s{
+				continue
+			}
+			let same = mut true
+			let w = mut (z - s)
+			for d in 0..w{
+				if prog.ftxt.charAt(prog.ftxt, ks + d) != prog.buf.charAt(prog.buf, s + d){
+					same = false
+					break
+				}
+			}
+			if same{
+				st.pv = kb
+				return true
+			}
+		}
+		return false
+	}
+
+	@throws
+	static func fusePush(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 3{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		if RegisterFormPass.tokRange(prog, st, i, 2) == false{
+			return 0
+		}
+		let s = mut st.rs
+		let z = mut st.re
+		let os = mut prog.lineStart(prog, i)
+		let oe = mut prog.lineEnd(prog, i)
+		let sz = mut wrap:<u64>(n)
+		if RegisterFormPass.slotTok(prog, st, i, 2){
+			if n < 8{
+				st.risky = 1
+			}
+			? RegisterFormPass.push(st, 1, os, oe, st.rs, st.re, wrap:<s64>(st.pv), 0, sz, 0, 0)
+			return 1
+		}
+		if RegisterFormPass.isDecimal(prog, s, z){
+			let isD = mut (n > 4)
+			let bits = mut 0
+			if RegisterFormPass.floatLookup(prog, st, s, z, isD) == false{
+				return 0
+			}
+			bits = st.pv
+			? RegisterFormPass.buildU64Text(prog, st, bits)
+			st.risky = 1
+			? RegisterFormPass.push(st, 0, os, oe, st.rs, st.re, wrap:<s64>(bits), 0, sz, 0, 0)
+			return 1
+		}
+		if RegisterFormPass.parseLit(prog, st, s, z, false){
+			let v = mut wrap:<s64>(st.pv)
+			let ts = mut s
+			let te = mut z
+			if z - s == 4 &&then prog.buf.charAt(prog.buf, s) == 'n'{
+				prog.begin(prog)
+				? prog.addLit(prog, "0")
+				ts = prog.cur
+				te = prog.used
+			}
+			if n < 8{
+				st.risky = 1
+			}
+			? RegisterFormPass.push(st, 0, os, oe, ts, te, v, 0, sz, 0, 0)
+			return 1
+		}
+		if RegisterFormPass.isGlobal(prog, st, s, z){
+			return ? RegisterFormPass.fuseGlobalRead(prog, st, i, n, s, z)
+		}
+		return 0
+	}
+
+	@throws
+	static func fuseGlobalRead(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64, n: mut s64, s: mut u64, z: mut u64) mut u64{
+		?catch(e){ throw e }
+		let total = mut prog.size(prog)
+		if i + 2 < total &&then prog.opEq(prog, i + 2, "ATOMIC_SWAP"){
+			return 0
+		}
+		if RegisterFormPass.freeTemps(st) < 1{
+			return 0
+		}
+		let t = mut RegisterFormPass.allocTemp(st)
+		prog.begin(prog)
+		? prog.addLit(prog, "R_LD")
+		? prog.addS64(prog, n)
+		? RegisterFormPass.aT(prog, t)
+		? prog.addLit(prog, "&")
+		? prog.glueRange(prog, s, z)
+		? prog.outBuilt(prog)
+		? RegisterFormPass.pushTemp(st, t, wrap:<u64>(n), 0)
+		st.risky = 1
+		return 1
+	}
+
+	@throws
+	static func fuseAddr(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 3{
+			return 0
+		}
+		if RegisterFormPass.tokRange(prog, st, i, 2) == false{
+			return 0
+		}
+		let s = mut st.rs
+		let z = mut st.re
+		let os = mut prog.lineStart(prog, i)
+		let oe = mut prog.lineEnd(prog, i)
+		if RegisterFormPass.slotTok(prog, st, i, 2){
+			? RegisterFormPass.push(st, 2, os, oe, st.rs, st.re, wrap:<s64>(st.pv), 0, 8, 0, 0)
+			return 1
+		}
+		let c0 = mut prog.buf.charAt(prog.buf, s)
+		if c0 >= '0' && c0 <= '9' || c0 == '-' || c0 == '@'{
+			return 0
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "&")
+		? prog.glueRange(prog, s, z)
+		let ts = mut prog.cur
+		let te = mut prog.used
+		st.risky = 1
+		? RegisterFormPass.push(st, 2, os, oe, ts, te, 0, 0, 8, 1, 0)
+		return 1
+	}
+
+	static func needsLoad(st: ref some imut Rf, idx: mut u64, n: mut s64) mut bool{
+		if RegisterFormPass.g(st, idx, 0) != 1{
+			return false
+		}
+		return RegisterFormPass.g(st, idx, 7) != 8 || n < 8
+	}
+
+	/** Which binary operator the mnemonic of line `i` is: 0 none, 1 plain (drop `_INT`), 2 AND/OR, 3 shift-like (same name), 4 BITS_x. */
+	static func binKind(prog: ref some imut Prog, i: mut u64) mut u64{
+		if prog.opEq(prog, i, "ADD_INT") || prog.opEq(prog, i, "SUB_INT") || prog.opEq(prog, i, "MUL_INT"){
+			return 1
+		}
+		if prog.opEq(prog, i, "EQ_INT") || prog.opEq(prog, i, "NEQ_INT") || prog.opEq(prog, i, "LT_INT") || prog.opEq(prog, i, "LT_EQ_INT") || prog.opEq(prog, i, "GT_INT") || prog.opEq(prog, i, "GT_EQ_INT"){
+			return 5
+		}
+		if prog.opEq(prog, i, "SLT_INT") || prog.opEq(prog, i, "SLT_EQ_INT") || prog.opEq(prog, i, "SGT_INT") || prog.opEq(prog, i, "SGT_EQ_INT"){
+			return 5
+		}
+		if prog.opEq(prog, i, "AND") || prog.opEq(prog, i, "OR"){
+			return 2
+		}
+		if prog.opEq(prog, i, "SHL") || prog.opEq(prog, i, "SHR") || prog.opEq(prog, i, "SAR") || prog.opEq(prog, i, "ROTL") || prog.opEq(prog, i, "ROTR"){
+			return 3
+		}
+		if prog.opEq(prog, i, "BITS_AND") || prog.opEq(prog, i, "BITS_OR") || prog.opEq(prog, i, "BITS_XOR"){
+			return 4
+		}
+		return 0
+	}
+
+	/** Appends the register-form name of the binary mnemonic of line `i` (kind from binKind; 6 = float: drop `_FLOAT`). */
+	@throws
+	static func aBinName(prog: ref some mut Prog, i: mut u64, kind: mut u64) void{
+		?catch(e){ throw e }
+		let p = mut wrap:<u64>(prog.tokPos(prog, i, 0))
+		let z = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+		if kind == 1 || kind == 5{
+			? prog.addRange(prog, p, z - 4)
+		} else if kind == 6{
+			? prog.addRange(prog, p, z - 6)
+		} else if kind == 4{
+			? prog.addLit(prog, "B")
+			? prog.glueRange(prog, p + 5, z)
+		} else {
+			? prog.addRange(prog, p, z)
+		}
+	}
+
+	@throws
+	static func fuseBinary(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64, kind: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if kind == 2{
+			if n != 1{
+				return 0
+			}
+		} else if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		let bi = mut (sz - 1)
+		let ai = mut (sz - 2)
+		if RegisterFormPass.isValue(st, ai) == false || RegisterFormPass.isValue(st, bi) == false{
+			return 0
+		}
+		if kind == 2 &&then (RegisterFormPass.g(st, ai, 0) != 3 || RegisterFormPass.g(st, bi, 0) != 3){
+			return 0
+		}
+		let loadA = mut RegisterFormPass.needsLoad(st, ai, n)
+		let loadB = mut RegisterFormPass.needsLoad(st, bi, n)
+		let aReg = mut (RegisterFormPass.g(st, ai, 0) == 3 || loadA)
+		let bReg = mut (RegisterFormPass.g(st, bi, 0) == 3 || loadB)
+		let need = mut 0
+		if loadA{
+			need += 1
+		}
+		if loadB{
+			need += 1
+		}
+		if aReg == false &&then bReg == false{
+			need += 1
+		}
+		if need > RegisterFormPass.freeTemps(st){
+			return 0
+		}
+		if n < 8 || loadA || loadB{
+			st.risky = 1
+		}
+		if loadA{
+			? RegisterFormPass.loadInto(prog, st, ai)
+		}
+		if loadB{
+			? RegisterFormPass.loadInto(prog, st, bi)
+		}
+		let aK = mut RegisterFormPass.g(st, ai, 0)
+		let bK = mut RegisterFormPass.g(st, bi, 0)
+		let dst = mut 0
+		if aK == 3{
+			dst = RegisterFormPass.g(st, ai, 6)
+			if bK == 3{
+				RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, bi, 6))
+			}
+		} else {
+			if bK == 3{
+				RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, bi, 6))
+			}
+			dst = RegisterFormPass.allocTemp(st)
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "R_BIN")
+		? RegisterFormPass.aBinName(prog, i, kind)
+		? prog.addTok(prog, i, 1)
+		? RegisterFormPass.aT(prog, dst)
+		? RegisterFormPass.aOperand(prog, st, ai)
+		? RegisterFormPass.aOperand(prog, st, bi)
+		? prog.outBuilt(prog)
+		st.sp = sz - 2
+		// arith: shifts/bitwise/ADD/SUB/MUL keep the width; comparisons and AND/OR yield one byte
+		let isBits = mut (kind == 3 || kind == 4)
+		let isArith = mut (isBits || kind == 1)
+		let rs = mut 1
+		if isArith{
+			rs = wrap:<u64>(n)
+		}
+		let zx = mut 0
+		if isBits{
+			zx = 1
+		}
+		? RegisterFormPass.pushTemp(st, dst, rs, zx)
+		return 1
+	}
+
+	@throws
+	static func fuseDivConst(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		let bi = mut (sz - 1)
+		let ai = mut (sz - 2)
+		if RegisterFormPass.g(st, bi, 0) != 0 || RegisterFormPass.isValue(st, ai) == false{
+			return 0
+		}
+		let k = mut RegisterFormPass.gs(st, bi, 5)
+		if k < 3 || bits_and(wrap:<u64>(k), wrap:<u64>(k - 1)) == 0{
+			return 0
+		}
+		let loadA = mut RegisterFormPass.needsLoad(st, ai, n)
+		let aReg = mut (RegisterFormPass.g(st, ai, 0) == 3 || loadA)
+		let need = mut 0
+		if loadA{
+			need += 1
+		}
+		if aReg == false{
+			need += 1
+		}
+		if need > RegisterFormPass.freeTemps(st){
+			return 0
+		}
+		st.risky = 1
+		if loadA{
+			? RegisterFormPass.loadInto(prog, st, ai)
+		}
+		let dst = mut 0
+		if RegisterFormPass.g(st, ai, 0) == 3{
+			dst = RegisterFormPass.g(st, ai, 6)
+		} else {
+			dst = RegisterFormPass.allocTemp(st)
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "R_DIVC")
+		if prog.opEq(prog, i, "DIV_INT"){
+			? prog.addLit(prog, "DIV")
+		} else {
+			? prog.addLit(prog, "MOD")
+		}
+		? prog.addS64(prog, n)
+		? RegisterFormPass.aT(prog, dst)
+		? RegisterFormPass.aOperand(prog, st, ai)
+		? prog.addLit(prog, "#")
+		? prog.glueS64(prog, k)
+		? prog.outBuilt(prog)
+		st.sp = sz - 2
+		? RegisterFormPass.pushTemp(st, dst, wrap:<u64>(n), 0)
+		return 1
+	}
+
+	@throws
+	static func fuseUnary(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		let isNot = mut prog.opEq(prog, i, "NOT")
+		let isBitsNot = mut prog.opEq(prog, i, "BITS_NOT")
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if isNot{
+			if n != 1{
+				return 0
+			}
+		} else if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 1{
+			return 0
+		}
+		let ai = mut (sz - 1)
+		if RegisterFormPass.isValue(st, ai) == false{
+			return 0
+		}
+		let aK = mut RegisterFormPass.g(st, ai, 0)
+		if isNot &&then aK != 3{
+			return 0
+		}
+		let load = mut false
+		if aK == 1 &&then RegisterFormPass.g(st, ai, 7) != 8{
+			load = true
+		}
+		let need = mut 0
+		if load || aK != 3{
+			need = 1
+		}
+		if need > RegisterFormPass.freeTemps(st){
+			return 0
+		}
+		if n < 8 || load{
+			st.risky = 1
+		}
+		if load{
+			? RegisterFormPass.loadInto(prog, st, ai)
+		}
+		let dst = mut 0
+		if RegisterFormPass.g(st, ai, 0) == 3{
+			dst = RegisterFormPass.g(st, ai, 6)
+		} else {
+			dst = RegisterFormPass.allocTemp(st)
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "R_UN")
+		if prog.opEq(prog, i, "INC_INT"){
+			? prog.addLit(prog, "INC")
+		} else if prog.opEq(prog, i, "DEC_INT"){
+			? prog.addLit(prog, "DEC")
+		} else if isBitsNot{
+			? prog.addLit(prog, "BNOT")
+		} else {
+			? prog.addTok(prog, i, 0)
+		}
+		? prog.addTok(prog, i, 1)
+		? RegisterFormPass.aT(prog, dst)
+		? RegisterFormPass.aOperand(prog, st, ai)
+		? prog.outBuilt(prog)
+		st.sp = sz - 1
+		let rs = mut wrap:<u64>(n)
+		if isNot{
+			rs = 1
+		}
+		let zx = mut 0
+		if isBitsNot{
+			zx = 1
+		}
+		? RegisterFormPass.pushTemp(st, dst, rs, zx)
+		return 1
+	}
+
+	/** R_FBIN / R_FCMP; isCmp selects the mnemonic and the result width. */
+	@throws
+	static func fuseFloatOp(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64, isCmp: mut bool) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if n != 4 && n != 8{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		let bi = mut (sz - 1)
+		let ai = mut (sz - 2)
+		if RegisterFormPass.isValue(st, ai) == false || RegisterFormPass.isValue(st, bi) == false{
+			return 0
+		}
+		let nn = mut wrap:<u64>(n)
+		let loadA = mut false
+		if RegisterFormPass.g(st, ai, 0) == 1 &&then RegisterFormPass.g(st, ai, 7) != nn{
+			loadA = true
+		}
+		let loadB = mut false
+		if RegisterFormPass.g(st, bi, 0) == 1 &&then RegisterFormPass.g(st, bi, 7) != nn{
+			loadB = true
+		}
+		let aReg = mut (RegisterFormPass.g(st, ai, 0) == 3 || loadA)
+		let bReg = mut (RegisterFormPass.g(st, bi, 0) == 3 || loadB)
+		let need = mut 0
+		if loadA{
+			need += 1
+		}
+		if loadB{
+			need += 1
+		}
+		if aReg == false &&then bReg == false{
+			need += 1
+		}
+		if need > RegisterFormPass.freeTemps(st){
+			return 0
+		}
+		st.risky = 1
+		if loadA{
+			? RegisterFormPass.loadInto(prog, st, ai)
+		}
+		if loadB{
+			? RegisterFormPass.loadInto(prog, st, bi)
+		}
+		let aK = mut RegisterFormPass.g(st, ai, 0)
+		let bK = mut RegisterFormPass.g(st, bi, 0)
+		let dst = mut 0
+		if aK == 3{
+			dst = RegisterFormPass.g(st, ai, 6)
+			if bK == 3{
+				RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, bi, 6))
+			}
+		} else if bK == 3{
+			dst = RegisterFormPass.g(st, bi, 6)
+		} else {
+			dst = RegisterFormPass.allocTemp(st)
+		}
+		prog.begin(prog)
+		if isCmp{
+			? prog.addLit(prog, "R_FCMP")
+		} else {
+			? prog.addLit(prog, "R_FBIN")
+		}
+		? RegisterFormPass.aBinName(prog, i, 6)
+		? prog.addTok(prog, i, 1)
+		? RegisterFormPass.aT(prog, dst)
+		? RegisterFormPass.aOperand(prog, st, ai)
+		? RegisterFormPass.aOperand(prog, st, bi)
+		? prog.outBuilt(prog)
+		st.sp = sz - 2
+		let rs = mut nn
+		if isCmp{
+			rs = 1
+		}
+		? RegisterFormPass.pushTemp(st, dst, rs, 0)
+		return 1
+	}
+
+	@throws
+	static func derefN(prog: ref some mut Prog, st: ref some mut Rf, n: mut s64) mut u64{
+		?catch(e){ throw e }
+		if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 1{
+			return 0
+		}
+		let pi = mut (sz - 1)
+		if RegisterFormPass.isAddress(st, pi) == false{
+			return 0
+		}
+		let pk = mut RegisterFormPass.g(st, pi, 0)
+		if pk != 3 &&then RegisterFormPass.freeTemps(st) == 0{
+			return 0
+		}
+		st.risky = 1
+		let ts = mut RegisterFormPass.g(st, pi, 3)
+		let te = mut RegisterFormPass.g(st, pi, 4)
+		let ptemp = mut RegisterFormPass.g(st, pi, 6)
+		st.sp = sz - 1
+		let nn = mut wrap:<u64>(n)
+		if pk == 2{
+			let t = mut RegisterFormPass.allocTemp(st)
+			prog.begin(prog)
+			? prog.addLit(prog, "R_LD")
+			? prog.addS64(prog, n)
+			? RegisterFormPass.aT(prog, t)
+			? prog.addRange(prog, ts, te)
+			? prog.outBuilt(prog)
+			? RegisterFormPass.pushTemp(st, t, nn, 1)
+		} else if pk == 1{
+			let t = mut RegisterFormPass.allocTemp(st)
+			prog.begin(prog)
+			? prog.addLit(prog, "R_MOV 8")
+			? RegisterFormPass.aT(prog, t)
+			? prog.addRange(prog, ts, te)
+			? prog.outBuilt(prog)
+			prog.begin(prog)
+			? prog.addLit(prog, "R_LD")
+			? prog.addS64(prog, n)
+			? RegisterFormPass.aT(prog, t)
+			? RegisterFormPass.aT(prog, t)
+			? prog.outBuilt(prog)
+			? RegisterFormPass.pushTemp(st, t, nn, 1)
+		} else {
+			prog.begin(prog)
+			? prog.addLit(prog, "R_LD")
+			? prog.addS64(prog, n)
+			? RegisterFormPass.aT(prog, ptemp)
+			? RegisterFormPass.aT(prog, ptemp)
+			? prog.outBuilt(prog)
+			? RegisterFormPass.pushTemp(st, ptemp, nn, 1)
+		}
+		return 1
+	}
+
+	/** base + idx*scale (+ disp) into one temp; bi/xi are the top two entries (sz = their count). */
+	@throws
+	static func emitLea(prog: ref some mut Prog, st: ref some mut Rf, scale: mut s64, sz: mut u64, disp: mut s64) mut u64{
+		?catch(e){ throw e }
+		let xi = mut (sz - 1)
+		let bi = mut (sz - 2)
+		let bk = mut RegisterFormPass.g(st, bi, 0)
+		let xk = mut RegisterFormPass.g(st, xi, 0)
+		let loadBase = mut (bk == 1)
+		let loadIx = mut false
+		if xk == 1 &&then RegisterFormPass.g(st, xi, 7) != 8{
+			loadIx = true
+		}
+		let baseReg = mut (bk == 3 || loadBase)
+		let ixReg = mut (xk == 3 || loadIx)
+		let need = mut 0
+		if loadBase{
+			need += 1
+		}
+		if loadIx{
+			need += 1
+		}
+		if baseReg == false &&then ixReg == false{
+			need += 1
+		}
+		if need > RegisterFormPass.freeTemps(st){
+			return 0
+		}
+		st.risky = 1
+		if loadBase{
+			? RegisterFormPass.loadInto(prog, st, bi)
+		}
+		if loadIx{
+			? RegisterFormPass.loadInto(prog, st, xi)
+		}
+		bk = RegisterFormPass.g(st, bi, 0)
+		xk = RegisterFormPass.g(st, xi, 0)
+		let dst = mut 0
+		if bk == 3{
+			dst = RegisterFormPass.g(st, bi, 6)
+			if xk == 3{
+				RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, xi, 6))
+			}
+		} else if xk == 3{
+			dst = RegisterFormPass.g(st, xi, 6)
+		} else {
+			dst = RegisterFormPass.allocTemp(st)
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "R_LEA")
+		? RegisterFormPass.aT(prog, dst)
+		if bk == 2{
+			? prog.addRange(prog, RegisterFormPass.g(st, bi, 3), RegisterFormPass.g(st, bi, 4))
+		} else {
+			? RegisterFormPass.aOperand(prog, st, bi)
+		}
+		? RegisterFormPass.aOperand(prog, st, xi)
+		? prog.addS64(prog, scale)
+		if disp != 0{
+			? prog.addS64(prog, disp)
+		}
+		? prog.outBuilt(prog)
+		st.sp = sz - 2
+		? RegisterFormPass.pushTemp(st, dst, 8, 0)
+		return 1
+	}
+
+	/** Loads `w` bytes through the temp on top of the model (the address just computed). */
+	@throws
+	static func loadTop(prog: ref some mut Prog, st: ref some mut Rf, w: mut s64) void{
+		?catch(e){ throw e }
+		let top = mut (st.sp - 1)
+		let t = mut RegisterFormPass.g(st, top, 6)
+		st.sp = top
+		prog.begin(prog)
+		? prog.addLit(prog, "R_LD")
+		? prog.addS64(prog, w)
+		? RegisterFormPass.aT(prog, t)
+		? RegisterFormPass.aT(prog, t)
+		? prog.outBuilt(prog)
+		? RegisterFormPass.pushTemp(st, t, wrap:<u64>(w), 1)
+	}
+
+	@throws
+	static func fuseLookupArrayLhs(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let scale = mut RegisterFormPass.parseSize(prog, i, 1)
+		if scale <= 0{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		if RegisterFormPass.isValue(st, sz - 1) == false{
+			return 0
+		}
+		if RegisterFormPass.isAddress(st, sz - 2) == false{
+			return 0
+		}
+		return ? RegisterFormPass.emitLea(prog, st, scale, sz, 0)
+	}
+
+	/** Lines i+1, i+2 are `PUSH_FIELDNAME off w` / `DOT w` with a usable scalar field of an n-byte element: returns off, else -1; the width goes to st.pv. */
+	static func fieldAhead(prog: ref some imut Prog, st: ref some mut Rf, i: mut u64, n: mut s64) mut s64{
+		if prog.count(prog, i + 1) != 3 || prog.opEq(prog, i + 1, "PUSH_FIELDNAME") == false{
+			return -1
+		}
+		if prog.count(prog, i + 2) != 2 || prog.opEq(prog, i + 2, "DOT") == false{
+			return -1
+		}
+		if RegisterFormPass.tokRange(prog, st, i + 1, 1) == false{
+			return -1
+		}
+		if RegisterFormPass.parseLit(prog, st, st.rs, st.re, false) == false{
+			return -1
+		}
+		let off = mut wrap:<s64>(st.pv)
+		let fw = mut RegisterFormPass.parseSize(prog, i + 1, 2)
+		let dw = mut RegisterFormPass.parseSize(prog, i + 2, 1)
+		if off >= 0 &&then fw == dw &&then RegisterFormPass.isWidth(fw) &&then off + fw <= n{
+			st.pv = wrap:<u64>(fw)
+			return off
+		}
+		return -1
+	}
+
+	@throws
+	static func fuseLookupPtrRead(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		let total = mut prog.size(prog)
+		if i + 2 < total &&then n > 0{
+			let off = mut RegisterFormPass.fieldAhead(prog, st, i, n)
+			let sz2 = mut st.sp
+			if off >= 0 &&then sz2 >= 2{
+				let fw = mut wrap:<s64>(st.pv)
+				if RegisterFormPass.isValue(st, sz2 - 1) &&then RegisterFormPass.g(st, sz2 - 2, 0) != 2 &&then RegisterFormPass.isAddress(st, sz2 - 2){
+					let r2 = mut ? RegisterFormPass.emitLea(prog, st, n, sz2, off)
+					if r2 != 0{
+						? RegisterFormPass.loadTop(prog, st, fw)
+						return 3
+					}
+				}
+			}
+		}
+		if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		if i + 1 < total{
+			let takesWhole = mut false
+			if prog.startsWith(prog, i + 1, 0, "DOT"){
+				takesWhole = true
+			}
+			if prog.opEq(prog, i + 1, "LOOKUP_ARRAY") &&then prog.count(prog, i + 1) > 2 &&then prog.eqLit(prog, i + 1, 2, "t8"){
+				takesWhole = true
+			}
+			if takesWhole{
+				return 0
+			}
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		if RegisterFormPass.isValue(st, sz - 1) == false || RegisterFormPass.g(st, sz - 2, 0) == 2 || RegisterFormPass.isAddress(st, sz - 2) == false{
+			return 0
+		}
+		let r = mut ? RegisterFormPass.emitLea(prog, st, n, sz, 0)
+		if r == 0{
+			return 0
+		}
+		? RegisterFormPass.loadTop(prog, st, n)
+		return r
+	}
+
+	@throws
+	static func fuseLookupDyn(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64, lhs: mut bool) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if n <= 0{
+			return 0
+		}
+		let total = mut prog.size(prog)
+		if lhs == false &&then i + 2 < total{
+			let off = mut RegisterFormPass.fieldAhead(prog, st, i, n)
+			let sz2 = mut st.sp
+			if off >= 0 &&then sz2 >= 2{
+				let fw = mut wrap:<s64>(st.pv)
+				if RegisterFormPass.isValue(st, sz2 - 1) &&then RegisterFormPass.isAddress(st, sz2 - 2){
+					let r2 = mut ? RegisterFormPass.emitLea(prog, st, n, sz2, 16 + off)
+					if r2 != 0{
+						? RegisterFormPass.loadTop(prog, st, fw)
+						return 3
+					}
+				}
+			}
+		}
+		if lhs == false{
+			if RegisterFormPass.isWidth(n) == false{
+				return 0
+			}
+			if i + 1 < total{
+				if prog.startsWith(prog, i + 1, 0, "LOOKUP") || prog.startsWith(prog, i + 1, 0, "DOT"){
+					return 0
+				}
+			}
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		if RegisterFormPass.isValue(st, sz - 1) == false || RegisterFormPass.isAddress(st, sz - 2) == false{
+			return 0
+		}
+		let r = mut ? RegisterFormPass.emitLea(prog, st, n, sz, 16)
+		if r == 0 || lhs{
+			return r
+		}
+		? RegisterFormPass.loadTop(prog, st, n)
+		return r
+	}
+
+	/** Builds `PUSH <size> <text of entry idx>` as the entry's new orig. */
+	@throws
+	static func narrowOrig(prog: ref some mut Prog, st: ref some mut Rf, idx: mut u64, size: mut s64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH")
+		? prog.addS64(prog, size)
+		? prog.addRange(prog, RegisterFormPass.g(st, idx, 3), RegisterFormPass.g(st, idx, 4))
+		RegisterFormPass.put(st, idx, 1, prog.cur)
+		RegisterFormPass.put(st, idx, 2, prog.used)
+	}
+
+	@throws
+	static func emitMask(prog: ref some mut Prog, t: mut u64, small: mut bool) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "R_BIN BAND 8")
+		? RegisterFormPass.aT(prog, t)
+		? RegisterFormPass.aT(prog, t)
+		if small{
+			? prog.addLit(prog, "#255")
+		} else {
+			? prog.addLit(prog, "#65535")
+		}
+		? prog.outBuilt(prog)
+	}
+
+	@throws
+	static func fuseZext(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 3{
+			return 0
+		}
+		let src = mut RegisterFormPass.parseSize(prog, i, 1)
+		let dst = mut RegisterFormPass.parseSize(prog, i, 2)
+		let sz = mut st.sp
+		if sz < 1 || RegisterFormPass.isWidth(src) == false || RegisterFormPass.isWidth(dst) == false || dst < src{
+			return 0
+		}
+		if src == 8 && dst == 8{
+			return 1
+		}
+		let ei = mut (sz - 1)
+		let k = mut RegisterFormPass.g(st, ei, 0)
+		if k == 1{
+			st.risky = 1
+			if wrap:<s64>(RegisterFormPass.g(st, ei, 7)) > src{
+				RegisterFormPass.put(st, ei, 7, wrap:<u64>(src))
+				? RegisterFormPass.narrowOrig(prog, st, ei, src)
+			}
+			return 1
+		}
+		if k != 3{
+			return 0
+		}
+		if RegisterFormPass.g(st, ei, 9) == 1 &&then wrap:<s64>(RegisterFormPass.g(st, ei, 7)) <= src{
+			st.risky = 1
+			RegisterFormPass.put(st, ei, 7, wrap:<u64>(dst))
+			return 1
+		}
+		if src == 1 || src == 2{
+			st.risky = 1
+			? RegisterFormPass.emitMask(prog, RegisterFormPass.g(st, ei, 6), src == 1)
+			RegisterFormPass.put(st, ei, 7, wrap:<u64>(dst))
+			RegisterFormPass.put(st, ei, 9, 1)
+			return 1
+		}
+		return 0
+	}
+
+	@throws
+	static func fuseTrunc(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 3{
+			return 0
+		}
+		let src = mut RegisterFormPass.parseSize(prog, i, 1)
+		let dst = mut RegisterFormPass.parseSize(prog, i, 2)
+		let sz = mut st.sp
+		if sz < 1 || src != 8 || (dst != 1 && dst != 2 && dst != 4){
+			return 0
+		}
+		let ei = mut (sz - 1)
+		let k = mut RegisterFormPass.g(st, ei, 0)
+		if k == 1 &&then wrap:<s64>(RegisterFormPass.g(st, ei, 7)) >= dst{
+			st.risky = 1
+			RegisterFormPass.put(st, ei, 7, wrap:<u64>(dst))
+			? RegisterFormPass.narrowOrig(prog, st, ei, dst)
+			return 1
+		}
+		if k == 3 &&then dst != 4{
+			st.risky = 1
+			? RegisterFormPass.emitMask(prog, RegisterFormPass.g(st, ei, 6), dst == 1)
+			RegisterFormPass.put(st, ei, 7, wrap:<u64>(dst))
+			RegisterFormPass.put(st, ei, 9, 1)
+			return 1
+		}
+		return 0
+	}
+
+	@throws
+	static func fuseFieldName(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 3{
+			return 0
+		}
+		if RegisterFormPass.tokRange(prog, st, i, 1) == false{
+			return 0
+		}
+		let s = mut st.rs
+		let z = mut st.re
+		if RegisterFormPass.parseLit(prog, st, s, z, false) == false{
+			return 0
+		}
+		st.risky = 1
+		? RegisterFormPass.push(st, 0, prog.lineStart(prog, i), prog.lineEnd(prog, i), s, z, wrap:<s64>(st.pv), 0, 8, 0, 0)
+		return 1
+	}
+
+	@throws
+	static func fuseDotLhs(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		let oi = mut (sz - 1)
+		let bi = mut (sz - 2)
+		if RegisterFormPass.g(st, oi, 0) != 0{
+			return 0
+		}
+		if RegisterFormPass.isAddress(st, bi) == false{
+			return 0
+		}
+		let k = mut RegisterFormPass.gs(st, oi, 5)
+		if RegisterFormPass.g(st, bi, 0) == 2 &&then RegisterFormPass.g(st, bi, 8) == 0{
+			st.risky = 1
+			let off = mut (RegisterFormPass.gs(st, bi, 5) + k)
+			st.sp = sz - 2
+			prog.begin(prog)
+			? prog.addLit(prog, "$")
+			? prog.glueS64(prog, off)
+			let ts = mut prog.cur
+			let te = mut prog.used
+			prog.begin(prog)
+			? prog.addLit(prog, "ADDR 8")
+			? prog.addRange(prog, ts, te)
+			let os = mut prog.cur
+			let oe = mut prog.used
+			? RegisterFormPass.push(st, 2, os, oe, ts, te, off, 0, 8, 0, 0)
+			return 1
+		}
+		return ? RegisterFormPass.emitLea(prog, st, 1, sz, 0)
+	}
+
+	// ---- stores ----
+
+	/** Token `k` of the text [s, e) is `%t<temp>`. */
+	static func tokIsTemp(prog: ref some imut Prog, s: mut u64, e: mut u64, k: mut u64, t: mut u64) mut bool{
+		let p = mut Ln.start(prog.buf, s, e, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		if Ln.tokEnd(prog.buf, a, e) - a != 3{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, a) == '%' &&then prog.buf.charAt(prog.buf, a + 1) == 't' &&then prog.buf.charAt(prog.buf, a + 2) == Prog.dig(t){
+			return true
+		}
+		return false
+	}
+
+	/** Token `k` of the text [s, e) equals the entry text [ts, te). */
+	static func tokIsRange(prog: ref some imut Prog, s: mut u64, e: mut u64, k: mut u64, ts: mut u64, te: mut u64) mut bool{
+		let p = mut Ln.start(prog.buf, s, e, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		return RegisterFormPass.rangeEq(prog, a, Ln.tokEnd(prog.buf, a, e), ts, te)
+	}
+
+	/** The store of the temp `vi` to the slot `ai` right after `R_BIN ADD|SUB 8 %t $x b` / `R_UN INC|DEC 8 %t $x` becomes one `R_RMW`. */
+	@throws
+	static func tryRmw(prog: ref some mut Prog, st: ref some mut Rf, ai: mut u64, vi: mut u64) mut bool{
+		?catch(e){ throw e }
+		if prog.n2 == 0 || prog.n2 <= st.cpOut{
+			return false
+		}
+		let li = mut (prog.n2 - 1)
+		let ls = mut 0
+		let le = mut 0
+		match li in prog.ls2{ ls = prog.ls2[li] }
+		match li in prog.le2{ le = prog.le2[li] }
+		let vt = mut RegisterFormPass.g(st, vi, 6)
+		let ats = mut RegisterFormPass.g(st, ai, 3)
+		let ate = mut RegisterFormPass.g(st, ai, 4)
+		let cnt = mut Ln.count(prog.buf, ls, le)
+		if cnt == 6 &&then Ln.opEq(prog.buf, ls, le, "R_BIN") &&then Ln.eqLit(prog.buf, ls, le, 2, "8") &&then RegisterFormPass.tokIsTemp(prog, ls, le, 3, vt){
+			let isAdd = mut Ln.eqLit(prog.buf, ls, le, 1, "ADD")
+			let isSub = mut Ln.eqLit(prog.buf, ls, le, 1, "SUB")
+			let aEq = mut RegisterFormPass.tokIsRange(prog, ls, le, 4, ats, ate)
+			let bEq = mut RegisterFormPass.tokIsRange(prog, ls, le, 5, ats, ate)
+			let other = mut 0
+			if aEq{
+				if isAdd || isSub{
+					other = 5
+				}
+			}
+			if other == 0 &&then isAdd &&then bEq{
+				other = 4
+			}
+			if other == 0{
+				return false
+			}
+			// other.equals(addr.text)
+			if RegisterFormPass.tokIsRange(prog, ls, le, other, ats, ate){
+				return false
+			}
+			let op = mut Ln.start(prog.buf, ls, le, other)
+			let oa = mut wrap:<u64>(op)
+			let oz = mut Ln.tokEnd(prog.buf, oa, le)
+			if prog.buf.charAt(prog.buf, oa) == '#'{
+				if RegisterFormPass.parseLit(prog, st, oa + 1, oz, false) == false{
+					return false
+				}
+				if RegisterFormPass.fitsImm32(wrap:<s64>(st.pv)) == false{
+					return false
+				}
+			}
+			prog.n2 = li
+			prog.begin(prog)
+			? prog.addLit(prog, "R_RMW")
+			if isAdd{
+				? prog.addLit(prog, "ADD")
+			} else {
+				? prog.addLit(prog, "SUB")
+			}
+			? prog.addLit(prog, "8")
+			? prog.addRange(prog, ats, ate)
+			? prog.addRange(prog, oa, oz)
+			? prog.outBuilt(prog)
+		} else if cnt == 5 &&then Ln.opEq(prog.buf, ls, le, "R_UN") &&then Ln.eqLit(prog.buf, ls, le, 2, "8") &&then RegisterFormPass.tokIsTemp(prog, ls, le, 3, vt) &&then RegisterFormPass.tokIsRange(prog, ls, le, 4, ats, ate) &&then Ln.eqLit2(prog.buf, ls, le, 1, "INC", "DEC"){
+			let isInc = mut Ln.eqLit(prog.buf, ls, le, 1, "INC")
+			prog.n2 = li
+			prog.begin(prog)
+			? prog.addLit(prog, "R_RMW")
+			if isInc{
+				? prog.addLit(prog, "INC")
+			} else {
+				? prog.addLit(prog, "DEC")
+			}
+			? prog.addLit(prog, "8")
+			? prog.addRange(prog, ats, ate)
+			? prog.outBuilt(prog)
+		} else {
+			return false
+		}
+		RegisterFormPass.freeTemp(st, vt)
+		st.sp = st.sp - 2
+		return true
+	}
+
+	/** The store of a scalar of width n: the value on top of the model, its address below (the top two entries). */
+	@throws
+	static func assignCore(prog: ref some mut Prog, st: ref some mut Rf, n: mut s64) mut u64{
+		?catch(e){ throw e }
+		let sz = mut st.sp
+		if sz < 2{
+			return 0
+		}
+		let vi = mut (sz - 1)
+		let ai = mut (sz - 2)
+		if RegisterFormPass.isAddress(st, ai) == false || RegisterFormPass.isValue(st, vi) == false{
+			return 0
+		}
+		let aKind = mut RegisterFormPass.g(st, ai, 0)
+		let vKind = mut RegisterFormPass.g(st, vi, 0)
+		let frameDst = mut false
+		if aKind == 2 &&then RegisterFormPass.g(st, ai, 8) == 0{
+			frameDst = true
+		}
+		let globalDst = mut false
+		if aKind == 2 &&then RegisterFormPass.g(st, ai, 8) == 1{
+			globalDst = true
+		}
+		let aOff = mut RegisterFormPass.gs(st, ai, 5)
+		let nh = mut 0
+		let top = mut (sz - 2)
+		for k in 0..top{
+			if RegisterFormPass.g(st, k, 0) != 1{
+				continue
+			}
+			let overlaps = mut false
+			if frameDst{
+				let eo = mut RegisterFormPass.gs(st, k, 5)
+				let es = mut wrap:<s64>(RegisterFormPass.g(st, k, 7))
+				overlaps = eo < aOff + n && aOff < eo + es
+			} else {
+				overlaps = globalDst == false
+			}
+			if overlaps{
+				match nh into st.haz{ st.haz[nh] = k }
+				nh += 1
+				if nh >= 60{
+					return 0
+				}
+			}
+		}
+		let legacy = mut (n == 8 && frameDst)
+		let valLoad = mut (vKind == 1)
+		if vKind == 0 &&then legacy == false &&then n == 8 &&then RegisterFormPass.fitsImm32(RegisterFormPass.gs(st, vi, 5)) == false{
+			valLoad = true
+		}
+		let addrLoad = mut (aKind == 1)
+		let needed = mut nh
+		if valLoad{
+			needed += 1
+		}
+		if addrLoad{
+			needed += 1
+		}
+		if needed > RegisterFormPass.freeTemps(st){
+			return 0
+		}
+		if legacy == false || n != 8{
+			st.risky = 1
+		}
+		for h in 0..nh{
+			let hk = mut 0
+			match h in st.haz{ hk = st.haz[h] }
+			? RegisterFormPass.loadInto(prog, st, hk)
+		}
+		if legacy &&then vKind == 3{
+			let rm = mut ? RegisterFormPass.tryRmw(prog, st, ai, vi)
+			if rm{
+				return 1
+			}
+		}
+		let scratch = mut 4
+		if valLoad{
+			scratch = RegisterFormPass.allocTemp(st)
+			prog.begin(prog)
+			if vKind == 1{
+				let vs = mut RegisterFormPass.g(st, vi, 7)
+				if vs == 8{
+					? prog.addLit(prog, "R_MOV 8")
+				} else {
+					? prog.addLit(prog, "R_LD")
+					? prog.addS64(prog, wrap:<s64>(vs))
+				}
+				? RegisterFormPass.aT(prog, scratch)
+				? prog.addRange(prog, RegisterFormPass.g(st, vi, 3), RegisterFormPass.g(st, vi, 4))
+			} else {
+				? prog.addLit(prog, "R_MOV 8")
+				? RegisterFormPass.aT(prog, scratch)
+				? RegisterFormPass.aOperand(prog, st, vi)
+			}
+			? prog.outBuilt(prog)
+		}
+		let addrScratch = mut 4
+		if addrLoad{
+			addrScratch = RegisterFormPass.allocTemp(st)
+			prog.begin(prog)
+			? prog.addLit(prog, "R_MOV 8")
+			? RegisterFormPass.aT(prog, addrScratch)
+			? prog.addRange(prog, RegisterFormPass.g(st, ai, 3), RegisterFormPass.g(st, ai, 4))
+			? prog.outBuilt(prog)
+		}
+		prog.begin(prog)
+		if legacy{
+			? prog.addLit(prog, "R_MOV 8")
+		} else {
+			? prog.addLit(prog, "R_ST")
+			? prog.addS64(prog, n)
+		}
+		if addrLoad{
+			? RegisterFormPass.aT(prog, addrScratch)
+		} else if aKind == 3{
+			? RegisterFormPass.aT(prog, RegisterFormPass.g(st, ai, 6))
+		} else {
+			? prog.addRange(prog, RegisterFormPass.g(st, ai, 3), RegisterFormPass.g(st, ai, 4))
+		}
+		if valLoad{
+			? RegisterFormPass.aT(prog, scratch)
+		} else {
+			? RegisterFormPass.aOperand(prog, st, vi)
+		}
+		? prog.outBuilt(prog)
+		if scratch < 4{
+			RegisterFormPass.freeTemp(st, scratch)
+		}
+		if addrScratch < 4{
+			RegisterFormPass.freeTemp(st, addrScratch)
+		}
+		if vKind == 3{
+			RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, vi, 6))
+		}
+		if aKind == 3{
+			RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, ai, 6))
+		}
+		st.sp = sz - 2
+		return 1
+	}
+
+	@throws
+	static func fuseAssign(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 4{
+			return 0
+		}
+		let n = mut RegisterFormPass.parseSize(prog, i, 1)
+		if RegisterFormPass.isWidth(n) == false{
+			return 0
+		}
+		if prog.tokEq(prog, i, 2, i, 1) == false || prog.tokEq(prog, i, 3, i, 1) == false{
+			return 0
+		}
+		return ? RegisterFormPass.assignCore(prog, st, n)
+	}
+
+	// ---- argument registers, returns, branches ----
+
+	@throws
+	static func fusePop(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 3{
+			return 0
+		}
+		if RegisterFormPass.slotTok(prog, st, i, 1){
+			let ds = mut st.rs
+			let dz = mut st.re
+			let slot = mut wrap:<s64>(st.pv)
+			return ? RegisterFormPass.fusePopToSlot(prog, st, i, ds, dz, slot)
+		}
+		let isF = mut prog.startsWith(prog, i, 1, "FARG")
+		let isI = mut false
+		if isF == false &&then prog.startsWith(prog, i, 1, "ARG"){
+			isI = true
+		}
+		if isF == false &&then isI == false{
+			return 0
+		}
+		if RegisterFormPass.tokRange(prog, st, i, 1) == false{
+			return 0
+		}
+		let skip = mut 3
+		if isF{
+			skip = 4
+		}
+		let n = mut -1
+		let tz = mut st.re
+		let tp = mut (st.rs + skip)
+		if tp < tz{
+			let q = mut Ln.signedTok(prog.buf, st.rs, tz, skip)
+			if q != -4611686018427387904 &&then q >= -2147483648 &&then q <= 2147483647{
+				n = q
+			}
+		}
+		if n < 0{
+			return 0
+		}
+		let sz = mut st.sp
+		if sz < 1{
+			return 0
+		}
+		let vi = mut (sz - 1)
+		let vk = mut RegisterFormPass.g(st, vi, 0)
+		if vk == 2{
+			if isF{
+				return 0
+			}
+			st.risky = 1
+			st.sp = sz - 1
+			prog.begin(prog)
+			? prog.addLit(prog, "R_ARGA")
+			? prog.addS64(prog, n)
+			? prog.addRange(prog, RegisterFormPass.g(st, vi, 3), RegisterFormPass.g(st, vi, 4))
+			? prog.outBuilt(prog)
+			return 1
+		}
+		st.risky = 1
+		st.sp = sz - 1
+		prog.begin(prog)
+		if isF{
+			? prog.addLit(prog, "R_FARG")
+		} else {
+			? prog.addLit(prog, "R_ARG")
+		}
+		? prog.addS64(prog, n)
+		if vk == 1{
+			? prog.addS64(prog, wrap:<s64>(RegisterFormPass.g(st, vi, 7)))
+		} else {
+			? prog.addLit(prog, "8")
+		}
+		? RegisterFormPass.aOperand(prog, st, vi)
+		? prog.outBuilt(prog)
+		if vk == 3{
+			RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, vi, 6))
+		}
+		return 1
+	}
+
+	/** `POP $slot n` with a remembered value on top: the same store as `ADDR $slot; value; ASSIGN n n n`, with a transient address entry under the value. */
+	@throws
+	static func fusePopToSlot(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64, ds: mut u64, dz: mut u64, slot: mut s64) mut u64{
+		?catch(e){ throw e }
+		let n = mut RegisterFormPass.parseSize(prog, i, 2)
+		let sz = mut st.sp
+		if RegisterFormPass.isWidth(n) == false || sz < 1{
+			return 0
+		}
+		if RegisterFormPass.isValue(st, sz - 1) == false{
+			return 0
+		}
+		// insert the address entry below the top entry
+		let vi = mut (sz - 1)
+		let os = mut prog.lineStart(prog, i)
+		let oe = mut prog.lineEnd(prog, i)
+		? RegisterFormPass.push(st, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+		for f in 0..10{
+			RegisterFormPass.put(st, sz, f, RegisterFormPass.g(st, vi, f))
+		}
+		RegisterFormPass.put(st, vi, 0, 2)
+		RegisterFormPass.put(st, vi, 1, os)
+		RegisterFormPass.put(st, vi, 2, oe)
+		RegisterFormPass.put(st, vi, 3, ds)
+		RegisterFormPass.put(st, vi, 4, dz)
+		RegisterFormPass.put(st, vi, 5, wrap:<u64>(slot))
+		RegisterFormPass.put(st, vi, 6, 0)
+		RegisterFormPass.put(st, vi, 7, 8)
+		RegisterFormPass.put(st, vi, 8, 0)
+		RegisterFormPass.put(st, vi, 9, 0)
+		let r = mut ? RegisterFormPass.assignCore(prog, st, n)
+		if r == 0{
+			// remove the transient entry again
+			for f in 0..10{
+				RegisterFormPass.put(st, vi, f, RegisterFormPass.g(st, sz, f))
+			}
+			st.sp = sz
+		}
+		return r
+	}
+
+	@throws
+	static func fuseRet(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.count(prog, i) != 2{
+			return 0
+		}
+		let isF = mut prog.opEq(prog, i, "RET_FLOAT")
+		if isF == false{
+			let n = mut RegisterFormPass.parseSize(prog, i, 1)
+			if n <= 0 || n > 8{
+				return 0
+			}
+		}
+		if st.sp != 1{
+			return 0
+		}
+		if RegisterFormPass.isValue(st, 0) == false{
+			return 0
+		}
+		st.risky = 1
+		st.sp = 0
+		let k = mut RegisterFormPass.g(st, 0, 0)
+		if k == 1 &&then RegisterFormPass.g(st, 0, 7) != 8{
+			prog.begin(prog)
+			? prog.addLit(prog, "R_LD")
+			? prog.addS64(prog, wrap:<s64>(RegisterFormPass.g(st, 0, 7)))
+			? prog.addLit(prog, "%s")
+			? prog.addRange(prog, RegisterFormPass.g(st, 0, 3), RegisterFormPass.g(st, 0, 4))
+			? prog.outBuilt(prog)
+			prog.begin(prog)
+			if isF{
+				? prog.addLit(prog, "R_RETF %s")
+			} else {
+				? prog.addLit(prog, "R_RET %s")
+			}
+			? prog.outBuilt(prog)
+		} else {
+			prog.begin(prog)
+			if isF{
+				? prog.addLit(prog, "R_RETF")
+			} else {
+				? prog.addLit(prog, "R_RET")
+			}
+			? RegisterFormPass.aOperand(prog, st, 0)
+			? prog.outBuilt(prog)
+		}
+		if k == 3{
+			RegisterFormPass.freeTemp(st, RegisterFormPass.g(st, 0, 6))
+		}
+		return 1
+	}
+
+	@throws
+	static func fuseCmpJmp(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		let total = mut prog.size(prog)
+		if prog.count(prog, i) != 1 || i + 1 >= total{
+			return 0
+		}
+		if prog.count(prog, i + 1) != 2 || prog.opEq(prog, i + 1, "JMP") == false{
+			return 0
+		}
+		let n = mut st.sp
+		if n < 1{
+			return 0
+		}
+		let ci = mut (n - 1)
+		if RegisterFormPass.g(st, ci, 0) != 3{
+			return 0
+		}
+		if st.risky == 1 &&then n > 1{
+			return 0
+		}
+		let ct = mut RegisterFormPass.g(st, ci, 6)
+		st.sp = n - 1
+		? RegisterFormPass.flush(prog, st, true)
+		prog.begin(prog)
+		? prog.addLit(prog, "R_BRF")
+		? RegisterFormPass.aT(prog, ct)
+		? prog.addTok(prog, i + 1, 1)
+		? prog.outBuilt(prog)
+		RegisterFormPass.freeTemp(st, ct)
+		return 2
+	}
+
+	// ---- driver ----
+
+	/** CC_START, `*_FLOAT`, `*_INT`, the shifts/rotates and `BITS_*`: a flush in front of them writes the very words the original code pushed. */
+	static func flushIsFaithful(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "CC_START") || prog.opEq(prog, i, "SHL") || prog.opEq(prog, i, "SHR") || prog.opEq(prog, i, "SAR") || prog.opEq(prog, i, "ROTL") || prog.opEq(prog, i, "ROTR"){
+			return true
+		}
+		if prog.startsWith(prog, i, 0, "BITS_"){
+			return true
+		}
+		let p = mut prog.tokPos(prog, i, 0)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		if z - a >= 4 &&then prog.buf.charAt(prog.buf, z - 1) == 'T' &&then prog.buf.charAt(prog.buf, z - 2) == 'N' &&then prog.buf.charAt(prog.buf, z - 3) == 'I' &&then prog.buf.charAt(prog.buf, z - 4) == '_'{
+			return true
+		}
+		if z - a >= 6 &&then prog.buf.charAt(prog.buf, z - 1) == 'T' &&then prog.buf.charAt(prog.buf, z - 2) == 'A' &&then prog.buf.charAt(prog.buf, z - 3) == 'O' &&then prog.buf.charAt(prog.buf, z - 4) == 'L' &&then prog.buf.charAt(prog.buf, z - 5) == 'F' &&then prog.buf.charAt(prog.buf, z - 6) == '_'{
+			return true
+		}
+		return false
+	}
+
+	/** The fuse handler for line `i`: lines consumed, or 0. */
+	@throws
+	static func tryFuse(prog: ref some mut Prog, st: ref some mut Rf, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		if prog.opEq(prog, i, "PUSH"){
+			return ? RegisterFormPass.fusePush(prog, st, i)
+		}
+		if prog.opEq(prog, i, "ADDR"){
+			return ? RegisterFormPass.fuseAddr(prog, st, i)
+		}
+		if prog.opEq(prog, i, "ASSIGN"){
+			return ? RegisterFormPass.fuseAssign(prog, st, i)
+		}
+		let bk = mut RegisterFormPass.binKind(prog, i)
+		if bk != 0{
+			return ? RegisterFormPass.fuseBinary(prog, st, i, bk)
+		}
+		if prog.opEq(prog, i, "DIV_INT") || prog.opEq(prog, i, "MOD_INT"){
+			return ? RegisterFormPass.fuseDivConst(prog, st, i)
+		}
+		if prog.opEq(prog, i, "INC_INT") || prog.opEq(prog, i, "DEC_INT") || prog.opEq(prog, i, "NEG") || prog.opEq(prog, i, "NOT") || prog.opEq(prog, i, "BITS_NOT"){
+			return ? RegisterFormPass.fuseUnary(prog, st, i)
+		}
+		if prog.opEq(prog, i, "CMP"){
+			return ? RegisterFormPass.fuseCmpJmp(prog, st, i)
+		}
+		if prog.opEq(prog, i, "DEREF"){
+			if prog.count(prog, i) != 2{
+				return 0
+			}
+			return ? RegisterFormPass.derefN(prog, st, RegisterFormPass.parseSize(prog, i, 1))
+		}
+		if prog.opEq(prog, i, "LEN"){
+			if prog.count(prog, i) != 1{
+				return 0
+			}
+			return ? RegisterFormPass.derefN(prog, st, 8)
+		}
+		if prog.opEq(prog, i, "LOOKUP_DYN"){
+			return ? RegisterFormPass.fuseLookupDyn(prog, st, i, false)
+		}
+		if prog.opEq(prog, i, "LOOKUP_DYN_LHS"){
+			return ? RegisterFormPass.fuseLookupDyn(prog, st, i, true)
+		}
+		if prog.opEq(prog, i, "ZEXT"){
+			return ? RegisterFormPass.fuseZext(prog, st, i)
+		}
+		if prog.opEq(prog, i, "TRUNC"){
+			return ? RegisterFormPass.fuseTrunc(prog, st, i)
+		}
+		if prog.opEq(prog, i, "LOOKUP_ARRAY_LHS"){
+			return ? RegisterFormPass.fuseLookupArrayLhs(prog, st, i)
+		}
+		if prog.opEq(prog, i, "LOOKUP_ARRAY"){
+			return ? RegisterFormPass.fuseLookupPtrRead(prog, st, i)
+		}
+		if prog.opEq(prog, i, "PUSH_FIELDNAME"){
+			return ? RegisterFormPass.fuseFieldName(prog, st, i)
+		}
+		if prog.opEq(prog, i, "DOT_LHS"){
+			return ? RegisterFormPass.fuseDotLhs(prog, st, i)
+		}
+		if prog.opEq(prog, i, "POP"){
+			return ? RegisterFormPass.fusePop(prog, st, i)
+		}
+		if prog.opEq(prog, i, "RET") || prog.opEq(prog, i, "RET_FLOAT"){
+			return ? RegisterFormPass.fuseRet(prog, st, i)
+		}
+		if prog.opEq(prog, i, "ADD_FLOAT") || prog.opEq(prog, i, "SUB_FLOAT") || prog.opEq(prog, i, "MUL_FLOAT") || prog.opEq(prog, i, "DIV_FLOAT"){
+			return ? RegisterFormPass.fuseFloatOp(prog, st, i, false)
+		}
+		if prog.opEq(prog, i, "EQ_FLOAT") || prog.opEq(prog, i, "NEQ_FLOAT") || prog.opEq(prog, i, "LT_FLOAT") || prog.opEq(prog, i, "LT_EQ_FLOAT") || prog.opEq(prog, i, "GT_EQ_FLOAT") || prog.opEq(prog, i, "GT_FLOAT"){
+			return ? RegisterFormPass.fuseFloatOp(prog, st, i, true)
+		}
+		return 0
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let st = mut ? new Rf()
+		let n = mut prog.size(prog)
+		// globals (GLOBAL / ALLOC_STATIC names without a dot)
+		let ng = mut 0
+		for i in 0..n{
+			if prog.count(prog, i) >= 2 &&then (prog.opEq(prog, i, "GLOBAL") || prog.opEq(prog, i, "ALLOC_STATIC")){
+				ng += 1
+			}
+		}
+		if ng > 0{
+			let cap = mut 16
+			for z in 0..40{
+				if cap < ng * 2{
+					cap = cap * 2
+				}
+			}
+			st.htS = ? resize(st.htS, cap, 0)
+			st.htE = ? resize(st.htE, cap, 0)
+			st.hcap = cap
+			for i in 0..n{
+				if prog.count(prog, i) >= 2 &&then (prog.opEq(prog, i, "GLOBAL") || prog.opEq(prog, i, "ALLOC_STATIC")){
+					if RegisterFormPass.tokRange(prog, st, i, 1){
+						let a = mut st.rs
+						let z = mut st.re
+						let dotted = mut false
+						for x in a..z{
+							if prog.buf.charAt(prog.buf, x) == '.'{
+								dotted = true
+							}
+						}
+						if dotted == false{
+							RegisterFormPass.addGlobal(prog, st, a, z)
+						}
+					}
+				}
+			}
+		}
+		prog.outReset(prog)
+		let changed = mut false
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.count(prog, i) == 0{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let consumed = mut ? RegisterFormPass.tryFuse(prog, st, i)
+			if consumed > 0{
+				changed = true
+				i += consumed
+			} else {
+				let faithful = mut false
+				if RegisterFormPass.flushIsFaithful(prog, i) &&then RegisterFormPass.plainWords(st){
+					faithful = true
+				}
+				if st.risky == 1 &&then st.sp > 0 &&then faithful == false{
+					? RegisterFormPass.rollback(prog, st, i)
+				} else {
+					? RegisterFormPass.flush(prog, st, false)
+				}
+				? prog.outLine(prog, i)
+				i += 1
+			}
+			if st.sp == 0{
+				st.usedMask = 0
+				st.cpIn = i
+				st.cpOut = prog.n2
+				st.risky = 0
+			}
+		}
+		if st.risky == 1 &&then st.sp > 0{
+			? RegisterFormPass.rollback(prog, st, n)
+		} else {
+			? RegisterFormPass.flush(prog, st, false)
+		}
+		if changed{
+			prog.outCommit(prog)
+		}
+	}
+}

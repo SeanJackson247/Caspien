@@ -1,0 +1,270 @@
+import "stdlib/string.caspien"
+import "Config.caspien"
+import "Prog.caspien"
+import "StrengthReductionPass.caspien"
+import "RangeCheckFusionPass.caspien"
+import "BranchFusionPass.caspien"
+import "IndexedAccessPass.caspien"
+import "GlobalConstAddrPass.caspien"
+import "LengthCompareFusionPass.caspien"
+import "FieldDisplacementPass.caspien"
+import "DestForwardingPass.caspien"
+import "CopyForwardPass.caspien"
+import "RangeEndHintPass.caspien"
+import "RangeWordSplitPass.caspien"
+import "RegisterFormPass.caspien"
+import "LoopHoistPass.caspien"
+import "RegVarPromotionPass.caspien"
+import "FloatTempPass.caspien"
+import "ArgToAllocPass.caspien"
+import "StaticFloatCachePass.caspien"
+import "FloatText.caspien"
+import "FloatIntrinsicPass.caspien"
+import "ConditionalMovePass.caspien"
+import "LoopRotationPass.caspien"
+import "JumpCleanupPass.caspien"
+import "MembershipPass.caspien"
+import "ClonePass.caspien"
+import "DropPass.caspien"
+import "AddressLoweringPass.caspien"
+
+/** Java `LowerOrder.generate` + `LowerOrderGenerator.generate`: the fixed pass pipeline. */
+@pub
+struct LowerOrder{@pub{
+}}
+
+impl constructor for LowerOrder() self{
+	return LowerOrder{}
+}
+
+@pub
+impl LowerOrder{
+	/** Pipeline position of a pass by name (PassDump order), 0 if unknown. */
+	static func idOf(name: ref some imut String) mut u64{
+		if name.equals(name, "membership"){ return 1 }
+		if name.equals(name, "clone"){ return 2 }
+		if name.equals(name, "dropglue"){ return 3 }
+		if name.equals(name, "argtoalloc"){ return 4 }
+		if name.equals(name, "addresslowering"){ return 5 }
+		if name.equals(name, "strengthreduction"){ return 6 }
+		if name.equals(name, "rangecheckfusion"){ return 7 }
+		if name.equals(name, "rangeendhint"){ return 8 }
+		if name.equals(name, "rangewordsplit"){ return 9 }
+		if name.equals(name, "registerform"){ return 10 }
+		if name.equals(name, "loophoist"){ return 11 }
+		if name.equals(name, "regvarpromotion"){ return 12 }
+		if name.equals(name, "loophoistfinish"){ return 13 }
+		if name.equals(name, "floattemp"){ return 14 }
+		if name.equals(name, "floatintrinsic"){ return 15 }
+		if name.equals(name, "staticfloatcache"){ return 16 }
+		if name.equals(name, "branchfusion"){ return 17 }
+		if name.equals(name, "jumpcleanup"){ return 18 }
+		if name.equals(name, "indexedaccess"){ return 19 }
+		if name.equals(name, "globalconstaddr"){ return 20 }
+		if name.equals(name, "lengthcomparefusion"){ return 21 }
+		if name.equals(name, "fielddisplacement"){ return 22 }
+		if name.equals(name, "destforwarding"){ return 23 }
+		if name.equals(name, "conditionalmove"){ return 24 }
+		if name.equals(name, "copyforward"){ return 25 }
+		if name.equals(name, "looprotation"){ return 26 }
+		return 0
+	}
+
+	/** One pipeline step by position, with its gate from compiler.config (LowerOrderGenerator.generate). A gated-off step does nothing. */
+	@throws
+	static func step(id: mut u64, prog: ref some mut Prog, cfg: ref some imut Config) void{
+		?catch(e){ throw e }
+		if id == 1{
+			? MembershipPass.run(prog)
+		} else if id == 2{
+			? ClonePass.run(prog)
+		} else if id == 3{
+			? DropPass.run(prog, cfg)
+		} else if id == 4{
+			? ArgToAllocPass.run(prog)
+		} else if id == 5{
+			? AddressLoweringPass.run(prog, cfg)
+		} else if id == 6{
+			? StrengthReductionPass.run(prog)
+		} else if id == 7{
+			? RangeCheckFusionPass.run(prog)
+		} else if id == 8{
+			if cfg.deferredOperands &&then cfg.variablesInRegisters{
+				? RangeEndHintPass.run(prog)
+			}
+		} else if id == 9{
+			if cfg.deferredOperands{
+				? RangeWordSplitPass.run(prog)
+			}
+		} else if id == 10{
+			if cfg.deferredOperands{
+				? RegisterFormPass.run(prog)
+			}
+		} else if id == 11{
+			if cfg.deferredOperands &&then cfg.variablesInRegisters &&then cfg.hoistArrayBases{
+				? LoopHoistPass.run(prog)
+			}
+		} else if id == 12{
+			let rvOn = mut false
+			if cfg.deferredOperands &&then cfg.variablesInRegisters{
+				rvOn = true
+			}
+			? RegVarPromotionPass.run(prog, rvOn, cfg.floatVariablesInRegisters, cfg.variablesInAllocFunctions, cfg.variablesInArgRegisters)
+		} else if id == 13{
+			if cfg.deferredOperands &&then cfg.variablesInRegisters &&then cfg.hoistArrayBases{
+				? LoopHoistPass.finish(prog)
+			}
+		} else if id == 14{
+			if cfg.deferredOperands &&then cfg.floatTemporariesInRegisters{
+				? FloatTempPass.run(prog)
+			}
+		} else if id == 15{
+			? FloatIntrinsicPass.run(prog)
+		} else if id == 16{
+			if cfg.deferredOperands &&then cfg.variablesInRegisters &&then cfg.floatVariablesInRegisters{
+				? StaticFloatCachePass.run(prog)
+			}
+		} else if id == 17{
+			? BranchFusionPass.run(prog)
+		} else if id == 18{
+			? JumpCleanupPass.run(prog)
+		} else if id == 19{
+			? IndexedAccessPass.run(prog)
+		} else if id == 20{
+			? GlobalConstAddrPass.run(prog)
+		} else if id == 21{
+			if cfg.deferredOperands &&then cfg.fuseLengthCompare{
+				? LengthCompareFusionPass.run(prog)
+			}
+		} else if id == 22{
+			? FieldDisplacementPass.run(prog)
+		} else if id == 23{
+			? DestForwardingPass.run(prog)
+		} else if id == 24{
+			if cfg.deferredOperands &&then cfg.conditionalMove{
+				? ConditionalMovePass.run(prog)
+			}
+		} else if id == 25{
+			if cfg.deferredOperands &&then cfg.copyForward{
+				? CopyForwardPass.run(prog)
+			}
+		} else if id == 26{
+			if cfg.deferredOperands &&then cfg.loopRotation{
+				? LoopRotationPass.run(prog)
+			}
+		} else{
+			throw "pass not ported yet"
+		}
+	}
+
+	@pub
+	@throws
+	static func generate(hob0: ref some imut String, configText0: ref some imut String, pass1: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let pass0 = mut ? pass1.sub(pass1, 0, pass1.length(pass1))
+		let hob = mut ? hob0.sub(hob0, 0, hob0.length(hob0))
+		let configText = mut ? configText0.sub(configText0, 0, configText0.length(configText0))
+		let cfg = mut ? Config.parse(configText)
+		let prog = mut ? Prog.parse(hob)
+		// the steps to run: a comma-separated chain (test mode) or all 26
+		let ids = mut ? dyn:<u64>([])
+		let pl = mut pass0.length(pass0)
+		if pl > 0{
+			let from = mut 0
+			let plz = mut (pl + 1)
+			for q in 0..plz{
+				if q == pl || pass0.charAt(pass0, q) == ','{
+					let nm = mut ? pass0.substring(pass0, from, q)
+					let cnt = mut len(ids)
+					ids = ? resize(ids, cnt + 1, 0)
+					match cnt into ids{ ids[cnt] = LowerOrder.idOf(nm) }
+					from = q + 1
+				}
+			}
+		} else{
+			ids = ? resize(ids, 26, 0)
+			for kx in 0..26{
+				match kx into ids{ ids[kx] = kx + 1 }
+			}
+		}
+		let nids = mut len(ids)
+		for stepNo in 0..nids{
+			let id = mut 0
+			match stepNo in ids{ id = ids[stepNo] }
+			if id == 10{
+				// decimal float literals of `PUSH n <dec>` lines -> IEEE bits (Float/Double.parseX; used by RegisterFormPass); the lines exist only after AddressLowering
+			let nl = mut prog.size(prog)
+			for fi in 0..nl{
+				if prog.count(prog, fi) == 3 &&then prog.opEq(prog, fi, "PUSH"){
+					let fp = mut prog.tokPos(prog, fi, 2)
+					let fn = mut prog.signedTok(prog, fi, 1, 0)
+					if fp >= 0 &&then fn >= 1 &&then fn <= 8{
+						let fa = mut wrap:<u64>(fp)
+						let fz = mut Ln.tokEnd(prog.buf, fa, prog.lineEnd(prog, fi))
+						if RegisterFormPass.isDecimal(prog, fa, fz){
+							let fd = mut 0
+							if fn > 4{
+								fd = 1
+							}
+							let known = mut false
+							let kk = mut prog.nf
+							for k in 0..kk{
+								let b0 = mut (k * 4)
+								let b1 = mut (k * 4 + 1)
+								let b2 = mut (k * 4 + 2)
+								let ks = mut 0
+								let ke = mut 0
+								let kd = mut 0
+								match b0 in prog.fv{ ks = prog.fv[b0] }
+								match b1 in prog.fv{ ke = prog.fv[b1] }
+								match b2 in prog.fv{ kd = prog.fv[b2] }
+								if kd == fd &&then ke - ks == fz - fa{
+									let same = mut true
+									let w = mut (fz - fa)
+									for d in 0..w{
+										if prog.ftxt.charAt(prog.ftxt, ks + d) != prog.buf.charAt(prog.buf, fa + d){
+											same = false
+											break
+										}
+									}
+									if same{
+										known = true
+									}
+								}
+							}
+							if known == false{
+								let ft = mut ? new String()
+								let w = mut (fz - fa)
+								for d in 0..w{
+									? ft.append(ft, prog.buf.charAt(prog.buf, fa + d))
+								}
+								let bits = mut ? FloatText.bits(ft, fd == 1)
+								let at = mut prog.ftxt.length(prog.ftxt)
+								for d in 0..w{
+									? prog.ftxt.append(prog.ftxt, prog.buf.charAt(prog.buf, fa + d))
+								}
+								let nfv = mut prog.nf
+								let need = mut ((nfv + 1) * 4)
+								prog.fv = ? resize(prog.fv, need, 0)
+								let b0 = mut (nfv * 4)
+								let b1 = mut (nfv * 4 + 1)
+								let b2 = mut (nfv * 4 + 2)
+								let b3 = mut (nfv * 4 + 3)
+								match b0 into prog.fv{ prog.fv[b0] = at }
+								match b1 into prog.fv{ prog.fv[b1] = at + w }
+								match b2 into prog.fv{ prog.fv[b2] = fd }
+								match b3 into prog.fv{ prog.fv[b3] = bits }
+								prog.nf = nfv + 1
+							}
+						}
+					}
+				}
+			}
+
+			}
+			? LowerOrder.step(id, prog, cfg)
+		}
+		let out = mut ? prog.serialize(prog)
+		return out
+	}
+}

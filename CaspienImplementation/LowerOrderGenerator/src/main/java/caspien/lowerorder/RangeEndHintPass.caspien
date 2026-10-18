@@ -1,0 +1,603 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "LabelIndex.caspien"
+
+/**
+ * Port of RangeEndHintPass: the hidden 16-byte range of a `for` loop is built as two 8-byte stores and its END gets a `REGHINT` so it can live in a variable register.
+ * Per function: find the constructions `ADDR 16 $r ; <expr> ; <expr> ; ASSIGN 16 16 16`, accept a slot when every other mention is a plain `PUSH 8` read, add a hint after the first ALLOC.
+ */
+@pub
+struct RangeEndHintPass{@pub{
+}}
+
+impl constructor for RangeEndHintPass() self{
+	return RangeEndHintPass{}
+}
+
+/** The constructions found in one function (index = site number). */
+@pub
+struct HintSites{@pub{
+	addr: owns some mut dynarray(mut u64)
+	assign: owns some mut dynarray(mut u64)
+	off: owns some mut dynarray(mut s64)
+	depth: owns some mut dynarray(mut u64)
+	site: owns some mut dynarray(mut u64)
+	ms: owns some mut dynarray(mut u64)
+	mo: owns some mut dynarray(mut s64)
+	p8: owns some mut dynarray(mut u64)
+	szv: owns some mut dynarray(mut s64)
+}}
+
+@throws
+impl constructor for HintSites() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<s64>([])
+	let d = mut ? dyn:<u64>([])
+	let e1 = mut ? dyn:<u64>([])
+	let e2 = mut ? dyn:<u64>([])
+	let e3 = mut ? dyn:<s64>([])
+	let e4 = mut ? dyn:<u64>([])
+	let e5 = mut ? dyn:<s64>([])
+	return HintSites{addr= a, assign= b, off= c, depth= d, site= e1, ms= e2, mo= e3, p8= e4, szv= e5}
+}
+
+@pub
+impl RangeEndHintPass{
+	/** Token `k` of line `i` as `$<signed number>` -> the number, else the sentinel. */
+	@pub
+	static func slotOff(prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		if prog.tokStartsCh(prog, i, k, '$') == false{
+			return -4611686018427387904
+		}
+		let p = mut wrap:<u64>(prog.tokPos(prog, i, k))
+		let q = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+		if q - p < 2{
+			return -4611686018427387904
+		}
+		return prog.signedTok(prog, i, k, 1)
+	}
+
+	static func isPush8(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) == 3 &&then prog.opEq(prog, i, "PUSH") &&then prog.eqLit(prog, i, 1, "8"){
+			return true
+		}
+		return false
+	}
+
+	static func isBinOp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) != 2 || prog.eqLit(prog, i, 1, "8") == false{
+			return false
+		}
+		if prog.opEq(prog, i, "ADD_INT") || prog.opEq(prog, i, "SUB_INT") || prog.opEq(prog, i, "MUL_INT") || prog.opEq(prog, i, "SHR") || prog.opEq(prog, i, "SHL"){
+			return true
+		}
+		if prog.opEq(prog, i, "SAR") || prog.opEq(prog, i, "BITS_AND") || prog.opEq(prog, i, "BITS_OR") || prog.opEq(prog, i, "BITS_XOR"){
+			return true
+		}
+		return false
+	}
+
+	/** w(depth) = 8^min(depth, 4). */
+	@pub
+	static func wt(depth: mut u64) mut u64{
+		let d = mut depth
+		if d > 4{
+			d = 4
+		}
+		let v = mut 1
+		for k in 0..d{
+			v = v * 8
+		}
+		return v
+	}
+
+	/** Site search: the split line and the assign line of the construction starting at `i` (function end `fe`); returns the assign line or -1, the split in `splitOut` slot of tmp. */
+	static func matchAt(prog: ref some mut Prog, i: mut u64, fe: mut u64) mut s64{
+		if prog.count(prog, i) != 3 || prog.opEq(prog, i, "ADDR") == false || prog.eqLit(prog, i, 1, "16") == false{
+			return -1
+		}
+		if RangeEndHintPass.slotOff(prog, i, 2) == -4611686018427387904{
+			return -1
+		}
+		let depth = mut 0
+		let split = mut -1
+		let j = mut (i + 1)
+		for st in 0..25{
+			if j >= fe || j > i + 24{
+				break
+			}
+			if prog.opEq(prog, j, "ASSIGN"){
+				if depth == 2 &&then split > 0 &&then prog.count(prog, j) == 4 &&then prog.eqLit(prog, j, 1, "16") &&then prog.eqLit(prog, j, 2, "16") &&then prog.eqLit(prog, j, 3, "16"){
+					match 90 into prog.tmp{ prog.tmp[90] = wrap:<u64>(split) }
+					return wrap:<s64>(j)
+				}
+				return -1
+			}
+			if RangeEndHintPass.isPush8(prog, j){
+				depth += 1
+			} else if RangeEndHintPass.isBinOp(prog, j){
+				depth -= 1
+				if depth < 1{
+					return -1
+				}
+			} else {
+				return -1
+			}
+			if depth == 1{
+				split = wrap:<s64>(j + 1)
+			}
+			if depth > 2 &&then split < 0{
+				return -1
+			}
+			j += 1
+		}
+		return -1
+	}
+
+	/** Java HashMap<Long,..> bucket index of `v` for a table of `cap` buckets. */
+	@pub
+	static func bucket(v: mut s64, cap: mut u64) mut u64{
+		let u = mut wrap:<u64>(v)
+		let lo = mut bits_and(bits_xor(u, bits_right(u, 32)), 4294967295)
+		let sp = mut bits_xor(lo, bits_right(lo, 16))
+		return bits_and(sp, cap - 1)
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let changed = mut false
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START"){
+				let end = mut i
+				for q in 0..n{
+					if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+						end += 1
+					} else {
+						break
+					}
+				}
+				let stop = mut (end + 1)
+				if stop > n{
+					stop = n
+				}
+				let did = mut ? RangeEndHintPass.function(prog, i, stop)
+				if did{
+					changed = true
+				}
+				i = stop
+			} else {
+				? prog.outLine(prog, i)
+				i += 1
+			}
+		}
+		if changed{
+			prog.outCommit(prog)
+		}
+	}
+
+	/** Emits the lines [fs, fe) of one function to the new table (rewritten or as they are); true when they were rewritten. */
+	@throws
+	static func function(prog: ref some mut Prog, fs: mut u64, fe: mut u64) mut bool{
+		?catch(e){ throw e }
+		let sentinel = mut -4611686018427387904
+		let:<mut s64> zs = mut 0
+		// sites
+		let hs = mut ? new HintSites()
+		let sSplit = mut ? dyn:<u64>([])
+		let ns = mut 0
+		let last = mut 0
+		if fe >= fs + 3{
+			last = fe - 3
+		}
+		for i in fs..last{
+			let a = mut RangeEndHintPass.matchAt(prog, i, fe)
+			if a >= 0{
+				let sp = mut 0
+				match 90 in prog.tmp{ sp = prog.tmp[90] }
+				hs.addr = ? resize(hs.addr, ns + 1, 0)
+				sSplit = ? resize(sSplit, ns + 1, 0)
+				hs.assign = ? resize(hs.assign, ns + 1, 0)
+				hs.off = ? resize(hs.off, ns + 1, zs)
+				match ns into hs.addr{ hs.addr[ns] = i }
+				match ns into sSplit{ sSplit[ns] = sp }
+				match ns into hs.assign{ hs.assign[ns] = wrap:<u64>(a) }
+				match ns into hs.off{ hs.off[ns] = RangeEndHintPass.slotOff(prog, i, 2) }
+				ns += 1
+			}
+		}
+		if ns == 0{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		// loop depth per line (a backward jump to an earlier label spans the lines between)
+		let labels = mut ? LabelIndex.buildRange(prog, fs, fe)
+		let span = mut (fe - fs)
+		let diff = mut ? dyn:<u64>([])
+		diff = ? resize(diff, span + 2, 0)
+		hs.depth = ? resize(hs.depth, span + 1, 0)
+		for q in fs..fe{
+			if prog.count(prog, q) == 2 &&then prog.opEq(prog, q, "JMP"){
+				let at = mut labels.find(labels, prog, q, 1)
+				if at >= 0 &&then wrap:<u64>(at) >= fs &&then wrap:<u64>(at) < q{
+					let a = mut (wrap:<u64>(at) - fs)
+					let b = mut (q - fs + 1)
+					match a into diff{ diff[a] = diff[a] + 1 }
+					match b into diff{ diff[b] = diff[b] + 18446744073709551615 }
+				}
+			}
+		}
+		let run = mut 0
+		for q in 0..span{
+			match q in diff{ run = run + diff[q] }
+			match q into hs.depth{ hs.depth[q] = run }
+		}
+		// per line (relative to the function start): 1 + the construction it belongs to, 0 for none
+		hs.site = ? resize(hs.site, span + 1, 0)
+		for q in 0..ns{
+			let ad = mut 0
+			let asg = mut 0
+			match q in hs.addr{ ad = hs.addr[q] }
+			match q in hs.assign{ asg = hs.assign[q] }
+			let cnt = mut (asg + 1 - ad)
+			for c0 in 0..cnt{
+				let rel = mut (ad + c0 - fs)
+				match rel into hs.site{ hs.site[rel] = q + 1 }
+			}
+		}
+		// per line, once: the `$offset` of each operand token (flat, `ms` = first index), whether it is `PUSH 8 x`, and the size of a PUSH/ADDR
+		hs.ms = ? resize(hs.ms, span + 1, 0)
+		hs.p8 = ? resize(hs.p8, span + 1, 0)
+		hs.szv = ? resize(hs.szv, span + 1, sentinel)
+		let nmo = mut 0
+		for q in 0..span{
+			let li = mut (fs + q)
+			let c = mut prog.count(prog, li)
+			match q into hs.ms{ hs.ms[q] = nmo }
+			for k in 1..c{
+				hs.mo = ? resize(hs.mo, nmo + 1, sentinel)
+				match nmo into hs.mo{ hs.mo[nmo] = RangeEndHintPass.slotOff(prog, li, k) }
+				nmo += 1
+			}
+			if RangeEndHintPass.isPush8(prog, li){
+				match q into hs.p8{ hs.p8[q] = 1 }
+			}
+			if c >= 3 &&then (prog.opEq(prog, li, "PUSH") || prog.opEq(prog, li, "ADDR")){
+				match q into hs.szv{ hs.szv[q] = prog.signedTok(prog, li, 1, 0) }
+			}
+		}
+		// distinct slots in first-seen order
+		let slots = mut ? dyn:<s64>([])
+		let nslots = mut 0
+		for q in 0..ns{
+			let:<mut s64> o = mut 0
+			match q in hs.off{ o = hs.off[q] }
+			let seen = mut false
+			for z in 0..nslots{
+				match z in slots{
+					if slots[z] == o{
+						seen = true
+					}
+				}
+			}
+			if seen == false{
+				slots = ? resize(slots, nslots + 1, zs)
+				match nslots into slots{ slots[nslots] = o }
+				nslots += 1
+			}
+		}
+		// Java HashMap iteration order: the keys were put in reverse first-seen order into a table of 16 (doubled while more than 3/4 full) buckets; buckets ascend, ties keep put order
+		// a bin reaching 9 nodes while the table is below 64 buckets resizes it (treeifyBin), as does exceeding 3/4 load
+		let cap = mut 16
+		for z in 0..nslots{
+			let:<mut s64> oz = mut 0
+			let iz = mut (nslots - 1 - z)
+			match iz in slots{ oz = slots[iz] }
+			let bz0 = RangeEndHintPass.bucket(oz, cap)
+			let same = mut 0
+			for j in 0..z{
+				let:<mut s64> oj = mut 0
+				let ij = mut (nslots - 1 - j)
+				match ij in slots{ oj = slots[ij] }
+				if RangeEndHintPass.bucket(oj, cap) == bz0{
+					same += 1
+				}
+			}
+			if same >= 8 && cap < 64{
+				cap = cap * 2
+			}
+			if (z + 1) * 4 > cap * 3{
+				cap = cap * 2
+			}
+		}
+		let order = mut ? dyn:<u64>([])
+		order = ? resize(order, nslots, 0)
+		let ob = mut ? dyn:<u64>([])
+		ob = ? resize(ob, nslots, 0)
+		for z in 0..nslots{
+			let idx = mut (nslots - 1 - z)
+			match z into order{ order[z] = idx }
+			let:<mut s64> o = mut 0
+			match idx in slots{ o = slots[idx] }
+			match z into ob{ ob[z] = RangeEndHintPass.bucket(o, cap) }
+		}
+		// stable insertion sort by bucket
+		for z in 1..nslots{
+			let zz = mut z
+			for q in 0..nslots{
+				if zz == 0{
+					break
+				}
+				let prev = mut (zz - 1)
+				let bp = mut 0
+				let bz = mut 0
+				match prev in ob{ bp = ob[prev] }
+				match zz in ob{ bz = ob[zz] }
+				if bp > bz{
+					let op = mut 0
+					let oz = mut 0
+					match prev in order{ op = order[prev] }
+					match zz in order{ oz = order[zz] }
+					match prev into order{ order[prev] = oz }
+					match zz into order{ order[zz] = op }
+					match prev into ob{ ob[prev] = bz }
+					match zz into ob{ ob[zz] = bp }
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+		// accepted slots, hints
+		let accepted = mut ? dyn:<u64>([])
+		accepted = ? resize(accepted, ns, 0)
+		let hOff = mut ? dyn:<s64>([])
+		let hW = mut ? dyn:<u64>([])
+		let nh = mut 0
+		let anyAccepted = mut false
+		for z in 0..nslots{
+			let si = mut 0
+			match z in order{ si = order[z] }
+			let:<mut s64> ro = mut 0
+			match si in slots{ ro = slots[si] }
+			let weight = mut RangeEndHintPass.usable(prog, fs, fe, ro, hs, ns)
+			if weight < 0{
+				continue
+			}
+			anyAccepted = true
+			for q in 0..ns{
+				let:<mut s64> o = mut 0
+				match q in hs.off{ o = hs.off[q] }
+				if o == ro{
+					match q into accepted{ accepted[q] = 1 }
+				}
+			}
+			if weight >= 8{
+				hOff = ? resize(hOff, nh + 1, zs)
+				hW = ? resize(hW, nh + 1, 0)
+				match nh into hOff{ hOff[nh] = ro + 8 }
+				match nh into hW{ hW[nh] = wrap:<u64>(weight) }
+				nh += 1
+			}
+		}
+		if anyAccepted == false{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		// is there an ALLOC line (outside the rewritten constructions) to hang the hints on?
+		let hasAlloc = mut false
+		let q = mut fs
+		for st in 0..span{
+			if q >= fe{
+				break
+			}
+			let site = mut -1
+			let srel = mut (q - fs)
+			let sv = mut 0
+			match srel in hs.site{ sv = hs.site[srel] }
+			if sv > 0{
+				let z = mut (sv - 1)
+				let acc = mut 0
+				let ad = mut 0
+				match z in accepted{ acc = accepted[z] }
+				match z in hs.addr{ ad = hs.addr[z] }
+				if acc == 1 &&then ad == q{
+					site = wrap:<s64>(z)
+				}
+			}
+			if site >= 0{
+				let z = mut wrap:<u64>(site)
+				let asg = mut 0
+				match z in hs.assign{ asg = hs.assign[z] }
+				q = asg + 1
+				continue
+			}
+			if prog.opEq(prog, q, "ALLOC"){
+				hasAlloc = true
+				break
+			}
+			q += 1
+		}
+		if hasAlloc == false &&then nh > 0{
+			for z in fs..fe{
+				? prog.outLine(prog, z)
+			}
+			return false
+		}
+		// emit
+		let hinted = mut false
+		let i = mut fs
+		for st in 0..span{
+			if i >= fe{
+				break
+			}
+			let site = mut -1
+			let srel = mut (i - fs)
+			let sv = mut 0
+			match srel in hs.site{ sv = hs.site[srel] }
+			if sv > 0{
+				let z = mut (sv - 1)
+				let acc = mut 0
+				let ad = mut 0
+				match z in accepted{ acc = accepted[z] }
+				match z in hs.addr{ ad = hs.addr[z] }
+				if acc == 1 &&then ad == i{
+					site = wrap:<s64>(z)
+				}
+			}
+			if site >= 0{
+				let z = mut wrap:<u64>(site)
+				let sp = mut 0
+				let asg = mut 0
+				let:<mut s64> off = mut 0
+				match z in sSplit{ sp = sSplit[z] }
+				match z in hs.assign{ asg = hs.assign[z] }
+				match z in hs.off{ off = hs.off[z] }
+				prog.begin(prog)
+				? prog.addLit(prog, "ADDR 8 $")
+				? prog.glueS64(prog, off)
+				? prog.outBuilt(prog)
+				let i1 = mut (i + 1)
+				for k in i1..sp{
+					? prog.outLine(prog, k)
+				}
+				prog.begin(prog)
+				? prog.addLit(prog, "ASSIGN 8 8 8")
+				? prog.outBuilt(prog)
+				prog.begin(prog)
+				? prog.addLit(prog, "ADDR 8 $")
+				? prog.glueS64(prog, off + 8)
+				? prog.outBuilt(prog)
+				for k in sp..asg{
+					? prog.outLine(prog, k)
+				}
+				prog.begin(prog)
+				? prog.addLit(prog, "ASSIGN 8 8 8")
+				? prog.outBuilt(prog)
+				i = asg + 1
+				continue
+			}
+			? prog.outLine(prog, i)
+			if hinted == false &&then prog.opEq(prog, i, "ALLOC"){
+				hinted = true
+				for h in 0..nh{
+					let:<mut s64> ho = mut 0
+					let hw = mut 0
+					match h in hOff{ ho = hOff[h] }
+					match h in hW{ hw = hW[h] }
+					prog.begin(prog)
+					? prog.addLit(prog, "REGHINT")
+					? prog.addS64(prog, ho)
+					? prog.addLit(prog, "8")
+					? prog.addS64(prog, wrap:<s64>(hw))
+					? prog.outBuilt(prog)
+				}
+			}
+			i += 1
+		}
+		return true
+	}
+
+	/** -1 when the slot `ro` cannot be treated this way, else the weight of its end slot (RangeEndHintPass.usable). */
+	static func usable(prog: ref some imut Prog, fs: mut u64, fe: mut u64, ro: mut s64, hs: ref some imut HintSites, ns: mut u64) mut s64{
+		let sentinel = mut -4611686018427387904
+		let:<mut s64> weight = mut 0
+		for q in 0..ns{
+			let:<mut s64> o = mut 0
+			let ad = mut 0
+			match q in hs.off{ o = hs.off[q] }
+			match q in hs.addr{ ad = hs.addr[q] }
+			if o == ro{
+				let dd = mut 0
+				let rel = mut (ad - fs)
+				match rel in hs.depth{ dd = hs.depth[rel] }
+				weight += wrap:<s64>(RangeEndHintPass.wt(dd))
+			}
+		}
+		for i in fs..fe{
+			// inside a construction of this slot?
+			let own = mut false
+			let isAddr = mut false
+			let irel = mut (i - fs)
+			let sq = mut 0
+			match irel in hs.site{ sq = hs.site[irel] }
+			if sq > 0{
+				let q1 = mut (sq - 1)
+				let:<mut s64> o = mut 0
+				let ad = mut 0
+				match q1 in hs.off{ o = hs.off[q1] }
+				match q1 in hs.addr{ ad = hs.addr[q1] }
+				if o == ro{
+					own = true
+					if i == ad{
+						isAddr = true
+					}
+				}
+			}
+			let c = mut prog.count(prog, i)
+			let m0 = mut 0
+			match irel in hs.ms{ m0 = hs.ms[irel] }
+			if own{
+				if isAddr == false{
+					for k in 1..c{
+						let mi = mut (m0 + k - 1)
+						let:<mut s64> o = mut 0
+						match mi in hs.mo{ o = hs.mo[mi] }
+						if o != sentinel &&then o > ro - 8 &&then o < ro + 16{
+							return -1
+						}
+					}
+				}
+				continue
+			}
+			let p8 = mut 0
+			match irel in hs.p8{ p8 = hs.p8[irel] }
+			for k in 1..c{
+				let mi = mut (m0 + k - 1)
+				let:<mut s64> o = mut 0
+				match mi in hs.mo{ o = hs.mo[mi] }
+				if o == sentinel{
+					continue
+				}
+				if o == ro{
+					if p8 == 0 || k != 2{
+						return -1
+					}
+				} else if o == ro + 8{
+					if p8 == 0 || k != 2{
+						return -1
+					}
+					let dd = mut 0
+					match irel in hs.depth{ dd = hs.depth[irel] }
+					weight += wrap:<s64>(RangeEndHintPass.wt(dd))
+				} else if o > ro &&then o < ro + 16{
+					return -1
+				}
+			}
+			let:<mut s64> sz = mut 0
+			match irel in hs.szv{ sz = hs.szv[irel] }
+			if sz != sentinel &&then c >= 3{
+				let mi = mut (m0 + 1)
+				let:<mut s64> o = mut 0
+				match mi in hs.mo{ o = hs.mo[mi] }
+				if o != sentinel &&then o < ro &&then o + sz > ro{
+					return -1
+				}
+			}
+		}
+		return weight
+	}
+}

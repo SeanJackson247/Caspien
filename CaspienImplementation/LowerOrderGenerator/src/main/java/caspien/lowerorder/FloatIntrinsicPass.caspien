@@ -1,0 +1,147 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Port of FloatIntrinsicPass: libm `sqrt`/`sqrtf` on xmm operands -> `R_FSQRT n DST SRC` (no call, no spills). Rewrites in place behind the read position. */
+@pub
+struct FloatIntrinsicPass{@pub{
+}}
+
+impl constructor for FloatIntrinsicPass() self{
+	return FloatIntrinsicPass{}
+}
+
+@pub
+impl FloatIntrinsicPass{
+	static func isXmm(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.startsWith(prog, i, k, "%x") || prog.startsWith(prog, i, k, "%y"){
+			return true
+		}
+		return false
+	}
+
+	/** Line `i` is the R_FARG of a call to an intrinsic extern: 1 sqrt, 2 sqrtf, 0 no. */
+	static func matches(prog: ref some imut Prog, i: mut u64, hasSqrt: mut bool, hasSqrtf: mut bool) mut u64{
+		let call = mut (i + 1)
+		let ce = mut (i + 2)
+		let get = mut (i + 3)
+		if prog.count(prog, i) != 4 || prog.opEq(prog, i, "R_FARG") == false || prog.eqLit(prog, i, 1, "0") == false{
+			return 0
+		}
+		if prog.count(prog, call) != 3 || prog.opEq(prog, call, "CALL") == false || prog.eqLit(prog, call, 2, "1") == false{
+			return 0
+		}
+		let which = mut 0
+		if hasSqrt &&then prog.eqLit(prog, call, 1, "sqrt"){
+			which = 1
+		} else if hasSqrtf &&then prog.eqLit(prog, call, 1, "sqrtf"){
+			which = 2
+		}
+		if which == 0{
+			return 0
+		}
+		if prog.count(prog, ce) != 2 || prog.opEq(prog, ce, "CC_END") == false{
+			return 0
+		}
+		if prog.count(prog, get) != 3 || prog.opEq(prog, get, "R_GETRETF") == false{
+			return 0
+		}
+		let ok = mut false
+		if which == 1{
+			if prog.eqLit(prog, i, 2, "8") &&then prog.eqLit(prog, get, 1, "8"){
+				ok = true
+			}
+		} else {
+			if prog.eqLit(prog, i, 2, "4") &&then prog.eqLit(prog, get, 1, "4"){
+				ok = true
+			}
+		}
+		if ok &&then FloatIntrinsicPass.isXmm(prog, i, 3) &&then FloatIntrinsicPass.isXmm(prog, get, 2){
+			return which
+		}
+		return 0
+	}
+
+	/** Position in the output [0, w) of the CC_START that opens the call whose CC_END is line `ce`, or -1 when something else comes first. */
+	static func findStart(prog: ref some imut Prog, w: mut u64, ce: mut u64) mut s64{
+		let k = mut (wrap:<s64>(w) - 1)
+		for st in 0..w{
+			if k < 0{
+				break
+			}
+			let ku = mut wrap:<u64>(k)
+			if prog.opEq(prog, ku, "CC_START"){
+				if prog.count(prog, ku) == 2 &&then prog.tokEq(prog, ku, 1, ce, 1){
+					return k
+				}
+				return -1
+			}
+			if prog.opEq(prog, ku, "CALL") || prog.opEq(prog, ku, "CC_END") || prog.opEq(prog, ku, "INVOKE") || prog.opEq(prog, ku, "EXTERN_CALL"){
+				return -1
+			}
+			if prog.startsWith(prog, ku, 0, "@") || prog.opEq(prog, ku, "JMP") || prog.startsWith(prog, ku, 0, "R_BR") || prog.opEq(prog, ku, "FUNC_START"){
+				return -1
+			}
+			k -= 1
+		}
+		return -1
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let hasSqrt = mut false
+		let hasSqrtf = mut false
+		for i in 0..n{
+			if prog.count(prog, i) == 4 &&then prog.opEq(prog, i, "EXTERN"){
+				if prog.eqLit(prog, i, 1, "sqrt") &&then prog.eqLit(prog, i, 2, "mut_f64") &&then prog.eqLit(prog, i, 3, "mut_f64"){
+					hasSqrt = true
+				} else if prog.eqLit(prog, i, 1, "sqrtf") &&then prog.eqLit(prog, i, 2, "mut_f32") &&then prog.eqLit(prog, i, 3, "mut_f32"){
+					hasSqrtf = true
+				}
+			}
+		}
+		if hasSqrt == false &&then hasSqrtf == false{
+			return
+		}
+		let w = mut 0
+		let i = mut 0
+		let changed = mut false
+		for st in 0..n{
+			if i >= n{
+				break
+			}
+			if i + 3 < n &&then FloatIntrinsicPass.matches(prog, i, hasSqrt, hasSqrtf) != 0{
+				let k = mut FloatIntrinsicPass.findStart(prog, w, i + 2)
+				if k >= 0{
+					// R_FSQRT n DST SRC (n and DST from the R_GETRETF, SRC from the R_FARG), built before any line moves
+					let get = mut (i + 3)
+					prog.begin(prog)
+					? prog.addLit(prog, "R_FSQRT")
+					? prog.addTok(prog, get, 1)
+					? prog.addTok(prog, get, 2)
+					? prog.addTok(prog, i, 3)
+					// drop the CC_START at output position k (shift the output down), then append the new line
+					let ku = mut wrap:<u64>(k)
+					let m = mut (w - 1)
+					for q in ku..m{
+						prog.copyLine(prog, q + 1, q)
+					}
+					prog.setBuilt(prog, w - 1)
+					i += 4
+					changed = true
+					continue
+				}
+			}
+			if w != i{
+				prog.copyLine(prog, i, w)
+			}
+			w += 1
+			i += 1
+		}
+		if changed{
+			prog.truncate(prog, w)
+		}
+	}
+}

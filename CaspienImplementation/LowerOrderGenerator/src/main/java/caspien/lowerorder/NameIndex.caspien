@@ -1,0 +1,119 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+
+/** Name (token 1 of a declaration line such as `ENUM Name ...` or `STRUCT_START Name`) -> line index; the last declaration of a name wins. Open addressing over arrays. */
+@pub
+struct NameIndex{@pub{
+	hashes: owns some mut dynarray(mut u64)
+	vals: owns some mut dynarray(mut u64)
+	mask: mut u64
+}}
+
+@throws
+impl constructor for NameIndex(cap: mut u64) self{
+	?catch(e){ throw e }
+	let h = mut ? dyn:<u64>([])
+	h = ? resize(h, cap, 0)
+	let v = mut ? dyn:<u64>([])
+	v = ? resize(v, cap, 0)
+	return NameIndex{hashes= h, vals= v, mask= cap - 1}
+}
+
+@pub
+impl NameIndex{
+	@pub
+	@throws
+	static func forKeys(keys: mut u64) owns some mut NameIndex{
+		?catch(e){ throw e }
+		let cap = mut 64
+		for st in 0..40{
+			if cap < keys * 2{
+				cap = cap * 2
+			}
+		}
+		let ix = mut ? new NameIndex(cap)
+		return ix
+	}
+
+	static func hashRange(prog: ref some imut Prog, a: mut u64, w: mut u64) mut u64{
+		let h = mut 0xcbf29ce484222325
+		for d in 0..w{
+			h = bits_xor(h, String.charCode(prog.buf.charAt(prog.buf, a + d)))
+			h = h * 0x100000001b3
+		}
+		return h
+	}
+
+	func sameKey(_self: ref some imut self, prog: ref some imut Prog, line: mut u64, a: mut u64, w: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, line, 1)
+		if p < 0{
+			return false
+		}
+		let ka = mut wrap:<u64>(p)
+		let kz = mut Ln.tokEnd(prog.buf, ka, prog.lineEnd(prog, line))
+		if kz - ka != w{
+			return false
+		}
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, ka + d) != prog.buf.charAt(prog.buf, a + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Records line `line` (its token 1 is the name). */
+	@pub
+	func put(_self: ref some mut self, prog: ref some imut Prog, line: mut u64) void{
+		let p = mut prog.tokPos(prog, line, 1)
+		if p < 0{
+			return
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, line))
+		let w = mut (z - a)
+		let h = mut NameIndex.hashRange(prog, a, w)
+		let pos = mut bits_and(h, _self.mask)
+		let cap = mut (_self.mask + 1)
+		for st in 0..cap{
+			let v = mut 0
+			match pos in _self.vals{ v = _self.vals[pos] }
+			if v == 0{
+				match pos into _self.hashes{ _self.hashes[pos] = h }
+				match pos into _self.vals{ _self.vals[pos] = line + 1 }
+				return
+			}
+			let hv = mut 0
+			match pos in _self.hashes{ hv = _self.hashes[pos] }
+			if hv == h &&then _self.sameKey(_self, prog, v - 1, a, w){
+				match pos into _self.vals{ _self.vals[pos] = line + 1 }
+				return
+			}
+			pos = bits_and(pos + 1, _self.mask)
+		}
+	}
+
+	/** Line index of the declaration named by the range [a, z), or -1. */
+	@pub
+	func find(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		let w = mut (z - a)
+		let h = mut NameIndex.hashRange(prog, a, w)
+		let pos = mut bits_and(h, _self.mask)
+		let cap = mut (_self.mask + 1)
+		for st in 0..cap{
+			let v = mut 0
+			match pos in _self.vals{ v = _self.vals[pos] }
+			if v == 0{
+				return -1
+			}
+			let hv = mut 0
+			match pos in _self.hashes{ hv = _self.hashes[pos] }
+			if hv == h &&then _self.sameKey(_self, prog, v - 1, a, w){
+				return wrap:<s64>(v - 1)
+			}
+			pos = bits_and(pos + 1, _self.mask)
+		}
+		return -1
+	}
+}

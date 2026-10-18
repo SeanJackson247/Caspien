@@ -1,0 +1,200 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "RegOps.caspien"
+
+/** Port of IndexedAccessPass: `R_LEA %tX base %vK scale [d] ; ... ; R_LD/R_ST/R_LDX/R_STX .. %tX` -> `R_LDI/R_STI/R_LDXI/R_STXI`. Edits lines in place, kills the lea, compacts at the end. */
+@pub
+struct IndexedAccessPass{@pub{
+}}
+
+impl constructor for IndexedAccessPass() self{
+	return IndexedAccessPass{}
+}
+
+@pub
+impl IndexedAccessPass{
+	static func isHwScale(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, i, k, "8") || prog.eqLit(prog, i, k, "4") || prog.eqLit(prog, i, k, "2") || prog.eqLit(prog, i, k, "1"){
+			return true
+		}
+		return false
+	}
+
+	/** Token `k` is a positive decimal of at most 10 digits (value), else -1. */
+	static func posInt(prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return -1
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		if q - a > 10{
+			return -1
+		}
+		let v = mut prog.numTok(prog, i, k)
+		if v <= 0{
+			return -1
+		}
+		return v
+	}
+
+	static func isIndexedLea(prog: ref some imut Prog, i: mut u64) mut bool{
+		let c = mut prog.count(prog, i)
+		if c != 5 && c != 6{
+			return false
+		}
+		if prog.opEq(prog, i, "R_LEA") == false || prog.startsWith(prog, i, 1, "%t") == false || prog.startsWith(prog, i, 3, "%v") == false{
+			return false
+		}
+		let baseAmp = mut prog.tokStartsCh(prog, i, 2, '&')
+		if baseAmp == false &&then prog.tokStartsCh(prog, i, 2, '$') == false &&then prog.startsWith(prog, i, 2, "%t") == false &&then prog.startsWith(prog, i, 2, "%v") == false{
+			return false
+		}
+		if prog.tokEq(prog, i, 2, i, 3){
+			return false
+		}
+		if IndexedAccessPass.isHwScale(prog, i, 4){
+			return true
+		}
+		if baseAmp{
+			return false
+		}
+		let v = mut IndexedAccessPass.posInt(prog, i, 4)
+		if v > 0 &&then v <= 2147483647{
+			return true
+		}
+		return false
+	}
+
+	static func isXmm(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.startsWith(prog, i, k, "%x") || prog.startsWith(prog, i, k, "%y"){
+			return true
+		}
+		return false
+	}
+
+	static func okSize(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		return IndexedAccessPass.isHwScale(prog, i, k)
+	}
+
+	/** 0: no fusion; 1 R_LDXI, 2 R_STXI, 3 R_LDI, 4 R_STI for consumer `l` of the address in token 1 of `lea`. */
+	static func kindOf(prog: ref some imut Prog, lea: mut u64, l: mut u64) mut u64{
+		if prog.count(prog, l) != 4{
+			return 0
+		}
+		let hw = mut IndexedAccessPass.isHwScale(prog, lea, 4)
+		let widthOk = mut false
+		if prog.eqLit(prog, l, 1, "4") || prog.eqLit(prog, l, 1, "8"){
+			if hw{
+				widthOk = prog.tokEq(prog, l, 1, lea, 4)
+			} else {
+				widthOk = true
+			}
+		}
+		if prog.opEq(prog, l, "R_LDX") &&then widthOk &&then IndexedAccessPass.isXmm(prog, l, 2) &&then prog.tokEq(prog, l, 3, lea, 1){
+			return 1
+		}
+		if prog.opEq(prog, l, "R_STX") &&then widthOk &&then prog.tokEq(prog, l, 2, lea, 1) &&then IndexedAccessPass.isXmm(prog, l, 3){
+			return 2
+		}
+		if IndexedAccessPass.okSize(prog, l, 1) == false{
+			return 0
+		}
+		if hw &&then prog.tokEq(prog, l, 1, lea, 4) == false{
+			return 0
+		}
+		if prog.opEq(prog, l, "R_LD") &&then prog.startsWith(prog, l, 2, "%t") &&then prog.tokEq(prog, l, 3, lea, 1){
+			return 3
+		}
+		if prog.opEq(prog, l, "R_ST") &&then prog.tokEq(prog, l, 2, lea, 1) &&then prog.tokEq(prog, l, 3, lea, 1) == false{
+			if prog.tokStartsCh(prog, l, 3, '#') || prog.startsWith(prog, l, 3, "%t") || prog.startsWith(prog, l, 3, "%v"){
+				return 4
+			}
+		}
+		return 0
+	}
+
+	@throws
+	static func build(prog: ref some mut Prog, lea: mut u64, l: mut u64, kind: mut u64, to: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		if kind == 1{
+			? prog.addLit(prog, "R_LDXI")
+			? prog.addTok(prog, l, 1)
+			? prog.addTok(prog, l, 2)
+		} else if kind == 2{
+			? prog.addLit(prog, "R_STXI")
+			? prog.addTok(prog, l, 1)
+		} else if kind == 3{
+			? prog.addLit(prog, "R_LDI")
+			? prog.addTok(prog, l, 1)
+			? prog.addTok(prog, l, 2)
+		} else {
+			? prog.addLit(prog, "R_STI")
+			? prog.addTok(prog, l, 1)
+		}
+		? prog.addTok(prog, lea, 2)
+		? prog.addTok(prog, lea, 3)
+		? prog.addTok(prog, lea, 4)
+		if kind == 2 || kind == 4{
+			? prog.addTok(prog, l, 3)
+		}
+		if prog.count(prog, lea) == 6{
+			? prog.addTok(prog, lea, 5)
+		}
+		prog.setBuilt(prog, to)
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let killed = mut false
+		for i in 0..n{
+			if prog.isGone(prog, i){
+				continue
+			}
+			if IndexedAccessPass.isIndexedLea(prog, i) == false{
+				continue
+			}
+			let regBase = mut prog.tokStartsCh(prog, i, 2, '%')
+			let j = mut (i + 1)
+			for st in 0..41{
+				if j >= n || j - i > 40{
+					break
+				}
+				if prog.isGone(prog, j){
+					j += 1
+					continue
+				}
+				if prog.mentions(prog, j, i, 1) == false{
+					if RegOps.passable(prog, j, i, 3) == false{
+						break
+					}
+					if regBase &&then RegOps.passable(prog, j, i, 2) == false{
+						break
+					}
+					j += 1
+					continue
+				}
+				let kind = mut IndexedAccessPass.kindOf(prog, i, j)
+				if kind != 0{
+					let selfDef = mut false
+					if kind == 3 &&then prog.tokEq(prog, j, 2, i, 1){
+						selfDef = true
+					}
+					if RegOps.deadAfter(prog, j + 1, i, 1, selfDef){
+						? IndexedAccessPass.build(prog, i, j, kind, j)
+						prog.kill(prog, i)
+						killed = true
+					}
+				}
+				break
+			}
+		}
+		if killed{
+			prog.compactGone(prog)
+		}
+	}
+}

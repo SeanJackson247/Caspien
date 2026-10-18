@@ -1,0 +1,238 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Port of DestForwardingPass: a value computed into a temp and copied into a variable register on the next line is computed there; dead `R_MOV 8 %vJ <src>` initialisations go. */
+@pub
+struct DestForwardingPass{@pub{
+}}
+
+impl constructor for DestForwardingPass() self{
+	return DestForwardingPass{}
+}
+
+@pub
+impl DestForwardingPass{
+	/** DEST: the register position written by a producer line, or -1 (unknown mnemonic, or the position is past the end of the line). */
+	static func destIndex(prog: ref some imut Prog, j: mut u64) mut s64{
+		let d = mut -1
+		if prog.opEq(prog, j, "R_MOV"){ d = 2 } else if prog.opEq(prog, j, "R_LD"){ d = 2 } else if prog.opEq(prog, j, "R_LDI"){ d = 2 } else if prog.opEq(prog, j, "R_LDD"){ d = 2 } else if prog.opEq(prog, j, "R_LEA"){ d = 1 } else if prog.opEq(prog, j, "R_BIN"){ d = 3 } else if prog.opEq(prog, j, "R_UN"){ d = 3 } else if prog.opEq(prog, j, "R_FBIN"){ d = 3 } else if prog.opEq(prog, j, "R_FCMP"){ d = 3 } else if prog.opEq(prog, j, "R_XTOG"){ d = 2 }
+		if d < 0{
+			return -1
+		}
+		if wrap:<u64>(d) >= prog.count(prog, j){
+			return -1
+		}
+		return d
+	}
+
+	static func isStraight(prog: ref some imut Prog, j: mut u64) mut bool{
+		if prog.opEq(prog, j, "R_ST") || prog.opEq(prog, j, "R_STI") || prog.opEq(prog, j, "R_STD") || prog.opEq(prog, j, "R_LDX") || prog.opEq(prog, j, "R_STX"){
+			return true
+		}
+		if prog.opEq(prog, j, "R_FBINX") || prog.opEq(prog, j, "R_XMOV") || prog.opEq(prog, j, "R_GTOX") || prog.opEq(prog, j, "R_FSQRT") || prog.opEq(prog, j, "R_RMW"){
+			return true
+		}
+		if prog.opEq(prog, j, "R_LDXI") || prog.opEq(prog, j, "R_STXI") || prog.opEq(prog, j, "R_LDXD") || prog.opEq(prog, j, "R_STXD"){
+			return true
+		}
+		return false
+	}
+
+	/** Mnemonic names a known DEST producer or a straight-line line (names at DEST are known even when the position is out of range). */
+	static func isKnown(prog: ref some imut Prog, j: mut u64) mut bool{
+		if prog.opEq(prog, j, "R_MOV") || prog.opEq(prog, j, "R_LD") || prog.opEq(prog, j, "R_LDI") || prog.opEq(prog, j, "R_LDD") || prog.opEq(prog, j, "R_LEA"){
+			return true
+		}
+		if prog.opEq(prog, j, "R_BIN") || prog.opEq(prog, j, "R_UN") || prog.opEq(prog, j, "R_FBIN") || prog.opEq(prog, j, "R_FCMP") || prog.opEq(prog, j, "R_XTOG"){
+			return true
+		}
+		return DestForwardingPass.isStraight(prog, j)
+	}
+
+	static func inBinOps(prog: ref some imut Prog, j: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, j, k, "ADD") || prog.eqLit(prog, j, k, "SUB") || prog.eqLit(prog, j, k, "MUL") || prog.eqLit(prog, j, k, "AND"){
+			return true
+		}
+		if prog.eqLit(prog, j, k, "OR") || prog.eqLit(prog, j, k, "BAND") || prog.eqLit(prog, j, k, "BOR") || prog.eqLit(prog, j, k, "BXOR"){
+			return true
+		}
+		return false
+	}
+
+	static func inShiftOps(prog: ref some imut Prog, j: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, j, k, "SHL") || prog.eqLit(prog, j, k, "SHR") || prog.eqLit(prog, j, k, "SAR") || prog.eqLit(prog, j, k, "ROTL") || prog.eqLit(prog, j, k, "ROTR"){
+			return true
+		}
+		return false
+	}
+
+	/** A producer whose destination register may be a variable register; `m` is the copy line (its token 3 is the temp). */
+	static func forwardable(prog: ref some imut Prog, a: mut u64, m: mut u64) mut bool{
+		let c = mut prog.count(prog, a)
+		if prog.opEq(prog, a, "R_LD"){
+			return c == 4
+		}
+		if prog.opEq(prog, a, "R_LDI"){
+			return c == 6 || c == 7
+		}
+		if prog.opEq(prog, a, "R_LDD"){
+			return c == 5
+		}
+		if prog.opEq(prog, a, "R_MOV"){
+			if c == 4 &&then prog.eqLit(prog, a, 1, "8") &&then prog.tokEq(prog, a, 3, m, 3) == false{
+				return true
+			}
+			return false
+		}
+		if prog.opEq(prog, a, "R_BIN"){
+			if c != 6{
+				return false
+			}
+			if DestForwardingPass.inBinOps(prog, a, 1){
+				return true
+			}
+			if DestForwardingPass.inShiftOps(prog, a, 1) &&then prog.tokStartsCh(prog, a, 5, '#'){
+				return true
+			}
+			return false
+		}
+		return false
+	}
+
+	/** Line `l` redefines the register that is token `k` of line `i` without reading it. */
+	static func pureRedefinition(prog: ref some imut Prog, l: mut u64, i: mut u64, k: mut u64) mut bool{
+		let d = mut DestForwardingPass.destIndex(prog, l)
+		if d < 0{
+			return false
+		}
+		let du = mut wrap:<u64>(d)
+		if prog.tokEq(prog, l, du, i, k) == false{
+			return false
+		}
+		let c = mut prog.count(prog, l)
+		for t in 1..c{
+			if t != du &&then prog.tokEq(prog, l, t, i, k){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** The temp (token `k` of line `i`) is not read from line `from` on. */
+	@pub
+	static func deadAfter(prog: ref some imut Prog, from: mut u64, i: mut u64, k: mut u64) mut bool{
+		let n = mut prog.size(prog)
+		let j = mut from
+		let span = mut (n + 1)
+		for st in 0..span{
+			if j >= n{
+				break
+			}
+			if prog.isGone(prog, j){
+				j += 1
+				continue
+			}
+			if prog.len(prog, j) == 0{
+				return false
+			}
+			if prog.count(prog, j) == 1 &&then prog.tokStartsCh(prog, j, 0, '@'){
+				return true
+			}
+			if prog.opEq(prog, j, "JMP"){
+				return true
+			}
+			if prog.mentions(prog, j, i, k) == false{
+				j += 1
+				continue
+			}
+			return DestForwardingPass.pureRedefinition(prog, j, i, k)
+		}
+		return true
+	}
+
+	/** Straight-line scan (at most 60 lines): the next line that mentions the variable redefines it without reading it. */
+	static func overwrittenBeforeRead(prog: ref some imut Prog, from: mut u64, i: mut u64, k: mut u64) mut bool{
+		let n = mut prog.size(prog)
+		let j = mut from
+		for st in 0..61{
+			if j >= n || j >= from + 60{
+				break
+			}
+			if prog.isGone(prog, j){
+				j += 1
+				continue
+			}
+			if prog.len(prog, j) == 0{
+				return false
+			}
+			if DestForwardingPass.isKnown(prog, j) == false{
+				return false
+			}
+			if prog.mentions(prog, j, i, k) == false{
+				j += 1
+				continue
+			}
+			return DestForwardingPass.pureRedefinition(prog, j, i, k)
+		}
+		return false
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let killed = mut false
+		let i = mut 0
+		for st in 0..n{
+			if i + 1 >= n{
+				break
+			}
+			let m = mut (i + 1)
+			if prog.isGone(prog, i) || prog.isGone(prog, m){
+				i += 1
+				continue
+			}
+			if prog.count(prog, m) != 4 || prog.opEq(prog, m, "R_MOV") == false || prog.eqLit(prog, m, 1, "8") == false || prog.startsWith(prog, m, 2, "%v") == false || prog.startsWith(prog, m, 3, "%t") == false{
+				i += 1
+				continue
+			}
+			let d = mut DestForwardingPass.destIndex(prog, i)
+			if d < 0{
+				i += 1
+				continue
+			}
+			let du = mut wrap:<u64>(d)
+			if prog.tokEq(prog, i, du, m, 3) == false || DestForwardingPass.forwardable(prog, i, m) == false{
+				i += 1
+				continue
+			}
+			if DestForwardingPass.deadAfter(prog, i + 2, m, 3) == false{
+				i += 1
+				continue
+			}
+			prog.begin(prog)
+			? prog.addLineReplacing(prog, i, du, m, 2)
+			prog.setBuilt(prog, i)
+			prog.kill(prog, m)
+			killed = true
+			i += 2
+		}
+		for x in 0..n{
+			if prog.isGone(prog, x){
+				continue
+			}
+			if prog.count(prog, x) == 4 &&then prog.opEq(prog, x, "R_MOV") &&then prog.eqLit(prog, x, 1, "8") &&then prog.startsWith(prog, x, 2, "%v"){
+				if prog.tokStartsCh(prog, x, 3, '#') || prog.tokStartsCh(prog, x, 3, '$') || prog.tokStartsCh(prog, x, 3, '%'){
+					if DestForwardingPass.overwrittenBeforeRead(prog, x + 1, x, 2){
+						prog.kill(prog, x)
+						killed = true
+					}
+				}
+			}
+		}
+		if killed{
+			prog.compactGone(prog)
+		}
+	}
+}

@@ -1,0 +1,246 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/**
+ * Port of ArgToAllocLoweringPass (step 4): per function the `ARG name type` lines are removed and become `ALLOC name type` slots right after the reserved gt_* slots, plus
+ * `ADDR name type ; PUSH ARGn|FARGn wordType ... ; ASSIGN type type type` loads after the function's ALLOC run.
+ */
+@pub
+struct ArgToAllocPass{@pub{
+	pl: owns some mut dynarray(mut u64)
+}}
+
+@throws
+impl constructor for ArgToAllocPass() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	return ArgToAllocPass{pl= a}
+}
+
+@pub
+impl ArgToAllocPass{
+	/** Token k of line i, as the range [s, e) in the buffer. */
+	static func startsAt(prog: ref some imut Prog, a: mut u64, z: mut u64, lit: static imut string) mut bool{
+		return Ln.tokIs(prog.buf, a, z, lit)
+	}
+
+	/** ^(imut|mut|indeterminate)_range(\(.*\))?$ on token k of line i. */
+	static func isByValueRange(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		let w = mut (z - a)
+		let skip = mut 0
+		if prog.startsWith(prog, i, k, "imut_range"){
+			skip = 10
+		} else if prog.startsWith(prog, i, k, "mut_range"){
+			skip = 9
+		} else if prog.startsWith(prog, i, k, "indeterminate_range"){
+			skip = 19
+		} else {
+			return false
+		}
+		if w == skip{
+			return true
+		}
+		if w < skip + 2{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, a + skip) != '('{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, z - 1) != ')'{
+			return false
+		}
+		return true
+	}
+
+	static func isFloatType(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		let w = mut (z - a)
+		if w < 3{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, z - 3) == 'f'{
+			let c1 = mut prog.buf.charAt(prog.buf, z - 2)
+			let c2 = mut prog.buf.charAt(prog.buf, z - 1)
+			let isF = mut false
+			if c1 == '3' &&then c2 == '2'{
+				isF = true
+			} else if c1 == '6' &&then c2 == '4'{
+				isF = true
+			}
+			if isF{
+				if w == 3{
+					return true
+				}
+				if prog.buf.charAt(prog.buf, z - 4) == '_'{
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	@throws
+	static func emitLoads(prog: ref some mut Prog, st: ref some mut ArgToAllocPass, np: mut u64) void{
+		?catch(e){ throw e }
+		let wordIndex = mut 0
+		for q in 0..np{
+			let pi = mut 0
+			match q in st.pl{ pi = st.pl[q] }
+			prog.begin(prog)
+			? prog.addLit(prog, "ADDR")
+			? prog.addTok(prog, pi, 1)
+			? prog.addTok(prog, pi, 2)
+			? prog.outBuilt(prog)
+			let words = mut 1
+			let isRange = mut ArgToAllocPass.isByValueRange(prog, pi, 2)
+			if isRange{
+				words = 2
+			}
+			let isF = mut false
+			if isRange == false{
+				isF = ArgToAllocPass.isFloatType(prog, pi, 2)
+			}
+			for wv in 0..words{
+				prog.begin(prog)
+				? prog.addLit(prog, "PUSH")
+				if isF{
+					? prog.addLit(prog, "FARG")
+				} else {
+					? prog.addLit(prog, "ARG")
+				}
+				? prog.glueS64(prog, wrap:<s64>(wordIndex))
+				if isRange{
+					? prog.addLit(prog, "indeterminate_u64")
+				} else {
+					? prog.addTok(prog, pi, 2)
+				}
+				? prog.outBuilt(prog)
+				wordIndex += 1
+			}
+			prog.begin(prog)
+			? prog.addLit(prog, "ASSIGN")
+			? prog.addTok(prog, pi, 2)
+			? prog.addTok(prog, pi, 2)
+			? prog.addTok(prog, pi, 2)
+			? prog.outBuilt(prog)
+		}
+	}
+
+	@throws
+	static func emitAllocs(prog: ref some mut Prog, st: ref some mut ArgToAllocPass, np: mut u64) void{
+		?catch(e){ throw e }
+		for q in 0..np{
+			let pi = mut 0
+			match q in st.pl{ pi = st.pl[q] }
+			prog.begin(prog)
+			? prog.addLit(prog, "ALLOC")
+			? prog.addTok(prog, pi, 1)
+			? prog.addTok(prog, pi, 2)
+			? prog.outBuilt(prog)
+		}
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let st = mut ? new ArgToAllocPass()
+		prog.outReset(prog)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			if end > n - 1{
+				end = n - 1
+			}
+			let last = mut (end + 1)
+			let idx = mut i
+			let np = mut 0
+			for q in i..last{
+				if idx > end{
+					break
+				}
+				if prog.opEq(prog, idx, "ARG") &&then prog.count(prog, idx) >= 3{
+					st.pl = ? resize(st.pl, np + 1, 0)
+					match np into st.pl{ st.pl[np] = idx }
+					np += 1
+					idx += 1
+				} else if prog.opEq(prog, idx, "FUNC_START") || prog.opEq(prog, idx, "EXPORT") || prog.opEq(prog, idx, "FUNC_DECORATE") || prog.opEq(prog, idx, "RETURNS"){
+					? prog.outLine(prog, idx)
+					idx += 1
+				} else {
+					break
+				}
+			}
+			let inserted = mut false
+			if idx <= end{
+				if prog.opEq(prog, idx, "ALLOC") &&then prog.count(prog, idx) >= 2 &&then prog.eqLit(prog, idx, 1, "gt_routine_address"){
+					? prog.outLine(prog, idx)
+					idx += 1
+					if idx <= end{
+						if prog.opEq(prog, idx, "ALLOC") &&then prog.count(prog, idx) >= 2 &&then prog.eqLit(prog, idx, 1, "gt_error_message"){
+							? prog.outLine(prog, idx)
+							idx += 1
+							for q in idx..last{
+								if idx <= end &&then prog.opEq(prog, idx, "ALLOC") &&then prog.count(prog, idx) >= 2 &&then prog.startsWith(prog, idx, 1, "gt_trace_"){
+									? prog.outLine(prog, idx)
+									idx += 1
+								} else {
+									break
+								}
+							}
+						}
+					}
+					? ArgToAllocPass.emitAllocs(prog, st, np)
+					inserted = true
+				}
+			}
+			if inserted == false{
+				? ArgToAllocPass.emitAllocs(prog, st, np)
+			}
+			for q in idx..last{
+				if idx <= end &&then prog.opEq(prog, idx, "ALLOC"){
+					? prog.outLine(prog, idx)
+					idx += 1
+				} else {
+					break
+				}
+			}
+			? ArgToAllocPass.emitLoads(prog, st, np)
+			for q in idx..last{
+				if idx <= end{
+					? prog.outLine(prog, idx)
+					idx += 1
+				}
+			}
+			i = last
+		}
+		prog.outCommit(prog)
+	}
+}

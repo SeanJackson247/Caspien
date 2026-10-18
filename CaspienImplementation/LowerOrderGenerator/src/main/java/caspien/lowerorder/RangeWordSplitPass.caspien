@@ -1,0 +1,606 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "LabelIndex.caspien"
+import "RangeEndHintPass.caspien"
+
+/**
+ * Port of RangeWordSplitPass: 16-byte range constructions/copies become two 8-byte assignments, and the split words get `REGHINT`s.
+ * Phase 1 (per function) splits and records the destination slots in Java HashSet order; phase 2 adds the hints after the function's first ALLOC.
+ */
+@pub
+struct RangeWordSplitPass{@pub{
+}}
+
+impl constructor for RangeWordSplitPass() self{
+	return RangeWordSplitPass{}
+}
+
+/** Split destination slots of all functions: `fnOrd[k]` is the function ordinal of `slot[k]`; per function in HashSet iteration order. */
+@pub
+struct SplitInfo{@pub{
+	fnOrd: owns some mut dynarray(mut u64)
+	slot: owns some mut dynarray(mut s64)
+	cur: owns some mut dynarray(mut s64)
+	dep: owns some mut dynarray(mut u64)
+}}
+
+@throws
+impl constructor for SplitInfo() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<s64>([])
+	let c = mut ? dyn:<s64>([])
+	let d = mut ? dyn:<u64>([])
+	return SplitInfo{fnOrd= a, slot= b, cur= c, dep= d}
+}
+
+@pub
+impl RangeWordSplitPass{
+	/** An optionally signed decimal that fits a long (Java Long.parseLong). */
+	static func isLongLit(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut wrap:<u64>(prog.tokPos(prog, i, k))
+		let q = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+		let neg = mut false
+		let a = mut p
+		if a < q{
+			let c0 = mut prog.buf.charAt(prog.buf, a)
+			if c0 == '-' || c0 == '+'{
+				neg = c0 == '-'
+				a += 1
+			}
+		}
+		if a >= q || q - a > 19{
+			return false
+		}
+		let v = mut 0
+		for x in a..q{
+			let c = mut prog.buf.charAt(prog.buf, x)
+			if c < '0' || c > '9'{
+				return false
+			}
+			v = v * 10 + (String.charCode(c) - 48)
+		}
+		if q - a == 19{
+			let lim = mut 9223372036854775807
+			if neg{
+				lim = 9223372036854775808
+			}
+			if v > lim{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** `ARG` followed by one or more digits. */
+	static func isArgTok(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.startsWith(prog, i, k, "ARG") == false{
+			return false
+		}
+		let p = mut (wrap:<u64>(prog.tokPos(prog, i, k)) + 3)
+		let q = mut Ln.tokEnd(prog.buf, p, prog.lineEnd(prog, i))
+		if q <= p{
+			return false
+		}
+		for x in p..q{
+			let c = mut prog.buf.charAt(prog.buf, x)
+			if c < '0' || c > '9'{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Slot offset of `<op> <size> $off` lines (3 tokens, op/size as given), else the sentinel. */
+	static func slotLine(prog: ref some imut Prog, i: mut u64, op: static imut string, size: static imut string) mut s64{
+		if prog.count(prog, i) == 3 &&then prog.opEq(prog, i, op) &&then prog.eqLit(prog, i, 1, size){
+			return RangeEndHintPass.slotOff(prog, i, 2)
+		}
+		return -4611686018427387904
+	}
+
+	static func isAssign16(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) == 4 &&then prog.opEq(prog, i, "ASSIGN") &&then prog.eqLit(prog, i, 1, "16") &&then prog.eqLit(prog, i, 2, "16") &&then prog.eqLit(prog, i, 3, "16"){
+			return true
+		}
+		return false
+	}
+
+	/** PUSH 8 of an integer literal, ARGn, or a slot; a slot read after the destination's first word was written must not overlap it. */
+	static func operand8(prog: ref some imut Prog, i: mut u64, x: mut s64, after: mut bool) mut bool{
+		if prog.count(prog, i) != 3 || prog.opEq(prog, i, "PUSH") == false || prog.eqLit(prog, i, 1, "8") == false{
+			return false
+		}
+		if RangeWordSplitPass.isLongLit(prog, i, 2){
+			return true
+		}
+		if RangeWordSplitPass.isArgTok(prog, i, 2){
+			return true
+		}
+		let s = mut RangeEndHintPass.slotOff(prog, i, 2)
+		if s == -4611686018427387904{
+			return false
+		}
+		if after == false{
+			return true
+		}
+		if s + 8 <= x || x + 16 <= s{
+			return true
+		}
+		return false
+	}
+
+	@throws
+	static func emitAddr8(prog: ref some mut Prog, off: mut s64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "ADDR 8 $")
+		? prog.glueS64(prog, off)
+		? prog.outBuilt(prog)
+	}
+
+	@throws
+	static func emitPush8(prog: ref some mut Prog, off: mut s64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "PUSH 8 $")
+		? prog.glueS64(prog, off)
+		? prog.outBuilt(prog)
+	}
+
+	@throws
+	static func emitAssign8(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "ASSIGN 8 8 8")
+		? prog.outBuilt(prog)
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let info = mut ? new SplitInfo()
+		match 94 into prog.tmp{ prog.tmp[94] = 0 }
+		match 93 into prog.tmp{ prog.tmp[93] = 0 }
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let changed = mut false
+		let i = mut 0
+		let ord = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START"){
+				let end = mut i
+				for q in 0..n{
+					if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+						end += 1
+					} else {
+						break
+					}
+				}
+				let stop = mut (end + 1)
+				if stop > n{
+					stop = n
+				}
+				let did = mut ? RangeWordSplitPass.splitFn(prog, info, ord, i, stop)
+				if did{
+					changed = true
+				}
+				ord += 1
+				i = stop
+			} else {
+				? prog.outLine(prog, i)
+				i += 1
+			}
+		}
+		if changed == false{
+			return
+		}
+		prog.outCommit(prog)
+		let total = mut 0
+		match 94 in prog.tmp{ total = prog.tmp[94] }
+		if total == 0{
+			return
+		}
+		// phase 2: hints
+		n = prog.size(prog)
+		prog.outReset(prog)
+		let hintChanged = mut false
+		i = 0
+		ord = 0
+		let cp = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START"){
+				let end = mut i
+				for q in 0..n{
+					if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+						end += 1
+					} else {
+						break
+					}
+				}
+				let stop = mut (end + 1)
+				if stop > n{
+					stop = n
+				}
+				// this function's slots
+				let a = mut cp
+				let b = mut cp
+				for z in cp..total{
+					let fo = mut 0
+					match z in info.fnOrd{ fo = info.fnOrd[z] }
+					if fo == ord{
+						b = z + 1
+					} else {
+						break
+					}
+				}
+				cp = b
+				let did = mut ? RangeWordSplitPass.hintFn(prog, info, a, b, i, stop)
+				if did{
+					hintChanged = true
+				}
+				ord += 1
+				i = stop
+			} else {
+				? prog.outLine(prog, i)
+				i += 1
+			}
+		}
+		if hintChanged{
+			prog.outCommit(prog)
+		}
+	}
+
+	/** Phase 1 for one function [fs, fe): emits the split lines; records the destination slots; true when anything changed. */
+	@throws
+	static func splitFn(prog: ref some mut Prog, info: ref some mut SplitInfo, ord: mut u64, fs: mut u64, fe: mut u64) mut bool{
+		?catch(e){ throw e }
+		let sentinel = mut -4611686018427387904
+		let:<mut s64> zs = mut 0
+		let span = mut (fe - fs)
+		let changed = mut false
+		let i = mut fs
+		for st in 0..span{
+			if i >= fe{
+				break
+			}
+			if i + 3 < fe{
+				let x = mut RangeWordSplitPass.slotLine(prog, i, "ADDR", "16")
+				if x != sentinel{
+					let y = mut RangeWordSplitPass.slotLine(prog, i + 1, "PUSH", "16")
+					let i2 = mut (i + 2)
+					let i3 = mut (i + 3)
+					let i1 = mut (i + 1)
+					if RangeWordSplitPass.isAssign16(prog, i2) &&then y != sentinel{
+						if y == x{
+							changed = true
+							i += 3
+							continue
+						}
+						if y + 16 <= x || x + 16 <= y{
+							changed = true
+							? RangeWordSplitPass.addSlot(prog, info, x)
+							? RangeWordSplitPass.emitAddr8(prog, x)
+							? RangeWordSplitPass.emitPush8(prog, y)
+							? RangeWordSplitPass.emitAssign8(prog)
+							? RangeWordSplitPass.emitAddr8(prog, x + 8)
+							? RangeWordSplitPass.emitPush8(prog, y + 8)
+							? RangeWordSplitPass.emitAssign8(prog)
+							i += 3
+							continue
+						}
+					} else if RangeWordSplitPass.isAssign16(prog, i3) &&then RangeWordSplitPass.operand8(prog, i1, x, false) &&then RangeWordSplitPass.operand8(prog, i2, x, true){
+						changed = true
+						? RangeWordSplitPass.addSlot(prog, info, x)
+						? RangeWordSplitPass.emitAddr8(prog, x)
+						? prog.outLine(prog, i1)
+						? RangeWordSplitPass.emitAssign8(prog)
+						? RangeWordSplitPass.emitAddr8(prog, x + 8)
+						? prog.outLine(prog, i2)
+						? RangeWordSplitPass.emitAssign8(prog)
+						i += 4
+						continue
+					}
+				}
+			}
+			? prog.outLine(prog, i)
+			i += 1
+		}
+		? RangeWordSplitPass.finishSlots(prog, info, ord)
+		return changed
+	}
+
+	/** Records `x` (first-seen order) for the current function. */
+	@throws
+	static func addSlot(prog: ref some mut Prog, info: ref some mut SplitInfo, x: mut s64) void{
+		?catch(e){ throw e }
+		let:<mut s64> zs = mut 0
+		let m = mut 0
+		match 93 in prog.tmp{ m = prog.tmp[93] }
+		for z in 0..m{
+			match z in info.cur{
+				if info.cur[z] == x{
+					return
+				}
+			}
+		}
+		info.cur = ? resize(info.cur, m + 1, zs)
+		match m into info.cur{ info.cur[m] = x }
+		match 93 into prog.tmp{ prog.tmp[93] = m + 1 }
+	}
+
+	/** Appends the current function's slots to the result in Java HashSet<Long> iteration order (see RangeEndHintPass for the bucket rules). */
+	@throws
+	static func finishSlots(prog: ref some mut Prog, info: ref some mut SplitInfo, ord: mut u64) void{
+		?catch(e){ throw e }
+		let:<mut s64> zs = mut 0
+		let m = mut 0
+		match 93 in prog.tmp{ m = prog.tmp[93] }
+		if m == 0{
+			return
+		}
+		let cap = mut 16
+		for z in 0..m{
+			let:<mut s64> oz = mut 0
+			match z in info.cur{ oz = info.cur[z] }
+			let bz0 = RangeEndHintPass.bucket(oz, cap)
+			let same = mut 0
+			for j in 0..z{
+				let:<mut s64> oj = mut 0
+				match j in info.cur{ oj = info.cur[j] }
+				if RangeEndHintPass.bucket(oj, cap) == bz0{
+					same += 1
+				}
+			}
+			if same >= 8 && cap < 64{
+				cap = cap * 2
+			}
+			if (z + 1) * 4 > cap * 3{
+				cap = cap * 2
+			}
+		}
+		let order = mut ? dyn:<u64>([])
+		order = ? resize(order, m, 0)
+		let ob = mut ? dyn:<u64>([])
+		ob = ? resize(ob, m, 0)
+		for z in 0..m{
+			let:<mut s64> o = mut 0
+			match z in info.cur{ o = info.cur[z] }
+			match z into order{ order[z] = z }
+			match z into ob{ ob[z] = RangeEndHintPass.bucket(o, cap) }
+		}
+		for z in 1..m{
+			let zz = mut z
+			for q in 0..m{
+				if zz == 0{
+					break
+				}
+				let prev = mut (zz - 1)
+				let bp = mut 0
+				let bz = mut 0
+				match prev in ob{ bp = ob[prev] }
+				match zz in ob{ bz = ob[zz] }
+				if bp > bz{
+					let op = mut 0
+					let oz = mut 0
+					match prev in order{ op = order[prev] }
+					match zz in order{ oz = order[zz] }
+					match prev into order{ order[prev] = oz }
+					match zz into order{ order[zz] = op }
+					match prev into ob{ ob[prev] = bz }
+					match zz into ob{ ob[zz] = bp }
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+		let total = mut 0
+		match 94 in prog.tmp{ total = prog.tmp[94] }
+		info.fnOrd = ? resize(info.fnOrd, total + m, 0)
+		info.slot = ? resize(info.slot, total + m, zs)
+		for z in 0..m{
+			let si = mut 0
+			match z in order{ si = order[z] }
+			let:<mut s64> o = mut 0
+			match si in info.cur{ o = info.cur[si] }
+			let at = mut (total + z)
+			match at into info.fnOrd{ info.fnOrd[at] = ord }
+			match at into info.slot{ info.slot[at] = o }
+		}
+		match 94 into prog.tmp{ prog.tmp[94] = total + m }
+		match 93 into prog.tmp{ prog.tmp[93] = 0 }
+	}
+
+	/** Phase 2 for one function [fs, fe) with split slots info[a..b): REGHINT lines for the words that are only ever touched by plain 8-byte accesses. */
+	@throws
+	static func hintFn(prog: ref some mut Prog, info: ref some mut SplitInfo, a: mut u64, b: mut u64, fs: mut u64, fe: mut u64) mut bool{
+		?catch(e){ throw e }
+		let sentinel = mut -4611686018427387904
+		let:<mut s64> zs = mut 0
+		if a >= b{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		// loop depth per line
+		let labels = mut ? LabelIndex.buildRange(prog, fs, fe)
+		let span = mut (fe - fs)
+		let diff = mut ? dyn:<u64>([])
+		diff = ? resize(diff, span + 2, 0)
+		info.dep = ? resize(info.dep, span + 1, 0)
+		for q in fs..fe{
+			if prog.count(prog, q) == 2 &&then prog.opEq(prog, q, "JMP"){
+				let at = mut labels.find(labels, prog, q, 1)
+				if at >= 0 &&then wrap:<u64>(at) >= fs &&then wrap:<u64>(at) < q{
+					let lo = mut (wrap:<u64>(at) - fs)
+					let hi = mut (q - fs + 1)
+					match lo into diff{ diff[lo] = diff[lo] + 1 }
+					match hi into diff{ diff[hi] = diff[hi] + 18446744073709551615 }
+				}
+			}
+		}
+		let run = mut 0
+		for q in 0..span{
+			match q in diff{ run = run + diff[q] }
+			match q into info.dep{ info.dep[q] = run }
+		}
+		// offsets that already carry a REGHINT
+		let hinted = mut ? dyn:<s64>([])
+		let nhd = mut 0
+		for q in fs..fe{
+			if prog.count(prog, q) == 4 &&then prog.opEq(prog, q, "REGHINT"){
+				let o = mut prog.signedTok(prog, q, 1, 0)
+				if o != sentinel{
+					hinted = ? resize(hinted, nhd + 1, zs)
+					match nhd into hinted{ hinted[nhd] = o }
+					nhd += 1
+				}
+			}
+		}
+		let hOff = mut ? dyn:<s64>([])
+		let hW = mut ? dyn:<u64>([])
+		let nh = mut 0
+		for idx in a..b{
+			let:<mut s64> x = mut 0
+			match idx in info.slot{ x = info.slot[idx] }
+			if RangeWordSplitPass.usable(prog, info, fs, fe, x) == false{
+				continue
+			}
+			let w0 = mut 0
+			let w1 = mut 0
+			match 91 in prog.tmp{ w0 = prog.tmp[91] }
+			match 92 in prog.tmp{ w1 = prog.tmp[92] }
+			if w0 >= 8{
+				let seen = mut false
+				for z in 0..nhd{
+					match z in hinted{
+						if hinted[z] == x{
+							seen = true
+						}
+					}
+				}
+				if seen == false{
+					hOff = ? resize(hOff, nh + 1, zs)
+					hW = ? resize(hW, nh + 1, 0)
+					match nh into hOff{ hOff[nh] = x }
+					match nh into hW{ hW[nh] = w0 }
+					nh += 1
+				}
+			}
+			if w1 >= 8{
+				let seen = mut false
+				for z in 0..nhd{
+					match z in hinted{
+						if hinted[z] == x + 8{
+							seen = true
+						}
+					}
+				}
+				if seen == false{
+					hOff = ? resize(hOff, nh + 1, zs)
+					hW = ? resize(hW, nh + 1, 0)
+					match nh into hOff{ hOff[nh] = x + 8 }
+					match nh into hW{ hW[nh] = w1 }
+					nh += 1
+				}
+			}
+		}
+		let hasAlloc = mut false
+		if nh > 0{
+			for q in fs..fe{
+				if prog.opEq(prog, q, "ALLOC"){
+					hasAlloc = true
+					break
+				}
+			}
+		}
+		if hasAlloc == false{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		let done = mut false
+		for q in fs..fe{
+			? prog.outLine(prog, q)
+			if done == false &&then prog.opEq(prog, q, "ALLOC"){
+				done = true
+				for h in 0..nh{
+					let:<mut s64> ho = mut 0
+					let hw = mut 0
+					match h in hOff{ ho = hOff[h] }
+					match h in hW{ hw = hW[h] }
+					prog.begin(prog)
+					? prog.addLit(prog, "REGHINT")
+					? prog.addS64(prog, ho)
+					? prog.addLit(prog, "8")
+					? prog.addS64(prog, wrap:<s64>(hw))
+					? prog.outBuilt(prog)
+				}
+			}
+		}
+		return true
+	}
+
+	/** False when some mention of the range at `x` is not a plain 8-byte access or a wide access overlaps; else the weights of the two words are left in tmp[91], tmp[92]. */
+	static func usable(prog: ref some mut Prog, info: ref some imut SplitInfo, fs: mut u64, fe: mut u64, x: mut s64) mut bool{
+		let sentinel = mut -4611686018427387904
+		let w0 = mut 0
+		let w1 = mut 0
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			let plain8 = mut false
+			let pa = mut false
+			if c >= 3 &&then prog.eqLit(prog, i, 1, "8"){
+				if prog.opEq(prog, i, "PUSH") || prog.opEq(prog, i, "ADDR"){
+					plain8 = true
+				}
+			}
+			if c >= 3 &&then (prog.opEq(prog, i, "PUSH") || prog.opEq(prog, i, "ADDR")){
+				pa = true
+			}
+			for k in 1..c{
+				let o = mut RangeEndHintPass.slotOff(prog, i, k)
+				if o == sentinel{
+					continue
+				}
+				if o == x || o == x + 8{
+					if plain8 == false || k != 2{
+						return false
+					}
+					let dd = mut 0
+					let rel = mut (i - fs)
+					match rel in info.dep{ dd = info.dep[rel] }
+					if o == x{
+						w0 += RangeEndHintPass.wt(dd)
+					} else {
+						w1 += RangeEndHintPass.wt(dd)
+					}
+				} else if o > x &&then o < x + 16{
+					return false
+				}
+			}
+			if pa{
+				let o = mut RangeEndHintPass.slotOff(prog, i, 2)
+				let sz = mut prog.signedTok(prog, i, 1, 0)
+				if o != sentinel &&then sz != sentinel &&then o < x + 16 &&then o + sz > x &&then o != x &&then o != x + 8{
+					if o < x || sz > 8{
+						return false
+					}
+				}
+			}
+		}
+		match 91 into prog.tmp{ prog.tmp[91] = w0 }
+		match 92 into prog.tmp{ prog.tmp[92] = w1 }
+		return true
+	}
+}

@@ -1,0 +1,173 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "RegOps.caspien"
+
+/** Port of FieldDisplacementPass: `R_LEA %tX base #k scale [d] ; R_LD/R_ST/R_LDX/R_STX .. %tX` -> `R_LDD/R_STD/R_LDXD/R_STXD n .. base disp`. */
+@pub
+struct FieldDisplacementPass{@pub{
+}}
+
+impl constructor for FieldDisplacementPass() self{
+	return FieldDisplacementPass{}
+}
+
+@pub
+impl FieldDisplacementPass{
+	/** Byte displacement of `R_LEA %tX %base #k scale [d]`, or the sentinel when the line has another shape. */
+	static func displacement(prog: ref some imut Prog, i: mut u64) mut s64{
+		let sentinel = mut -4611686018427387904
+		let c = mut prog.count(prog, i)
+		if c != 5 && c != 6{
+			return sentinel
+		}
+		if prog.opEq(prog, i, "R_LEA") == false || prog.startsWith(prog, i, 1, "%t") == false{
+			return sentinel
+		}
+		if prog.startsWith(prog, i, 2, "%t") == false &&then prog.startsWith(prog, i, 2, "%v") == false{
+			return sentinel
+		}
+		if prog.tokStartsCh(prog, i, 3, '#') == false{
+			return sentinel
+		}
+		let k = mut prog.signedTok(prog, i, 3, 1)
+		let scale = mut prog.signedTok(prog, i, 4, 0)
+		let:<mut s64> extra = mut 0
+		if c == 6{
+			extra = prog.signedTok(prog, i, 5, 0)
+		}
+		if k == sentinel || scale == sentinel || extra == sentinel{
+			return sentinel
+		}
+		if scale <= 0 || k < 0 || k > 2147483647{
+			return sentinel
+		}
+		let d = mut (k * scale + extra)
+		if d > -2147483648 &&then d < 2147483647{
+			return d
+		}
+		return sentinel
+	}
+
+	static func okWidth(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.eqLit(prog, i, k, "1") || prog.eqLit(prog, i, k, "2") || prog.eqLit(prog, i, k, "4") || prog.eqLit(prog, i, k, "8"){
+			return true
+		}
+		return false
+	}
+
+	static func isXmm(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if prog.startsWith(prog, i, k, "%x") || prog.startsWith(prog, i, k, "%y"){
+			return true
+		}
+		return false
+	}
+
+	/** 0 none, 1 R_LDD, 2 R_STD, 3 R_LDXD, 4 R_STXD for consumer `l` of the address in token 1 of `lea`. */
+	static func kindOf(prog: ref some imut Prog, lea: mut u64, l: mut u64) mut u64{
+		if prog.count(prog, l) != 4{
+			return 0
+		}
+		if prog.opEq(prog, l, "R_LD") &&then FieldDisplacementPass.okWidth(prog, l, 1) &&then prog.startsWith(prog, l, 2, "%t") &&then prog.tokEq(prog, l, 3, lea, 1){
+			return 1
+		}
+		if prog.opEq(prog, l, "R_ST") &&then FieldDisplacementPass.okWidth(prog, l, 1) &&then prog.tokEq(prog, l, 2, lea, 1) &&then prog.tokEq(prog, l, 3, lea, 1) == false{
+			if prog.tokStartsCh(prog, l, 3, '#') || prog.startsWith(prog, l, 3, "%t") || prog.startsWith(prog, l, 3, "%v"){
+				return 2
+			}
+		}
+		let w48 = mut false
+		if prog.eqLit(prog, l, 1, "4") || prog.eqLit(prog, l, 1, "8"){
+			w48 = true
+		}
+		if prog.opEq(prog, l, "R_LDX") &&then w48 &&then FieldDisplacementPass.isXmm(prog, l, 2) &&then prog.tokEq(prog, l, 3, lea, 1){
+			return 3
+		}
+		if prog.opEq(prog, l, "R_STX") &&then w48 &&then prog.tokEq(prog, l, 2, lea, 1) &&then FieldDisplacementPass.isXmm(prog, l, 3){
+			return 4
+		}
+		return 0
+	}
+
+	@throws
+	static func build(prog: ref some mut Prog, lea: mut u64, l: mut u64, kind: mut u64, disp: mut s64, to: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		if kind == 1{
+			? prog.addLit(prog, "R_LDD")
+			? prog.addTok(prog, l, 1)
+			? prog.addTok(prog, l, 2)
+			? prog.addTok(prog, lea, 2)
+			? prog.addS64(prog, disp)
+		} else if kind == 2{
+			? prog.addLit(prog, "R_STD")
+			? prog.addTok(prog, l, 1)
+			? prog.addTok(prog, lea, 2)
+			? prog.addS64(prog, disp)
+			? prog.addTok(prog, l, 3)
+		} else if kind == 3{
+			? prog.addLit(prog, "R_LDXD")
+			? prog.addTok(prog, l, 1)
+			? prog.addTok(prog, l, 2)
+			? prog.addTok(prog, lea, 2)
+			? prog.addS64(prog, disp)
+		} else {
+			? prog.addLit(prog, "R_STXD")
+			? prog.addTok(prog, l, 1)
+			? prog.addTok(prog, lea, 2)
+			? prog.addS64(prog, disp)
+			? prog.addTok(prog, l, 3)
+		}
+		prog.setBuilt(prog, to)
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let killed = mut false
+		let sentinel = mut -4611686018427387904
+		for i in 0..n{
+			if prog.isGone(prog, i){
+				continue
+			}
+			let disp = mut FieldDisplacementPass.displacement(prog, i)
+			if disp == sentinel{
+				continue
+			}
+			let j = mut (i + 1)
+			for st in 0..41{
+				if j >= n || j - i > 40{
+					break
+				}
+				if prog.isGone(prog, j){
+					j += 1
+					continue
+				}
+				if prog.mentions(prog, j, i, 1) == false{
+					if RegOps.passable(prog, j, i, 2) == false{
+						break
+					}
+					j += 1
+					continue
+				}
+				let kind = mut FieldDisplacementPass.kindOf(prog, i, j)
+				if kind != 0{
+					let selfDef = mut false
+					if kind == 1 &&then prog.tokEq(prog, j, 2, i, 1){
+						selfDef = true
+					}
+					if RegOps.deadAfter(prog, j + 1, i, 1, selfDef){
+						? FieldDisplacementPass.build(prog, i, j, kind, disp, j)
+						prog.kill(prog, i)
+						killed = true
+					}
+				}
+				break
+			}
+		}
+		if killed{
+			prog.compactGone(prog)
+		}
+	}
+}

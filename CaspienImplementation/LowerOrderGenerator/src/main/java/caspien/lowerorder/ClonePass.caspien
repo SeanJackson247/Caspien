@@ -1,0 +1,1179 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+import "Hob.caspien"
+import "Tpl.caspien"
+import "RangeMap.caspien"
+import "RQueue.caspien"
+import "StructTab.caspien"
+
+/**
+ * Port of CloneGenerationPass (step 2): `CLONE` of an owns-bearing type becomes a call of a generated per-struct routine (`__clone_T`, `__clone_value_T`) or an inline element
+ * loop; `CLONE_FILL` becomes the fill loop. The generated routines are appended after the program. Names are ranges of the program buffer; lines come from `Tpl` templates.
+ */
+@pub
+struct ClonePass{@pub{
+	tp: owns some mut Tpl
+	tab: owns some mut StructTab
+	needP: owns some mut RQueue
+	needV: owns some mut RQueue
+	genP: owns some mut RangeMap
+	genV: owns some mut RangeMap
+	labelCount: mut u64
+	tempCount: mut u64
+	cnS: owns some mut dynarray(mut u64)
+	cnE: owns some mut dynarray(mut u64)
+	ctS: owns some mut dynarray(mut u64)
+	ctE: owns some mut dynarray(mut u64)
+	cpS: owns some mut dynarray(mut u64)
+	cpE: owns some mut dynarray(mut u64)
+	nct: mut u64
+	flS: mut u64
+	flE: mut u64
+	tdS: owns some mut dynarray(mut u64)
+	tdE: owns some mut dynarray(mut u64)
+	tdTS: owns some mut dynarray(mut u64)
+	tdTE: owns some mut dynarray(mut u64)
+	tdK: owns some mut dynarray(mut u64)
+	ntd: mut u64
+	rk: mut u64
+	rnS: mut u64
+	rnE: mut u64
+	os: mut u64
+	oe: mut u64
+}}
+
+@throws
+impl constructor for ClonePass(structs: mut u64) self{
+	?catch(e){ throw e }
+	let tab = mut ? new StructTab(structs)
+	let t = mut ? new Tpl()
+	let np = mut ? new RQueue()
+	let nv = mut ? new RQueue()
+	let gp = mut ? new RangeMap()
+	let gv = mut ? new RangeMap()
+	let a1 = mut ? dyn:<u64>([])
+	let a2 = mut ? dyn:<u64>([])
+	let a3 = mut ? dyn:<u64>([])
+	let a4 = mut ? dyn:<u64>([])
+	let a5 = mut ? dyn:<u64>([])
+	let a6 = mut ? dyn:<u64>([])
+	let b1 = mut ? dyn:<u64>([])
+	let b2 = mut ? dyn:<u64>([])
+	let b3 = mut ? dyn:<u64>([])
+	let b4 = mut ? dyn:<u64>([])
+	let b5 = mut ? dyn:<u64>([])
+	return ClonePass{tp= t, tab= tab, needP= np, needV= nv, genP= gp, genV= gv, labelCount= 0, tempCount= 0, cnS= a1, cnE= a2, ctS= a3, ctE= a4, cpS= a5, cpE= a6, nct= 0, flS= 0, flE= 0, tdS= b1, tdE= b2, tdTS= b3, tdTE= b4, tdK= b5, ntd= 0, rk= 0, rnS= 0, rnE= 0, os= 0, oe= 0}
+}
+
+@pub
+impl ClonePass{
+	// ---- names ----
+
+	@throws
+	func label(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, lit: static imut string) void{
+		?catch(e){ throw e }
+		_self.labelCount += 1
+		prog.begin(prog)
+		? prog.addLit(prog, lit)
+		? prog.glueS64(prog, wrap:<s64>(_self.labelCount))
+		_self.tp.set(_self.tp, k, prog.cur, prog.used)
+	}
+
+	/** lit + the text [a, z) with every character outside [A-Za-z0-9_] replaced by '_'. */
+	@throws
+	func routineName(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, lit: static imut string, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, lit)
+		for q in a..z{
+			let c = mut prog.buf.charAt(prog.buf, q)
+			let cc = mut String.charCode(c)
+			let ok = mut false
+			if cc >= 97 &&then cc <= 122{
+				ok = true
+			} else if cc >= 65 &&then cc <= 90{
+				ok = true
+			} else if cc >= 48 &&then cc <= 57{
+				ok = true
+			} else if cc == 95{
+				ok = true
+			}
+			if ok{
+				? prog.glueCh(prog, c)
+			} else {
+				? prog.glueCh(prog, '_')
+			}
+		}
+		_self.tp.set(_self.tp, k, prog.cur, prog.used)
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	/** pre + [a, z) + suf as slot k. */
+	@throws
+	func cat(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, pre: static imut string, a: mut u64, z: mut u64, suf: static imut string) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, pre)
+		? prog.glueRange(prog, a, z)
+		? prog.glueLit(prog, suf)
+		_self.tp.set(_self.tp, k, prog.cur, prog.used)
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	/** [a, z) + "." + [b, y) */
+	@throws
+	func join(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, b: mut u64, y: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addRange(prog, a, z)
+		? prog.glueLit(prog, ".")
+		? prog.glueRange(prog, b, y)
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	@throws
+	func joinNum(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, i: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addRange(prog, a, z)
+		? prog.glueLit(prog, ".")
+		? prog.glueS64(prog, wrap:<s64>(i))
+		_self.os = prog.cur
+		_self.oe = prog.used
+	}
+
+	/** Declares a hidden local `tag<N>` of type [ts, te) (an ALLOC line) and keeps its name in slot k. */
+	@throws
+	func newTemp(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, tag: static imut string, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		_self.tempCount += 1
+		prog.begin(prog)
+		? prog.addLit(prog, tag)
+		? prog.glueS64(prog, wrap:<s64>(_self.tempCount))
+		let ns = mut prog.cur
+		let ne = mut prog.used
+		_self.tp.set(_self.tp, k, ns, ne)
+		_self.os = ns
+		_self.oe = ne
+		prog.begin(prog)
+		? prog.addLit(prog, "ALLOC")
+		? prog.addRange(prog, ns, ne)
+		? prog.addRange(prog, ts, te)
+		? prog.outBuilt(prog)
+	}
+
+	/** "dynarray(elem)" -> elem in [os, oe). */
+	func dynElemOf(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z > a &&then Hob.startsLit(prog, a, z, "dynarray(") &&then prog.buf.charAt(prog.buf, z - 1) == ')'{
+			_self.os = a + 9
+			_self.oe = z - 1
+			return true
+		}
+		return false
+	}
+
+	/** "elem[N]" -> elem in [os, oe), N in [rnS, rnE) (rnE == rnS when not a plain literal). */
+	func fixedElemOf(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z <= a{
+			return false
+		}
+		if prog.buf.charAt(prog.buf, z - 1) != ']'{
+			return false
+		}
+		let open = mut Hob.lastIndexOf(prog, a, z, '[')
+		if open < 0{
+			return false
+		}
+		let o = mut wrap:<u64>(open)
+		_self.os = a
+		_self.oe = o
+		_self.rnS = o + 1
+		_self.rnE = z - 1
+		return true
+	}
+
+	/** Declared length of the fixed array base type [a, z), or -1. */
+	func fixedLen(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		if _self.fixedElemOf(_self, prog, a, z) == false{
+			return -1
+		}
+		if Hob.isDigits(prog, _self.rnS, _self.rnE) == false{
+			return -1
+		}
+		return wrap:<s64>(Hob.digitsValue(prog, _self.rnS, _self.rnE))
+	}
+
+	@throws
+	func elementNeedsWork(_self: ref some mut self, prog: ref some imut Prog, es: mut u64, ee: mut u64) mut bool{
+		?catch(e){ throw e }
+		let et = mut ? Hob.parse(prog, es, ee)
+		if Hob.storageIs(prog, et, "owns"){
+			return true
+		}
+		if _self.tab.hasStruct(_self.tab, prog, et.baS, et.baE){
+			let ob = mut ? _self.tab.isOwnsBearing(_self.tab, prog, et.baS, et.baE)
+			if ob{
+				return true
+			}
+		}
+		return _self.fixedElemOf(_self, prog, et.baS, et.baE)
+	}
+
+	// ---- routine tags ----
+
+	/** Sets rk (0 NONE:PTR, 1 PTR:name, 2 VAL:name) and the routine name range [rnS, rnE) for a dynarray element type. */
+	@throws
+	func elementRoutineTag(_self: ref some mut self, prog: ref some mut Prog, ds: mut u64, de: mut u64) void{
+		?catch(e){ throw e }
+		let et = mut ? Hob.parse(prog, ds, de)
+		if Hob.storageIs(prog, et, "owns"){
+			let isS = mut _self.tab.hasStruct(_self.tab, prog, et.baS, et.baE)
+			let ob = mut false
+			if isS{
+				ob = ? _self.tab.isOwnsBearing(_self.tab, prog, et.baS, et.baE)
+			}
+			if ob{
+				? _self.needP.push(_self.needP, et.baS, et.baE)
+				? _self.routineName(_self, prog, 15, "__clone_", et.baS, et.baE)
+				_self.rk = 1
+				_self.rnS = _self.os
+				_self.rnE = _self.oe
+				return
+			}
+			_self.rk = 0
+			return
+		}
+		? _self.needV.push(_self.needV, et.baS, et.baE)
+		? _self.routineName(_self, prog, 15, "__clone_value_", et.baS, et.baE)
+		_self.rk = 2
+		_self.rnS = _self.os
+		_self.rnE = _self.oe
+	}
+
+	/** The instructions that turn the pointer on top of the stack into a deep clone (emitted); false (nothing emitted) in the gap shapes. */
+	@throws
+	func cloneInstr(_self: ref some mut self, prog: ref some mut Prog, cs: mut u64, ce: mut u64) mut bool{
+		?catch(e){ throw e }
+		let t = mut ? Hob.parse(prog, cs, ce)
+		let tbs = mut t.baS
+		let tbe = mut t.baE
+		if _self.dynElemOf(_self, prog, tbs, tbe){
+			let ds = mut _self.os
+			let de = mut _self.oe
+			? _self.elementRoutineTag(_self, prog, ds, de)
+			let rk = mut _self.rk
+			let rs = mut _self.rnS
+			let re = mut _self.rnE
+			if rk == 2{
+				? _self.valueCloneLoop(_self, prog, cs, ce, ds, de, rs, re)
+			} else {
+				? _self.ownsElementCloneLoop(_self, prog, cs, ce, ds, de, rk, rs, re)
+			}
+			return true
+		}
+		if _self.tab.hasStruct(_self.tab, prog, tbs, tbe){
+			? _self.needP.push(_self.needP, tbs, tbe)
+			? _self.routineName(_self, prog, 0, "__clone_", tbs, tbe)
+			? _self.cat(_self, prog, 1, "owns_mut_", tbs, tbe, "")
+			? _self.tp.emit(_self.tp, prog, "CALL %0")
+			? _self.tp.emit(_self.tp, prog, "PUSH_RET %1")
+			return true
+		}
+		return false
+	}
+
+	// ---- loops ----
+
+	/** Common prologue of both element loops: temps, empty destination, registration. Slots: 1 srcType, 5 dynElem, 3 dstType, 0 src, 2 dst, 4 new, 6 done, 7 fail. */
+	@throws
+	func loopHead(_self: ref some mut self, prog: ref some mut Prog, cs: mut u64, ce: mut u64, ds: mut u64, de: mut u64) void{
+		?catch(e){ throw e }
+		_self.tp.set(_self.tp, 1, cs, ce)
+		_self.tp.set(_self.tp, 5, ds, de)
+		? _self.cat(_self, prog, 3, "owns_mut_dynarray(", ds, de, ")")
+		? _self.label(_self, prog, 6, "@clone_loop_done_")
+		? _self.label(_self, prog, 7, "@clone_loop_fail_")
+		let t3s = mut _self.tp.getS(_self.tp, 3)
+		let t3e = mut _self.tp.getE(_self.tp, 3)
+		let t1s = mut cs
+		let t1e = mut ce
+		? _self.newTemp(_self, prog, 0, "$clone_loop_src", t1s, t1e)
+		? _self.tp.emit(_self.tp, prog, "POP %0 %1")
+		? _self.newTemp(_self, prog, 2, "$clone_loop_dst", t3s, t3e)
+		? _self.newTemp(_self, prog, 4, "$clone_loop_new", t3s, t3e)
+		? _self.tp.emit(_self.tp, prog, "NEW_DYN mut_dynarray(%5) 0")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.label(_self, prog, 8, "@clone_loop_nd_ok_")
+		? _self.tp.emit(_self.tp, prog, "DUP_TOP")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "EQ %3 %3 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %8")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "%8:")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+	}
+
+	/** Deep clone of a dynarray whose elements are inline structs (value routine `rs..re`). */
+	@throws
+	func valueCloneLoop(_self: ref some mut self, prog: ref some mut Prog, cs: mut u64, ce: mut u64, ds: mut u64, de: mut u64, rs: mut u64, re: mut u64) void{
+		?catch(e){ throw e }
+		? _self.loopHead(_self, prog, cs, ce, ds, de)
+		let t3s = mut _self.tp.getS(_self.tp, 3)
+		let t3e = mut _self.tp.getE(_self.tp, 3)
+		_self.tp.set(_self.tp, 11, rs, re)
+		? _self.label(_self, prog, 8, "@clone_loop_nonempty_")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "EQ indeterminate_u64 indeterminate_u64 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %8")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "%8:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP %1 indeterminate_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "RESIZE %3 indeterminate_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "POP %4 %3")
+		? _self.label(_self, prog, 8, "@clone_loop_rs_ok_")
+		? _self.tp.emit(_self.tp, prog, "PUSH %4 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "EQ %3 %3 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %8")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %2")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "%8:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %4 %3")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		prog.begin(prog)
+		? prog.addLit(prog, "mut_u64")
+		let mus = mut prog.cur
+		let mue = mut prog.used
+		? _self.newTemp(_self, prog, 9, "$clone_loop_i", mus, mue)
+		? _self.tp.emit(_self.tp, prog, "ADDR %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 mut_u64 mut_u64")
+		? _self.label(_self, prog, 12, "@clone_loop_")
+		? _self.label(_self, prog, 13, "@clone_loop_end_")
+		? _self.tp.emit(_self.tp, prog, "%c:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "LT mut_u64 indeterminate_u64 indeterminate_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %d")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %3 mut_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %1 mut_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "CALL %b")
+		? _self.tp.emit(_self.tp, prog, "PUSH_RET imut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "EQ imut_u64 indeterminate_u64 imut_bool")
+		? _self.label(_self, prog, 8, "@clone_loop_el_ok_")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %8")
+		? _self.tp.emit(_self.tp, prog, "JMP %7")
+		? _self.tp.emit(_self.tp, prog, "%8:")
+		? _self.tp.emit(_self.tp, prog, "ADDR %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "INC mut_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "JMP %c")
+		? _self.tp.emit(_self.tp, prog, "%d:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "%7:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP %1 indeterminate_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "RESIZE %3 mut_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %2")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "%6:")
+	}
+
+	/** Deep clone of a dynarray of owns pointers (rk 0: flat CLONE per element, 1: pointer routine rs..re). */
+	@throws
+	func ownsElementCloneLoop(_self: ref some mut self, prog: ref some mut Prog, cs: mut u64, ce: mut u64, ds: mut u64, de: mut u64, rk: mut u64, rs: mut u64, re: mut u64) void{
+		?catch(e){ throw e }
+		let et = mut ? Hob.parse(prog, ds, de)
+		? _self.cat(_self, prog, 10, "owns_mut_", et.baS, et.baE, "")
+		? _self.loopHead(_self, prog, cs, ce, ds, de)
+		_self.tp.set(_self.tp, 11, rs, re)
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %5")
+		? _self.tp.emit(_self.tp, prog, "RESIZE %3 indeterminate_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "POP %4 %3")
+		? _self.label(_self, prog, 8, "@clone_loop_rs_ok_")
+		? _self.tp.emit(_self.tp, prog, "PUSH %4 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "EQ %3 %3 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %8")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %2")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "%8:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %4 %3")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		prog.begin(prog)
+		? prog.addLit(prog, "mut_u64")
+		let mus = mut prog.cur
+		let mue = mut prog.used
+		? _self.newTemp(_self, prog, 9, "$clone_loop_i", mus, mue)
+		? _self.tp.emit(_self.tp, prog, "ADDR %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 mut_u64 mut_u64")
+		let e10s = mut _self.tp.getS(_self.tp, 10)
+		let e10e = mut _self.tp.getE(_self.tp, 10)
+		? _self.newTemp(_self, prog, 14, "$clone_loop_e", e10s, e10e)
+		? _self.label(_self, prog, 12, "@clone_loop_")
+		? _self.label(_self, prog, 13, "@clone_loop_end_")
+		? _self.tp.emit(_self.tp, prog, "%c:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "LT mut_u64 indeterminate_u64 indeterminate_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %d")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP %1 mut_u64 %5")
+		if rk == 0{
+			? _self.tp.emit(_self.tp, prog, "CLONE %5 %a")
+		} else {
+			? _self.tp.emit(_self.tp, prog, "CALL %b")
+			? _self.tp.emit(_self.tp, prog, "PUSH_RET %a")
+		}
+		? _self.label(_self, prog, 8, "@clone_loop_el_ok_")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.tp.emit(_self.tp, prog, "DUP_TOP")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %a")
+		? _self.tp.emit(_self.tp, prog, "EQ %a %a imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %8")
+		? _self.tp.emit(_self.tp, prog, "POP %e %a")
+		? _self.tp.emit(_self.tp, prog, "JMP %7")
+		? _self.tp.emit(_self.tp, prog, "%8:")
+		? _self.tp.emit(_self.tp, prog, "POP %e %a")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %3 mut_u64 %5")
+		? _self.tp.emit(_self.tp, prog, "PUSH %e %a")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN %5 %5 %5")
+		? _self.tp.emit(_self.tp, prog, "ADDR %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %9 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "INC mut_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "JMP %c")
+		? _self.tp.emit(_self.tp, prog, "%d:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "%7:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.tp.emit(_self.tp, prog, "POP %2 %3")
+		? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %2")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %3")
+		? _self.tp.emit(_self.tp, prog, "%6:")
+	}
+
+	// ---- CLONE_FILL ----
+
+	@throws
+	func fillLoop(_self: ref some mut self, prog: ref some mut Prog, as_: mut u64, ae: mut u64, ts: mut u64, te: mut u64, fs: mut u64, fe: mut u64) void{
+		?catch(e){ throw e }
+		let ct = mut ? Hob.parse(prog, ts, te)
+		if _self.dynElemOf(_self, prog, ct.baS, ct.baE) == false{
+			return
+		}
+		let ds = mut _self.os
+		let de = mut _self.oe
+		? _self.elementRoutineTag(_self, prog, ds, de)
+		let rk = mut _self.rk
+		let rs = mut _self.rnS
+		let re = mut _self.rnE
+		let et = mut ? Hob.parse(prog, ds, de)
+		_self.tp.set(_self.tp, 0, as_, ae)
+		_self.tp.set(_self.tp, 1, ts, te)
+		_self.tp.set(_self.tp, 2, fs, fe)
+		_self.tp.set(_self.tp, 3, ds, de)
+		_self.tp.set(_self.tp, 11, rs, re)
+		? _self.cat(_self, prog, 4, "owns_mut_", et.baS, et.baE, "")
+		let e4s = mut _self.tp.getS(_self.tp, 4)
+		let e4e = mut _self.tp.getE(_self.tp, 4)
+		? _self.label(_self, prog, 5, "@clone_fill_done_")
+		? _self.label(_self, prog, 6, "@clone_fill_fail_")
+		? _self.label(_self, prog, 7, "@clone_fill_")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %1")
+		? _self.tp.emit(_self.tp, prog, "NEQ %1 %1 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %5")
+		prog.begin(prog)
+		? prog.addLit(prog, "mut_u64")
+		let mus = mut prog.cur
+		let mue = mut prog.used
+		? _self.newTemp(_self, prog, 8, "$clone_fill_i", mus, mue)
+		? _self.tp.emit(_self.tp, prog, "ADDR %8 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "%7:")
+		? _self.tp.emit(_self.tp, prog, "PUSH %8 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "LEN")
+		? _self.tp.emit(_self.tp, prog, "LT mut_u64 indeterminate_u64 indeterminate_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %5")
+		if rk == 2{
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH %8 mut_u64")
+			? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %1 mut_u64 %3")
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH %2 mut_u64")
+			? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %1 mut_u64 %3")
+			? _self.tp.emit(_self.tp, prog, "CALL %b")
+			? _self.tp.emit(_self.tp, prog, "PUSH_RET imut_u64")
+			? _self.tp.emit(_self.tp, prog, "PUSH 0 indeterminate_u64")
+			? _self.tp.emit(_self.tp, prog, "EQ imut_u64 indeterminate_u64 imut_bool")
+			? _self.label(_self, prog, 10, "@clone_fill_el_ok_")
+			? _self.tp.emit(_self.tp, prog, "CMP")
+			? _self.tp.emit(_self.tp, prog, "JMP %a")
+			? _self.tp.emit(_self.tp, prog, "JMP %6")
+			? _self.tp.emit(_self.tp, prog, "%a:")
+		} else {
+			? _self.newTemp(_self, prog, 9, "$clone_fill_e", e4s, e4e)
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH %2 mut_u64")
+			? _self.tp.emit(_self.tp, prog, "LOOKUP %1 mut_u64 %3")
+			if rk == 0{
+				? _self.tp.emit(_self.tp, prog, "CLONE %3 %4")
+			} else {
+				? _self.tp.emit(_self.tp, prog, "CALL %b")
+				? _self.tp.emit(_self.tp, prog, "PUSH_RET %4")
+			}
+			? _self.label(_self, prog, 10, "@clone_fill_el_ok_")
+			? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+			? _self.tp.emit(_self.tp, prog, "DUP_TOP")
+			? _self.tp.emit(_self.tp, prog, "PUSH null %4")
+			? _self.tp.emit(_self.tp, prog, "EQ %4 %4 imut_bool")
+			? _self.tp.emit(_self.tp, prog, "CMP")
+			? _self.tp.emit(_self.tp, prog, "JMP %a")
+			? _self.tp.emit(_self.tp, prog, "POP %9 %4")
+			? _self.tp.emit(_self.tp, prog, "JMP %6")
+			? _self.tp.emit(_self.tp, prog, "%a:")
+			? _self.tp.emit(_self.tp, prog, "POP %9 %4")
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH %8 mut_u64")
+			? _self.tp.emit(_self.tp, prog, "LOOKUP_LHS %1 mut_u64 %3")
+			? _self.tp.emit(_self.tp, prog, "PUSH %9 %4")
+			? _self.tp.emit(_self.tp, prog, "ASSIGN %3 %3 %3")
+		}
+		? _self.tp.emit(_self.tp, prog, "ADDR %8 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %8 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "INC mut_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_u64 indeterminate_u64 indeterminate_u64")
+		? _self.tp.emit(_self.tp, prog, "JMP %7")
+		? _self.tp.emit(_self.tp, prog, "%6:")
+		? _self.tp.emit(_self.tp, prog, "ADDR %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH %8 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH %2 mut_u64")
+		? _self.tp.emit(_self.tp, prog, "LOOKUP %1 mut_u64 %3")
+		? _self.tp.emit(_self.tp, prog, "RESIZE %1 mut_u64 %3")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN %1 %1 %1")
+		? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %0")
+		? _self.tp.emit(_self.tp, prog, "ADDR %0 %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %1")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN %1 %1 %1")
+		? _self.tp.emit(_self.tp, prog, "%5:")
+	}
+
+	// ---- routine bodies ----
+
+	@throws
+	func addTemp(_self: ref some mut self, ns: mut u64, ne: mut u64, ts: mut u64, te: mut u64, ps: mut u64, pe: mut u64) void{
+		?catch(e){ throw e }
+		let k = mut _self.nct
+		if k >= len(_self.cnS){
+			let nc = mut (k * 2 + 8)
+			_self.cnS = ? resize(_self.cnS, nc, 0)
+			_self.cnE = ? resize(_self.cnE, nc, 0)
+			_self.ctS = ? resize(_self.ctS, nc, 0)
+			_self.ctE = ? resize(_self.ctE, nc, 0)
+			_self.cpS = ? resize(_self.cpS, nc, 0)
+			_self.cpE = ? resize(_self.cpE, nc, 0)
+		}
+		match k into _self.cnS{ _self.cnS[k] = ns }
+		match k into _self.cnE{ _self.cnE[k] = ne }
+		match k into _self.ctS{ _self.ctS[k] = ts }
+		match k into _self.ctE{ _self.ctE[k] = te }
+		match k into _self.cpS{ _self.cpS[k] = ps }
+		match k into _self.cpE{ _self.cpE[k] = pe }
+		_self.nct = k + 1
+	}
+
+	@throws
+	func pushTodo(_self: ref some mut self, kind: mut u64, ps: mut u64, pe: mut u64, ts: mut u64, te: mut u64) void{
+		?catch(e){ throw e }
+		let k = mut _self.ntd
+		if k >= len(_self.tdS){
+			let nc = mut (k * 2 + 16)
+			_self.tdS = ? resize(_self.tdS, nc, 0)
+			_self.tdE = ? resize(_self.tdE, nc, 0)
+			_self.tdTS = ? resize(_self.tdTS, nc, 0)
+			_self.tdTE = ? resize(_self.tdTE, nc, 0)
+			_self.tdK = ? resize(_self.tdK, nc, 0)
+		}
+		match k into _self.tdS{ _self.tdS[k] = ps }
+		match k into _self.tdE{ _self.tdE[k] = pe }
+		match k into _self.tdTS{ _self.tdTS[k] = ts }
+		match k into _self.tdTE{ _self.tdTE[k] = te }
+		match k into _self.tdK{ _self.tdK[k] = kind }
+		_self.ntd = k + 1
+	}
+
+	/** Path of the temp registered for `path`: [os, oe) (0,0 when none). */
+	func tempOfPath(_self: ref some mut self, prog: ref some imut Prog, ps: mut u64, pe: mut u64) void{
+		_self.os = 0
+		_self.oe = 0
+		let cnt = mut _self.nct
+		for j in 0..cnt{
+			let a = mut 0
+			let b = mut 0
+			match j in _self.cpS{ a = _self.cpS[j] }
+			match j in _self.cpE{ b = _self.cpE[j] }
+			if RangeMap.sameText(prog, a, b, ps, pe){
+				match j in _self.cnS{ _self.os = _self.cnS[j] }
+				match j in _self.cnE{ _self.oe = _self.cnE[j] }
+			}
+		}
+	}
+
+	/** Queues the ordinary members (all but the class id) of struct [a, z) under `base` so the first one comes off the stack first. kind 0 = leaf item, 1 = value item. */
+	@throws
+	func pushMembers(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, bs: mut u64, be: mut u64, kind: mut u64) void{
+		?catch(e){ throw e }
+		let sl = mut _self.tab.structLine(_self.tab, prog, a, z)
+		if sl < 0{
+			return
+		}
+		let own = mut wrap:<u64>(sl)
+		? _self.tab.members(_self.tab, prog, own)
+		let cnt = mut _self.tab.nm
+		let first = mut 0
+		if cnt > 0{
+			let m0 = mut _self.tab.memberLine(_self.tab, 0)
+			if prog.eqLit(prog, m0, 1, "___type"){
+				first = 1
+			}
+		}
+		let rem = mut (cnt - first)
+		for r in 0..rem{
+			let i = mut (cnt - 1 - r)
+			let ml = mut _self.tab.memberLine(_self.tab, i)
+			let nsp = mut wrap:<u64>(prog.tokPos(prog, ml, 1))
+			let nze = mut Ln.tokEnd(prog.buf, nsp, prog.lineEnd(prog, ml))
+			let tsp = mut wrap:<u64>(prog.tokPos(prog, ml, 2))
+			let tze = mut Ln.tokEnd(prog.buf, tsp, prog.lineEnd(prog, ml))
+			? _self.join(_self, prog, bs, be, nsp, nze)
+			? _self.pushTodo(_self, kind, _self.os, _self.oe, tsp, tze)
+		}
+	}
+
+	/** Phase 1: every owns leaf below `root` is cloned into a hidden temp. */
+	@throws
+	func cloneLeaves(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, bs: mut u64, be: mut u64) void{
+		?catch(e){ throw e }
+		_self.ntd = 0
+		? _self.pushMembers(_self, prog, a, z, bs, be, 0)
+		for step in 0..100000000{
+			if _self.ntd == 0{
+				break
+			}
+			let top = mut (_self.ntd - 1)
+			let ps = mut 0
+			let pe = mut 0
+			let ts = mut 0
+			let te = mut 0
+			match top in _self.tdS{ ps = _self.tdS[top] }
+			match top in _self.tdE{ pe = _self.tdE[top] }
+			match top in _self.tdTS{ ts = _self.tdTS[top] }
+			match top in _self.tdTE{ te = _self.tdTE[top] }
+			_self.ntd = top
+			? _self.leaf(_self, prog, ps, pe, ts, te)
+		}
+	}
+
+	@throws
+	func leaf(_self: ref some mut self, prog: ref some mut Prog, ps: mut u64, pe: mut u64, cs: mut u64, ce: mut u64) void{
+		?catch(e){ throw e }
+		let t = mut ? Hob.parse(prog, cs, ce)
+		let tbs = mut t.baS
+		let tbe = mut t.baE
+		if Hob.storageIs(prog, t, "owns"){
+			? _self.cat(_self, prog, 2, "owns_mut_", tbs, tbe, "")
+			let os_s = mut _self.tp.getS(_self.tp, 2)
+			let os_e = mut _self.tp.getE(_self.tp, 2)
+			_self.tempCount += 1
+			prog.begin(prog)
+			? prog.addLit(prog, "$clone_m")
+			? prog.glueS64(prog, wrap:<s64>(_self.tempCount))
+			let tms = mut prog.cur
+			let tme = mut prog.used
+			? _self.addTemp(_self, tms, tme, os_s, os_e, ps, pe)
+			_self.tp.set(_self.tp, 0, ps, pe)
+			_self.tp.set(_self.tp, 1, cs, ce)
+			_self.tp.set(_self.tp, 2, os_s, os_e)
+			_self.tp.set(_self.tp, 3, tms, tme)
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			? _self.label(_self, prog, 4, "@clone_leaf_nonnull_")
+			? _self.label(_self, prog, 5, "@clone_leaf_done_")
+			let n4s = mut _self.tp.getS(_self.tp, 4)
+			let n4e = mut _self.tp.getE(_self.tp, 4)
+			let n5s = mut _self.tp.getS(_self.tp, 5)
+			let n5e = mut _self.tp.getE(_self.tp, 5)
+			? _self.tp.emit(_self.tp, prog, "DUP_TOP")
+			? _self.tp.emit(_self.tp, prog, "PUSH null %2")
+			? _self.tp.emit(_self.tp, prog, "EQ %2 %2 imut_bool")
+			? _self.tp.emit(_self.tp, prog, "CMP")
+			? _self.tp.emit(_self.tp, prog, "JMP %4")
+			? _self.tp.emit(_self.tp, prog, "JMP %4_null")
+			? _self.tp.emit(_self.tp, prog, "%4_null:")
+			? _self.tp.emit(_self.tp, prog, "POP %3 %2")
+			? _self.tp.emit(_self.tp, prog, "JMP %5")
+			? _self.tp.emit(_self.tp, prog, "%4:")
+			let ob = mut ? _self.tab.isOwnsBearing(_self.tab, prog, tbs, tbe)
+			let did = mut false
+			if ob{
+				did = ? _self.cloneInstr(_self, prog, cs, ce)
+			}
+			_self.tp.set(_self.tp, 1, cs, ce)
+			_self.tp.set(_self.tp, 2, os_s, os_e)
+			_self.tp.set(_self.tp, 3, tms, tme)
+			_self.tp.set(_self.tp, 4, n4s, n4e)
+			_self.tp.set(_self.tp, 5, n5s, n5e)
+			if did == false{
+				? _self.tp.emit(_self.tp, prog, "CLONE %1 %2")
+			}
+			// register, then check
+			? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+			let fs = mut _self.flS
+			let fe = mut _self.flE
+			_self.tp.set(_self.tp, 6, fs, fe)
+			? _self.label(_self, prog, 7, "@clone_member_ok_")
+			? _self.tp.emit(_self.tp, prog, "DUP_TOP")
+			? _self.tp.emit(_self.tp, prog, "PUSH null %2")
+			? _self.tp.emit(_self.tp, prog, "EQ %2 %2 imut_bool")
+			? _self.tp.emit(_self.tp, prog, "CMP")
+			? _self.tp.emit(_self.tp, prog, "JMP %7")
+			? _self.tp.emit(_self.tp, prog, "POP %3 %2")
+			? _self.tp.emit(_self.tp, prog, "JMP %6")
+			? _self.tp.emit(_self.tp, prog, "%7:")
+			? _self.tp.emit(_self.tp, prog, "POP %3 %2")
+			? _self.tp.emit(_self.tp, prog, "%5:")
+			return
+		}
+		if _self.tab.hasStruct(_self.tab, prog, tbs, tbe){
+			let ob2 = mut ? _self.tab.isOwnsBearing(_self.tab, prog, tbs, tbe)
+			if ob2{
+				? _self.pushMembers(_self, prog, tbs, tbe, ps, pe, 0)
+			}
+			return
+		}
+		if _self.fixedElemOf(_self, prog, tbs, tbe){
+			let es = mut _self.os
+			let ee = mut _self.oe
+			let need = mut ? _self.elementNeedsWork(_self, prog, es, ee)
+			if need{
+				let count = mut _self.fixedLen(_self, prog, tbs, tbe)
+				if count > 0{
+					let cu = mut wrap:<u64>(count)
+					for r in 0..cu{
+						let i = mut (cu - 1 - r)
+						? _self.joinNum(_self, prog, ps, pe, i)
+						? _self.pushTodo(_self, 0, _self.os, _self.oe, es, ee)
+					}
+				}
+			}
+		}
+	}
+
+	/** Phase 2: pushes the class id (when there is one) and every member in declared order, owns leaves taken from their temps. */
+	@throws
+	func pushSequence(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64, bs: mut u64, be: mut u64) void{
+		?catch(e){ throw e }
+		_self.ntd = 0
+		? _self.pushTodo(_self, 1, bs, be, a, z)
+		for step in 0..100000000{
+			if _self.ntd == 0{
+				break
+			}
+			let top = mut (_self.ntd - 1)
+			let ps = mut 0
+			let pe = mut 0
+			let ts = mut 0
+			let te = mut 0
+			let kind = mut 0
+			match top in _self.tdS{ ps = _self.tdS[top] }
+			match top in _self.tdE{ pe = _self.tdE[top] }
+			match top in _self.tdTS{ ts = _self.tdTS[top] }
+			match top in _self.tdTE{ te = _self.tdTE[top] }
+			match top in _self.tdK{ kind = _self.tdK[top] }
+			_self.ntd = top
+			if kind == 1{
+				let sl = mut _self.tab.structLine(_self.tab, prog, ts, te)
+				if sl >= 0{
+					let own = mut wrap:<u64>(sl)
+					? _self.tab.members(_self.tab, prog, own)
+					let cnt = mut _self.tab.nm
+					let first = mut 0
+					if cnt > 0{
+						let m0 = mut _self.tab.memberLine(_self.tab, 0)
+						if prog.eqLit(prog, m0, 1, "___type"){
+							first = 1
+						}
+					}
+					if first == 1{
+						_self.tp.set(_self.tp, 0, ps, pe)
+						? _self.tp.emit(_self.tp, prog, "PUSH %0.___type imut_u64")
+					}
+					let rem = mut (cnt - first)
+					for r in 0..rem{
+						let i = mut (cnt - 1 - r)
+						let ml = mut _self.tab.memberLine(_self.tab, i)
+						let nsp = mut wrap:<u64>(prog.tokPos(prog, ml, 1))
+						let nze = mut Ln.tokEnd(prog.buf, nsp, prog.lineEnd(prog, ml))
+						let tsp = mut wrap:<u64>(prog.tokPos(prog, ml, 2))
+						let tze = mut Ln.tokEnd(prog.buf, tsp, prog.lineEnd(prog, ml))
+						? _self.join(_self, prog, ps, pe, nsp, nze)
+						? _self.pushTodo(_self, 0, _self.os, _self.oe, tsp, tze)
+					}
+				}
+			} else {
+				? _self.pushValue(_self, prog, ps, pe, ts, te)
+			}
+		}
+	}
+
+	@throws
+	func pushValue(_self: ref some mut self, prog: ref some mut Prog, ps: mut u64, pe: mut u64, cs: mut u64, ce: mut u64) void{
+		?catch(e){ throw e }
+		let t = mut ? Hob.parse(prog, cs, ce)
+		let tbs = mut t.baS
+		let tbe = mut t.baE
+		if Hob.storageIs(prog, t, "owns"){
+			_self.tempOfPath(_self, prog, ps, pe)
+			_self.tp.set(_self.tp, 0, _self.os, _self.oe)
+			? _self.cat(_self, prog, 1, "owns_mut_", tbs, tbe, "")
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			return
+		}
+		if _self.tab.hasStruct(_self.tab, prog, tbs, tbe){
+			let ob = mut ? _self.tab.isOwnsBearing(_self.tab, prog, tbs, tbe)
+			if ob{
+				? _self.pushTodo(_self, 1, ps, pe, tbs, tbe)
+				return
+			}
+			_self.tp.set(_self.tp, 0, ps, pe)
+			_self.tp.set(_self.tp, 1, cs, ce)
+			? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+			return
+		}
+		if _self.fixedElemOf(_self, prog, tbs, tbe){
+			let es = mut _self.os
+			let ee = mut _self.oe
+			let need = mut ? _self.elementNeedsWork(_self, prog, es, ee)
+			if need{
+				let count = mut _self.fixedLen(_self, prog, tbs, tbe)
+				if count > 0{
+					let cu = mut wrap:<u64>(count)
+					for r in 0..cu{
+						let i = mut (cu - 1 - r)
+						? _self.joinNum(_self, prog, ps, pe, i)
+						? _self.pushTodo(_self, 0, _self.os, _self.oe, es, ee)
+					}
+				}
+				return
+			}
+		}
+		_self.tp.set(_self.tp, 0, ps, pe)
+		_self.tp.set(_self.tp, 1, cs, ce)
+		? _self.tp.emit(_self.tp, prog, "PUSH %0 %1")
+	}
+
+	/** The ALLOC/ADDR/PUSH null/ASSIGN lines of the leaf temps, moved to table position `at` (before the phase-1 lines). */
+	@throws
+	func tempDecls(_self: ref some mut self, prog: ref some mut Prog, at: mut u64) void{
+		?catch(e){ throw e }
+		let cnt = mut _self.nct
+		for j in 0..cnt{
+			let a = mut 0
+			let b = mut 0
+			let c = mut 0
+			let d = mut 0
+			match j in _self.cnS{ a = _self.cnS[j] }
+			match j in _self.cnE{ b = _self.cnE[j] }
+			match j in _self.ctS{ c = _self.ctS[j] }
+			match j in _self.ctE{ d = _self.ctE[j] }
+			_self.tp.set(_self.tp, 0, a, b)
+			_self.tp.set(_self.tp, 1, c, d)
+			? _self.tp.emit(_self.tp, prog, "ALLOC %0 %1")
+			? _self.tp.emit(_self.tp, prog, "ADDR %0 %1")
+			? _self.tp.emit(_self.tp, prog, "PUSH null %1")
+			? _self.tp.emit(_self.tp, prog, "ASSIGN %1 %1 %1")
+		}
+		if cnt > 0{
+			? prog.outRotateTail(prog, at, cnt * 4)
+		}
+	}
+
+	/** ALLOC src / load / ALLOC $clone_srcN / DEREF copy; the copy's name is returned in [os, oe). */
+	@throws
+	func paramLoad(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		? _self.cat(_self, prog, 4, "imut_", a, z, "")
+		let dts = mut _self.tp.getS(_self.tp, 4)
+		let dte = mut _self.tp.getE(_self.tp, 4)
+		? _self.tp.emit(_self.tp, prog, "ALLOC src %1")
+		? _self.tp.emit(_self.tp, prog, "ADDR src %1")
+		? _self.tp.emit(_self.tp, prog, "PUSH $16 %1")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN %1 %1 %1")
+		_self.tempCount += 1
+		prog.begin(prog)
+		? prog.addLit(prog, "$clone_src")
+		? prog.glueS64(prog, wrap:<s64>(_self.tempCount))
+		let rs = mut prog.cur
+		let re = mut prog.used
+		_self.tp.set(_self.tp, 3, rs, re)
+		_self.tp.set(_self.tp, 4, dts, dte)
+		? _self.tp.emit(_self.tp, prog, "ALLOC %3 %4")
+		? _self.tp.emit(_self.tp, prog, "PUSH src %1")
+		? _self.tp.emit(_self.tp, prog, "DEREF %4")
+		? _self.tp.emit(_self.tp, prog, "POP %3 %4")
+		_self.os = rs
+		_self.oe = re
+	}
+
+	@throws
+	func pointerRoutine(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		? _self.routineName(_self, prog, 0, "__clone_", a, z)
+		let rns = mut _self.os
+		let rne = mut _self.oe
+		? _self.cat(_self, prog, 1, "raw_imut_", a, z, "")
+		let pts = mut _self.os
+		let pte = mut _self.oe
+		? _self.cat(_self, prog, 2, "owns_mut_", a, z, "")
+		let ots = mut _self.os
+		let ote = mut _self.oe
+		_self.tp.set(_self.tp, 0, rns, rne)
+		? _self.tp.emit(_self.tp, prog, "FUNC_START %0")
+		? _self.tp.emit(_self.tp, prog, "FUNC_DECORATE @clone_glue")
+		? _self.tp.emit(_self.tp, prog, "RETURNS %2")
+		_self.tp.set(_self.tp, 1, pts, pte)
+		? _self.paramLoad(_self, prog, a, z)
+		let roots = mut _self.os
+		let roote = mut _self.oe
+		? _self.label(_self, prog, 5, "@clone_fail_")
+		_self.flS = _self.tp.getS(_self.tp, 5)
+		_self.flE = _self.tp.getE(_self.tp, 5)
+		_self.nct = 0
+		let at = mut prog.n2
+		? _self.cloneLeaves(_self, prog, a, z, roots, roote)
+		? _self.tempDecls(_self, prog, at)
+		? _self.pushSequence(_self, prog, a, z, roots, roote)
+		let fs = mut _self.flS
+		let fe = mut _self.flE
+		_self.tp.set(_self.tp, 7, a, z)
+		_self.tp.set(_self.tp, 2, ots, ote)
+		_self.tp.set(_self.tp, 5, fs, fe)
+		? _self.tp.emit(_self.tp, prog, "NEW %7")
+		? _self.tp.emit(_self.tp, prog, "GT_REGISTER")
+		? _self.label(_self, prog, 6, "@clone_new_ok_")
+		? _self.tp.emit(_self.tp, prog, "DUP_TOP")
+		? _self.tp.emit(_self.tp, prog, "PUSH null %2")
+		? _self.tp.emit(_self.tp, prog, "EQ %2 %2 imut_bool")
+		? _self.tp.emit(_self.tp, prog, "CMP")
+		? _self.tp.emit(_self.tp, prog, "JMP %6")
+		? _self.tp.emit(_self.tp, prog, "JMP %5")
+		? _self.tp.emit(_self.tp, prog, "%6:")
+		? _self.tp.emit(_self.tp, prog, "RET %2")
+		? _self.tp.emit(_self.tp, prog, "%5:")
+		let cnt = mut _self.nct
+		for j in 0..cnt{
+			let x = mut 0
+			let y = mut 0
+			match j in _self.cnS{ x = _self.cnS[j] }
+			match j in _self.cnE{ y = _self.cnE[j] }
+			_self.tp.set(_self.tp, 0, x, y)
+			? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %0")
+		}
+		? _self.tp.emit(_self.tp, prog, "PUSH null %2")
+		? _self.tp.emit(_self.tp, prog, "RET %2")
+		? _self.tp.emit(_self.tp, prog, "FUNC_END")
+	}
+
+	@throws
+	func valueRoutine(_self: ref some mut self, prog: ref some mut Prog, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		? _self.routineName(_self, prog, 0, "__clone_value_", a, z)
+		let rns = mut _self.os
+		let rne = mut _self.oe
+		? _self.cat(_self, prog, 1, "raw_imut_", a, z, "")
+		let pts = mut _self.os
+		let pte = mut _self.oe
+		? _self.cat(_self, prog, 2, "raw_mut_", a, z, "")
+		let dts = mut _self.os
+		let dte = mut _self.oe
+		_self.tp.set(_self.tp, 0, rns, rne)
+		? _self.tp.emit(_self.tp, prog, "FUNC_START %0")
+		? _self.tp.emit(_self.tp, prog, "FUNC_DECORATE @clone_glue")
+		? _self.tp.emit(_self.tp, prog, "RETURNS imut_u64")
+		_self.tp.set(_self.tp, 1, pts, pte)
+		? _self.paramLoad(_self, prog, a, z)
+		let roots = mut _self.os
+		let roote = mut _self.oe
+		_self.tp.set(_self.tp, 2, dts, dte)
+		? _self.tp.emit(_self.tp, prog, "ALLOC $ret_dest %2")
+		? _self.tp.emit(_self.tp, prog, "ADDR $ret_dest %2")
+		? _self.tp.emit(_self.tp, prog, "PUSH $24 %2")
+		? _self.tp.emit(_self.tp, prog, "ASSIGN %2 %2 %2")
+		? _self.label(_self, prog, 5, "@clone_fail_")
+		_self.flS = _self.tp.getS(_self.tp, 5)
+		_self.flE = _self.tp.getE(_self.tp, 5)
+		_self.nct = 0
+		let at = mut prog.n2
+		? _self.cloneLeaves(_self, prog, a, z, roots, roote)
+		? _self.tempDecls(_self, prog, at)
+		_self.tp.set(_self.tp, 2, dts, dte)
+		? _self.tp.emit(_self.tp, prog, "PUSH $ret_dest %2")
+		? _self.pushSequence(_self, prog, a, z, roots, roote)
+		let fs = mut _self.flS
+		let fe = mut _self.flE
+		_self.tp.set(_self.tp, 7, a, z)
+		_self.tp.set(_self.tp, 5, fs, fe)
+		? _self.tp.emit(_self.tp, prog, "ASSIGN mut_%7 indeterminate_%7 mut_%7")
+		? _self.tp.emit(_self.tp, prog, "PUSH 1 imut_u64")
+		? _self.tp.emit(_self.tp, prog, "RET imut_u64")
+		? _self.tp.emit(_self.tp, prog, "%5:")
+		let cnt = mut _self.nct
+		for j in 0..cnt{
+			let x = mut 0
+			let y = mut 0
+			match j in _self.cnS{ x = _self.cnS[j] }
+			match j in _self.cnE{ y = _self.cnE[j] }
+			_self.tp.set(_self.tp, 0, x, y)
+			? _self.tp.emit(_self.tp, prog, "GT_DESTRUCT %0")
+		}
+		? _self.tp.emit(_self.tp, prog, "PUSH 0 imut_u64")
+		? _self.tp.emit(_self.tp, prog, "RET imut_u64")
+		? _self.tp.emit(_self.tp, prog, "FUNC_END")
+	}
+
+	// ---- driver ----
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let ns = mut StructTab.countStructs(prog)
+		let st = mut ? new ClonePass(ns)
+		? st.tab.load(st.tab, prog)
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let inFunc = mut false
+		for k in 0..n{
+			let handled = mut false
+			if inFunc == false &&then prog.opEq(prog, k, "FUNC_START"){
+				inFunc = true
+			}
+			if inFunc{
+				let c = mut prog.count(prog, k)
+				if prog.opEq(prog, k, "CLONE_FILL") &&then c == 4{
+					let as_ = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let ae = mut Ln.tokEnd(prog.buf, as_, prog.lineEnd(prog, k))
+					let ts = mut wrap:<u64>(prog.tokPos(prog, k, 2))
+					let te = mut Ln.tokEnd(prog.buf, ts, prog.lineEnd(prog, k))
+					let fs = mut wrap:<u64>(prog.tokPos(prog, k, 3))
+					let fe = mut Ln.tokEnd(prog.buf, fs, prog.lineEnd(prog, k))
+					? st.fillLoop(st, prog, as_, ae, ts, te, fs, fe)
+					handled = true
+				} else if prog.opEq(prog, k, "CLONE") &&then c == 3{
+					let cs = mut wrap:<u64>(prog.tokPos(prog, k, 1))
+					let ce = mut Ln.tokEnd(prog.buf, cs, prog.lineEnd(prog, k))
+					let t = mut ? Hob.parse(prog, cs, ce)
+					let ob = mut ? st.tab.isOwnsBearing(st.tab, prog, t.baS, t.baE)
+					if ob{
+						handled = ? st.cloneInstr(st, prog, cs, ce)
+					}
+				}
+			}
+			if handled == false{
+				? prog.outLine(prog, k)
+			}
+			if inFunc &&then prog.opEq(prog, k, "FUNC_END"){
+				inFunc = false
+			}
+		}
+		for outer in 0..100000000{
+			if st.needP.isEmpty(st.needP) &&then st.needV.isEmpty(st.needV){
+				break
+			}
+			for p1 in 0..100000000{
+				if st.needP.isEmpty(st.needP){
+					break
+				}
+				st.needP.pop(st.needP)
+				let a = mut st.needP.ps
+				let z = mut st.needP.pe
+				if st.genP.has(st.genP, prog, a, z) == false{
+					? st.genP.put(st.genP, prog, a, z, 1, 0)
+					? st.pointerRoutine(st, prog, a, z)
+				}
+			}
+			for p2 in 0..100000000{
+				if st.needV.isEmpty(st.needV){
+					break
+				}
+				st.needV.pop(st.needV)
+				let a = mut st.needV.ps
+				let z = mut st.needV.pe
+				if st.genV.has(st.genV, prog, a, z) == false{
+					? st.genV.put(st.genV, prog, a, z, 1, 0)
+					? st.valueRoutine(st, prog, a, z)
+				}
+			}
+		}
+		prog.outCommit(prog)
+	}
+}

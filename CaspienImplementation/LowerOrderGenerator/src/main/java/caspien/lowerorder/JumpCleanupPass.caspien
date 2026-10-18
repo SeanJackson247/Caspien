@@ -1,0 +1,144 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Port of JumpCleanupPass: dead jump after a jump, jump to the next label, `R_BRC C ..@L1 ; JMP @L2 ; @L1:` -> inverse `R_BRC ..@L2`. Up to 8 rounds, each rewriting the lines in place behind the read position. */
+@pub
+struct JumpCleanupPass{@pub{
+}}
+
+impl constructor for JumpCleanupPass() self{
+	return JumpCleanupPass{}
+}
+
+@pub
+impl JumpCleanupPass{
+	static func isJmp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "JMP") &&then prog.count(prog, i) == 2 &&then prog.tokStartsCh(prog, i, 1, '@'){
+			return true
+		}
+		return false
+	}
+
+	static func isBrc(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_BRC") &&then prog.count(prog, i) == 6 &&then prog.tokStartsCh(prog, i, 5, '@'){
+			return true
+		}
+		return false
+	}
+
+	/** `@label:` alone on the line. */
+	static func isLabel(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) != 1 || prog.tokStartsCh(prog, i, 0, '@') == false{
+			return false
+		}
+		let e = mut prog.lineEnd(prog, i)
+		return prog.buf.charAt(prog.buf, e - 1) == ':'
+	}
+
+	/** Line `idx` (in the output so far) follows a bare `CMP`. */
+	static func followsCmp(prog: ref some imut Prog, idx: mut u64) mut bool{
+		if idx == 0{
+			return false
+		}
+		let p = mut (idx - 1)
+		if prog.count(prog, p) == 1 &&then prog.opEq(prog, p, "CMP"){
+			return true
+		}
+		return false
+	}
+
+	/** The output so far has lines [0, w); line `w - 1` is the previous output line. */
+	@pub
+	@throws
+	static func step(prog: ref some mut Prog) mut u64{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let w = mut 0
+		let i = mut 0
+		for st in 0..n{
+			if i >= n{
+				break
+			}
+			let skip = mut false
+			// 1. a jump / branch right after an unconditional jump is dead
+			if w > 0{
+				let last = mut (w - 1)
+				if JumpCleanupPass.isJmp(prog, last) &&then JumpCleanupPass.followsCmp(prog, last) == false{
+					if JumpCleanupPass.isJmp(prog, i) || JumpCleanupPass.isBrc(prog, i){
+						skip = true
+					}
+				}
+			}
+			// 2. a jump to the label that follows
+			if skip == false &&then JumpCleanupPass.isJmp(prog, i) &&then JumpCleanupPass.followsCmp(prog, w) == false{
+				let j = mut (i + 1)
+				let found = mut false
+				for q in 0..n{
+					if j >= n{
+						break
+					}
+					if JumpCleanupPass.isLabel(prog, j) == false{
+						break
+					}
+					if prog.tokIsOtherPlus(prog, j, 0, i, 1, ':'){
+						found = true
+						break
+					}
+					j += 1
+				}
+				if found{
+					skip = true
+				}
+			}
+			if skip{
+				i += 1
+				continue
+			}
+			// 3. conditional jump over an unconditional one
+			if i + 2 < n &&then JumpCleanupPass.isBrc(prog, i){
+				let j1 = mut (i + 1)
+				let j2 = mut (i + 2)
+				if JumpCleanupPass.isJmp(prog, j1) &&then JumpCleanupPass.isLabel(prog, j2) &&then prog.tokIsOtherPlus(prog, j2, 0, i, 5, ':') &&then prog.tokEq(prog, j1, 1, i, 5) == false{
+					let p = mut prog.tokPos(prog, i, 1)
+					let q = mut wrap:<u64>(p)
+					let opp = mut 0
+					if prog.tokIsAt(prog, q, i, "EQ"){ opp = 1 } else if prog.tokIsAt(prog, q, i, "NEQ"){ opp = 2 } else if prog.tokIsAt(prog, q, i, "LT"){ opp = 3 } else if prog.tokIsAt(prog, q, i, "GT_EQ"){ opp = 4 } else if prog.tokIsAt(prog, q, i, "LT_EQ"){ opp = 5 } else if prog.tokIsAt(prog, q, i, "GT"){ opp = 6 } else if prog.tokIsAt(prog, q, i, "SLT"){ opp = 7 } else if prog.tokIsAt(prog, q, i, "SGT_EQ"){ opp = 8 } else if prog.tokIsAt(prog, q, i, "SLT_EQ"){ opp = 9 } else if prog.tokIsAt(prog, q, i, "SGT"){ opp = 10 }
+					if opp != 0{
+						prog.begin(prog)
+						? prog.addTok(prog, i, 0)
+						if opp == 1{ ? prog.addLit(prog, "NEQ") } else if opp == 2{ ? prog.addLit(prog, "EQ") } else if opp == 3{ ? prog.addLit(prog, "GT_EQ") } else if opp == 4{ ? prog.addLit(prog, "LT") } else if opp == 5{ ? prog.addLit(prog, "GT") } else if opp == 6{ ? prog.addLit(prog, "LT_EQ") } else if opp == 7{ ? prog.addLit(prog, "SGT_EQ") } else if opp == 8{ ? prog.addLit(prog, "SLT") } else if opp == 9{ ? prog.addLit(prog, "SGT") }
+						else{ ? prog.addLit(prog, "SLT_EQ") }
+						? prog.addTok(prog, i, 2)
+						? prog.addTok(prog, i, 3)
+						? prog.addTok(prog, i, 4)
+						? prog.addTok(prog, j1, 1)
+						prog.setBuilt(prog, w)
+						w += 1
+						i += 2
+						continue
+					}
+				}
+			}
+			if w != i{
+				prog.copyLine(prog, i, w)
+			}
+			w += 1
+			i += 1
+		}
+		prog.truncate(prog, w)
+		return w
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		for round in 0..8{
+			let before = mut prog.size(prog)
+			let after = mut ? JumpCleanupPass.step(prog)
+			if after == before{
+				break
+			}
+		}
+	}
+}

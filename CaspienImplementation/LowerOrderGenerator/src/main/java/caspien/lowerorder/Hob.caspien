@@ -1,0 +1,240 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+
+/**
+ * Shared text helpers of the higher-order passes (steps 1-5): ranges of the program buffer as "strings" (no copies), the canonical type parser (CanonicalType.parse) and
+ * a name index over declaration lines (struct and enum tables).
+ */
+@pub
+struct Hob{@pub{
+}}
+
+impl constructor for Hob() self{
+	return Hob{}
+}
+
+/** CanonicalType.parse of the range [baS-ish..): storage keyword (stS == stE when none), the `some` tag, mutability (muS == muE when none), `isAtom`, base type. */
+@pub
+struct CType{@pub{
+	stS: mut u64
+	stE: mut u64
+	isSome: mut bool
+	muS: mut u64
+	muE: mut u64
+	isAtom: mut bool
+	baS: mut u64
+	baE: mut u64
+}}
+
+impl constructor for CType() self{
+	return CType{stS= 0, stE= 0, isSome= false, muS= 0, muE= 0, isAtom= false, baS= 0, baE= 0}
+}
+
+@pub
+impl Hob{
+	/** The range [a, z) is exactly the literal. */
+	@pub
+	static func eqLit(prog: ref some imut Prog, a: mut u64, z: mut u64, lit: static imut string) mut bool{
+		return Ln.litAtPos(prog.buf, a, z, lit, true)
+	}
+
+	/** The range [a, z) starts with the literal. */
+	@pub
+	static func startsLit(prog: ref some imut Prog, a: mut u64, z: mut u64, lit: static imut string) mut bool{
+		return Ln.litAtPos(prog.buf, a, z, lit, false)
+	}
+
+	@pub
+	static func eq(prog: ref some imut Prog, a: mut u64, ae: mut u64, b: mut u64, be: mut u64) mut bool{
+		if ae - a != be - b{
+			return false
+		}
+		let w = mut (ae - a)
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, a + d) != prog.buf.charAt(prog.buf, b + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Position of the first `c` in [a, z), or -1. */
+	@pub
+	static func indexOf(prog: ref some imut Prog, a: mut u64, z: mut u64, c: mut char) mut s64{
+		for q in a..z{
+			if prog.buf.charAt(prog.buf, q) == c{
+				return wrap:<s64>(q)
+			}
+		}
+		return -1
+	}
+
+	/** Position of the last `c` in [a, z), or -1. */
+	@pub
+	static func lastIndexOf(prog: ref some imut Prog, a: mut u64, z: mut u64, c: mut char) mut s64{
+		let w = mut (z - a)
+		for d in 0..w{
+			let q = mut (z - 1 - d)
+			if prog.buf.charAt(prog.buf, q) == c{
+				return wrap:<s64>(q)
+			}
+		}
+		return -1
+	}
+
+	/** [a, z) is a non-empty run of decimal digits. */
+	@pub
+	static func isDigits(prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z <= a{
+			return false
+		}
+		for q in a..z{
+			if String.isDigit(prog.buf.charAt(prog.buf, q)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Decimal value of a digit run (the caller checked isDigits and the length). */
+	@pub
+	static func digitsValue(prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		let v = mut 0
+		for q in a..z{
+			v = v * 10 + (String.charCode(prog.buf.charAt(prog.buf, q)) - 48)
+		}
+		return v
+	}
+
+	@pub
+	static func isLetter(c: mut char) bool{
+		let v = mut String.charCode(c)
+		if v >= 97 &&then v <= 122{
+			return true
+		}
+		if v >= 65 &&then v <= 90{
+			return true
+		}
+		return false
+	}
+
+	@pub
+	static func isLetterOrDigit(c: mut char) bool{
+		if Hob.isLetter(c){
+			return true
+		}
+		return String.isDigit(c)
+	}
+
+	/** Token range of token k of line i: sets s/e through the returned start (absolute) and the end via tokEnd; start < 0 when absent. */
+	@pub
+	static func tokStart(prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		return prog.tokPos(prog, i, k)
+	}
+
+	@pub
+	static func tokStop(prog: ref some imut Prog, i: mut u64, a: mut u64) mut u64{
+		return Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+	}
+
+	/** CanonicalType.parse on the range [s, e). */
+	@pub
+	@throws
+	static func parse(prog: ref some imut Prog, s: mut u64, e: mut u64) owns some mut CType{
+		?catch(e0){ throw e0 }
+		let t = mut ? new CType()
+		let rs = mut s
+		t.stS = s
+		t.stE = s
+		let u1 = mut Hob.indexOf(prog, rs, e, '_')
+		if u1 > 0 {
+			let up = mut wrap:<u64>(u1)
+			let hasStorage = mut false
+			if up - rs == 4{
+				if Hob.eqLit(prog, rs, up, "owns") || Hob.eqLit(prog, rs, up, "auto"){
+					hasStorage = true
+				}
+			}
+			if up - rs == 3{
+				if Hob.eqLit(prog, rs, up, "ref") || Hob.eqLit(prog, rs, up, "raw"){
+					hasStorage = true
+				}
+			}
+			if up - rs == 6{
+				if Hob.eqLit(prog, rs, up, "static"){
+					hasStorage = true
+				}
+			}
+			if hasStorage{
+				t.stS = rs
+				t.stE = up
+				rs = up + 1
+			}
+		}
+		let u2 = mut Hob.indexOf(prog, rs, e, '_')
+		if u2 > 0 {
+			let up = mut wrap:<u64>(u2)
+			if Hob.eqLit(prog, rs, up, "some"){
+				t.isSome = true
+				rs = up + 1
+			}
+		}
+		t.muS = rs
+		t.muE = rs
+		t.baS = rs
+		t.baE = e
+		let u3 = mut Hob.indexOf(prog, rs, e, '_')
+		if u3 > 0 {
+			let up = mut wrap:<u64>(u3)
+			let isMut = mut false
+			if Hob.eqLit(prog, rs, up, "mut") || Hob.eqLit(prog, rs, up, "imut") || Hob.eqLit(prog, rs, up, "indeterminate"){
+				isMut = true
+			}
+			if isMut{
+				t.muS = rs
+				t.muE = up
+				t.baS = up + 1
+			}
+		}
+		if Hob.startsLit(prog, t.baS, t.baE, "atomic_"){
+			t.isAtom = true
+			t.baS = t.baS + 7
+		}
+		return t
+	}
+
+	@pub
+	static func hasStorage(t: ref some imut CType) mut bool{
+		return t.stE > t.stS
+	}
+
+	@pub
+	static func hasMut(t: ref some imut CType) mut bool{
+		return t.muE > t.muS
+	}
+
+	@pub
+	static func storageIs(prog: ref some imut Prog, t: ref some imut CType, lit: static imut string) mut bool{
+		return Hob.eqLit(prog, t.stS, t.stE, lit)
+	}
+
+	@pub
+	static func baseIs(prog: ref some imut Prog, t: ref some imut CType, lit: static imut string) mut bool{
+		return Hob.eqLit(prog, t.baS, t.baE, lit)
+	}
+
+	@pub
+	static func baseStarts(prog: ref some imut Prog, t: ref some imut CType, lit: static imut string) mut bool{
+		return Hob.startsLit(prog, t.baS, t.baE, lit)
+	}
+
+	/** baseType is "range" or starts with "range(". */
+	@pub
+	static func isRangeBase(prog: ref some imut Prog, t: ref some imut CType) mut bool{
+		if Hob.eqLit(prog, t.baS, t.baE, "range"){
+			return true
+		}
+		return Hob.startsLit(prog, t.baS, t.baE, "range(")
+	}
+}

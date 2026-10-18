@@ -1,0 +1,168 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Port of BranchFusionPass: `R_BIN C 8 %tD a b ; R_BRF %tD @L` -> `R_BRC C 8 a b @L` (and the `&&` of two compares, and the float compare form). Rewrites in place, writing at or behind the read position. */
+@pub
+struct BranchFusionPass{@pub{
+}}
+
+impl constructor for BranchFusionPass() self{
+	return BranchFusionPass{}
+}
+
+@pub
+impl BranchFusionPass{
+	/** Token `k` of line `i` is one of the ten compare names. */
+	static func isCmpName(prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let q = mut wrap:<u64>(p)
+		if prog.tokIsAt(prog, q, i, "EQ"){ return true }
+		if prog.tokIsAt(prog, q, i, "NEQ"){ return true }
+		if prog.tokIsAt(prog, q, i, "LT"){ return true }
+		if prog.tokIsAt(prog, q, i, "LT_EQ"){ return true }
+		if prog.tokIsAt(prog, q, i, "GT"){ return true }
+		if prog.tokIsAt(prog, q, i, "GT_EQ"){ return true }
+		if prog.tokIsAt(prog, q, i, "SLT"){ return true }
+		if prog.tokIsAt(prog, q, i, "SLT_EQ"){ return true }
+		if prog.tokIsAt(prog, q, i, "SGT"){ return true }
+		if prog.tokIsAt(prog, q, i, "SGT_EQ"){ return true }
+		return false
+	}
+
+	static func isCmp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_BIN") == false || prog.count(prog, i) != 6{
+			return false
+		}
+		if BranchFusionPass.isCmpName(prog, i, 1) == false || prog.startsWith(prog, i, 3, "%t") == false{
+			return false
+		}
+		if prog.eqLit(prog, i, 2, "8"){
+			return true
+		}
+		if prog.eqLit(prog, i, 2, "1") || prog.eqLit(prog, i, 2, "2") || prog.eqLit(prog, i, 2, "4"){
+			return prog.tokStartsCh(prog, i, 4, '$') == false && prog.tokStartsCh(prog, i, 5, '$') == false
+		}
+		return false
+	}
+
+	static func isFcmp(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_FCMP") == false || prog.count(prog, i) != 6{
+			return false
+		}
+		if BranchFusionPass.isCmpName(prog, i, 1) == false{
+			return false
+		}
+		if prog.eqLit(prog, i, 2, "4") == false && prog.eqLit(prog, i, 2, "8") == false{
+			return false
+		}
+		return prog.startsWith(prog, i, 3, "%t")
+	}
+
+	static func isAnd(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_BIN") == false || prog.count(prog, i) != 6{
+			return false
+		}
+		if prog.eqLit(prog, i, 1, "AND") &&then prog.eqLit(prog, i, 2, "1") &&then prog.startsWith(prog, i, 3, "%t") &&then prog.startsWith(prog, i, 4, "%t") &&then prog.startsWith(prog, i, 5, "%t"){
+			return true
+		}
+		return false
+	}
+
+	static func isBrf(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.opEq(prog, i, "R_BRF") &&then prog.count(prog, i) == 3 &&then prog.startsWith(prog, i, 1, "%t"){
+			return true
+		}
+		return false
+	}
+
+	static func notBothImm(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.startsWith(prog, i, 4, "#") &&then prog.startsWith(prog, i, 5, "#"){
+			return false
+		}
+		return true
+	}
+
+	/** Builds `R_BRC <cmp 1> <cmp 2 or F+size> <cmp 4> <cmp 5> <brf 2>` and stores it as line `to`. */
+	@throws
+	static func brc(prog: ref some mut Prog, cmp: mut u64, brf: mut u64, to: mut u64, fl: mut bool) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addLit(prog, "R_BRC")
+		? prog.addTok(prog, cmp, 1)
+		if fl{
+			if prog.eqLit(prog, cmp, 2, "4"){
+				? prog.addLit(prog, "F4")
+			} else{
+				? prog.addLit(prog, "F8")
+			}
+		} else{
+			? prog.addTok(prog, cmp, 2)
+		}
+		? prog.addTok(prog, cmp, 4)
+		? prog.addTok(prog, cmp, 5)
+		? prog.addTok(prog, brf, 2)
+		prog.setBuilt(prog, to)
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let i = mut 0
+		let w = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			let done = mut false
+			// shape 2: two compares joined by AND, then the branch
+			if i + 3 < n &&then BranchFusionPass.isCmp(prog, i){
+				let i1 = mut (i + 1)
+				let i2 = mut (i + 2)
+				let i3 = mut (i + 3)
+				if BranchFusionPass.isCmp(prog, i1) &&then BranchFusionPass.isAnd(prog, i2) &&then BranchFusionPass.isBrf(prog, i3){
+					let same = mut prog.tokEq(prog, i, 3, i1, 3)
+					let ops = mut false
+					if prog.tokEq(prog, i2, 4, i, 3) &&then prog.tokEq(prog, i2, 5, i1, 3){
+						ops = true
+					} else if prog.tokEq(prog, i2, 4, i1, 3) &&then prog.tokEq(prog, i2, 5, i, 3){
+						ops = true
+					}
+					if same == false &&then ops &&then prog.tokEq(prog, i3, 1, i2, 3) &&then prog.tokEq(prog, i1, 4, i, 3) == false &&then prog.tokEq(prog, i1, 5, i, 3) == false &&then prog.tokEq(prog, i, 4, i1, 3) == false &&then prog.tokEq(prog, i, 5, i1, 3) == false &&then BranchFusionPass.notBothImm(prog, i) &&then BranchFusionPass.notBothImm(prog, i1){
+						? BranchFusionPass.brc(prog, i, i3, w, false)
+						? BranchFusionPass.brc(prog, i1, i3, w + 1, false)
+						w += 2
+						i += 4
+						done = true
+					}
+				}
+			}
+			if done == false &&then i + 1 < n{
+				let j = mut (i + 1)
+				if BranchFusionPass.isFcmp(prog, i) &&then BranchFusionPass.isBrf(prog, j) &&then prog.tokEq(prog, j, 1, i, 3) &&then BranchFusionPass.notBothImm(prog, i){
+					? BranchFusionPass.brc(prog, i, j, w, true)
+					w += 1
+					i += 2
+					done = true
+				} else if BranchFusionPass.isCmp(prog, i) &&then BranchFusionPass.isBrf(prog, j) &&then prog.tokEq(prog, j, 1, i, 3) &&then BranchFusionPass.notBothImm(prog, i){
+					? BranchFusionPass.brc(prog, i, j, w, false)
+					w += 1
+					i += 2
+					done = true
+				}
+			}
+			if done == false{
+				if w != i{
+					prog.copyLine(prog, i, w)
+				}
+				w += 1
+				i += 1
+			}
+		}
+		prog.truncate(prog, w)
+	}
+}

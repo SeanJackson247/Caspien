@@ -1,0 +1,91 @@
+import "stdlib/string.caspien"
+
+/** Growable array of u64 with a fill count (work stacks and per-function tables of the lowering passes). */
+@pub
+struct Vec{@pub{
+	a: owns some mut dynarray(mut u64)
+	n: mut u64
+}}
+
+@throws
+impl constructor for Vec() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 16, 0)
+	return Vec{a= a, n= 0}
+}
+
+@pub
+impl Vec{
+	@pub
+	@throws
+	static func make() owns some mut Vec{
+		?catch(e){ throw e }
+		let v = mut ? new Vec()
+		return v
+	}
+
+	@pub
+	@throws
+	func push(_self: ref some mut self, v: mut u64) void{
+		?catch(e){ throw e }
+		let k = mut _self.n
+		if k >= len(_self.a){
+			let nc = mut (k * 2 + 16)
+			_self.a = ? resize(_self.a, nc, 0)
+		}
+		match k into _self.a{ _self.a[k] = v }
+		_self.n = k + 1
+	}
+
+	@pub
+	func get(_self: ref some imut self, i: mut u64) mut u64{
+		match i in _self.a{
+			return _self.a[i]
+		}
+		return 0
+	}
+
+	@pub
+	func set(_self: ref some mut self, i: mut u64, v: mut u64) void{
+		match i into _self.a{ _self.a[i] = v }
+	}
+
+	/** Removes and returns the last entry (0 when empty). */
+	@pub
+	func pop(_self: ref some mut self) mut u64{
+		if _self.n == 0{
+			return 0
+		}
+		let k = mut (_self.n - 1)
+		_self.n = k
+		let v = mut 0
+		match k in _self.a{ v = _self.a[k] }
+		return v
+	}
+
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.n
+	}
+
+	@pub
+	func clear(_self: ref some mut self) void{
+		_self.n = 0
+	}
+
+	/** Size `m`, all entries zero. */
+	@pub
+	@throws
+	func zero(_self: ref some mut self, m: mut u64) void{
+		?catch(e){ throw e }
+		if m > len(_self.a){
+			let nc = mut (m + 16)
+			_self.a = ? resize(_self.a, nc, 0)
+		}
+		for q in 0..m{
+			match q into _self.a{ _self.a[q] = 0 }
+		}
+		_self.n = m
+	}
+}

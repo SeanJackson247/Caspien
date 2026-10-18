@@ -1,0 +1,922 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "LabelIndex.caspien"
+import "HashOrder.caspien"
+import "RangeEndHintPass.caspien"
+
+/**
+ * Port of LoopHoistPass.run (hoist-array-bases): a frame slot that a natural single-entry loop only reads gets a hidden copy slot filled before the loop header, the reads inside the
+ * loop point at the copy and a REGHINT lets RegVarPromotionPass give it a register. The per-function record (frame size before the copies, copy -> original) is kept in `prog.hr`
+ * for `finish` (after RegVarPromotionPass).
+ */
+@pub
+struct LoopHoistPass{@pub{
+}}
+
+impl constructor for LoopHoistPass() self{
+	return LoopHoistPass{}
+}
+
+/** Per-function scratch arrays. */
+@pub
+struct HoistWork{@pub{
+	lastRef: owns some mut dynarray(mut u64)
+	firstRef: owns some mut dynarray(mut u64)
+	lh: owns some mut dynarray(mut u64)
+	lb: owns some mut dynarray(mut u64)
+	ld: owns some mut dynarray(mut u64)
+	wOff: owns some mut dynarray(mut s64)
+	wW: owns some mut dynarray(mut u64)
+	exp: owns some mut dynarray(mut s64)
+	stS: owns some mut dynarray(mut u64)
+	stE: owns some mut dynarray(mut u64)
+	stC: owns some mut dynarray(mut u64)
+	evH: owns some mut dynarray(mut u64)
+	evX: owns some mut dynarray(mut s64)
+	evXs: owns some mut dynarray(mut u64)
+	evXe: owns some mut dynarray(mut u64)
+	evSs: owns some mut dynarray(mut u64)
+	evSe: owns some mut dynarray(mut u64)
+	evW: owns some mut dynarray(mut u64)
+}}
+
+@throws
+impl constructor for HoistWork() self{
+	?catch(e){ throw e }
+	let a = mut ? dyn:<u64>([])
+	let b = mut ? dyn:<u64>([])
+	let c = mut ? dyn:<u64>([])
+	let d = mut ? dyn:<u64>([])
+	let f = mut ? dyn:<u64>([])
+	let g = mut ? dyn:<s64>([])
+	let h = mut ? dyn:<u64>([])
+	let i = mut ? dyn:<s64>([])
+	let j = mut ? dyn:<u64>([])
+	let k = mut ? dyn:<u64>([])
+	let l = mut ? dyn:<u64>([])
+	let m = mut ? dyn:<u64>([])
+	let n = mut ? dyn:<s64>([])
+	let o = mut ? dyn:<u64>([])
+	let p = mut ? dyn:<u64>([])
+	let q = mut ? dyn:<u64>([])
+	let r = mut ? dyn:<u64>([])
+	let s = mut ? dyn:<u64>([])
+	return HoistWork{lastRef= a, firstRef= b, lh= c, lb= d, ld= f, wOff= g, wW= h, exp= i, stS= j, stE= k, stC= l, evH= m, evX= n, evXs= o, evXe= p, evSs= q, evSe= r, evW= s}
+}
+
+@pub
+impl LoopHoistPass{
+	static func isLabelDef(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) != 1 || prog.tokStartsCh(prog, i, 0, '@') == false{
+			return false
+		}
+		let e = mut prog.lineEnd(prog, i)
+		return prog.buf.charAt(prog.buf, e - 1) == ':'
+	}
+
+	/** Bytes the mention (token k of line i, op category) may store to; 0 = read only. */
+	static func writeWidth(prog: ref some imut Prog, i: mut u64, c: mut u64, k: mut u64) mut u64{
+		let unknown = mut 1099511627776
+		if prog.opEq(prog, i, "R_MOV"){
+			if c == 4 &&then k == 3{
+				return 0
+			}
+			if c == 4 &&then k == 2{
+				return 8
+			}
+			return unknown
+		}
+		if prog.opEq(prog, i, "R_LD"){
+			if c == 4 &&then k == 3{
+				return 0
+			}
+			return unknown
+		}
+		if prog.opEq(prog, i, "R_ST"){
+			if c == 4 &&then k == 2{
+				return LoopHoistPass.widthOf(prog, i, 1)
+			}
+			if k == 3{
+				return 0
+			}
+			return unknown
+		}
+		if prog.opEq(prog, i, "R_RMW"){
+			if k == 3{
+				return 8
+			}
+			if k == 4{
+				return 0
+			}
+			return unknown
+		}
+		if prog.opEq(prog, i, "R_LEA"){
+			if (c == 5 || c == 6) &&then k == 3{
+				return 0
+			}
+			return unknown
+		}
+		if prog.opEq(prog, i, "ADDR"){
+			if c == 3 &&then k == 2{
+				return LoopHoistPass.widthOf(prog, i, 1)
+			}
+			return unknown
+		}
+		if prog.opEq(prog, i, "PUSH") || prog.opEq(prog, i, "R_PUSH") || prog.opEq(prog, i, "R_ARG") || prog.opEq(prog, i, "R_FARG") || prog.opEq(prog, i, "R_RET") || prog.opEq(prog, i, "R_RETF"){
+			return 0
+		}
+		if prog.opEq(prog, i, "R_UN") || prog.opEq(prog, i, "R_BIN") || prog.opEq(prog, i, "R_FBIN") || prog.opEq(prog, i, "R_FCMP") || prog.opEq(prog, i, "R_BRC"){
+			return 0
+		}
+		return unknown
+	}
+
+	static func widthOf(prog: ref some imut Prog, i: mut u64, k: mut u64) mut u64{
+		let v = mut prog.signedTok(prog, i, k, 0)
+		if v == -4611686018427387904 || v <= 0{
+			return 1099511627776
+		}
+		return wrap:<u64>(v)
+	}
+
+	/** The read at i is directly followed by `R_LD 8 %t %t` (length) or `R_LEA %t %t ..` (element address) on the same temp (and i+1 <= bound). */
+	static func startsAccess(prog: ref some imut Prog, i: mut u64, bound: mut u64) mut bool{
+		if i + 1 > bound{
+			return false
+		}
+		let n = mut (i + 1)
+		let c = mut prog.count(prog, n)
+		if c == 4 &&then prog.opEq(prog, n, "R_LD") &&then prog.eqLit(prog, n, 1, "8") &&then prog.tokEq(prog, n, 2, i, 2) &&then prog.tokEq(prog, n, 3, i, 2){
+			return true
+		}
+		if c == 5 || c == 6{
+			if prog.opEq(prog, n, "R_LEA") &&then prog.tokEq(prog, n, 2, i, 2){
+				return true
+			}
+		}
+		return false
+	}
+
+	static func rangeEq(prog: ref some imut Prog, a: mut u64, ae: mut u64, b: mut u64, be: mut u64) mut bool{
+		if ae - a != be - b{
+			return false
+		}
+		let w = mut (ae - a)
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, a + d) != prog.buf.charAt(prog.buf, b + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let changed = mut false
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START"){
+				let end = mut i
+				for q in 0..n{
+					if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+						end += 1
+					} else {
+						break
+					}
+				}
+				let stop = mut (end + 1)
+				if stop > n{
+					stop = n
+				}
+				let did = mut false
+				if stop - i <= 20000{
+					did = ? LoopHoistPass.hoistFunction(prog, i, stop)
+				} else {
+					for q in i..stop{
+						? prog.outLine(prog, q)
+					}
+				}
+				if did{
+					changed = true
+				}
+				i = stop
+			} else {
+				? prog.outLine(prog, i)
+				i += 1
+			}
+		}
+		if changed{
+			prog.outCommit(prog)
+		}
+	}
+
+	/** One function [fs, fe): emits its lines (rewritten or as they are); true when rewritten. */
+	@throws
+	static func hoistFunction(prog: ref some mut Prog, fs: mut u64, fe: mut u64) mut bool{
+		?catch(e){ throw e }
+		let sentinel = mut -4611686018427387904
+		let:<mut s64> zs = mut 0
+		let w = mut ? new HoistWork()
+		let span = mut (fe - fs)
+		// scan
+		let allocIdx = mut -1
+		let:<mut s64> allocSize = mut 0
+		let nexp = mut 0
+		let nlabels = mut 0
+		let bail = mut false
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			if c == 0{
+				continue
+			}
+			if prog.opEq(prog, i, "ASM_START") || prog.opEq(prog, i, "ASM_END"){
+				bail = true
+				break
+			}
+			if prog.opEq(prog, i, "ALLOC") &&then c == 2 &&then allocIdx < 0{
+				let v = mut prog.signedTok(prog, i, 1, 0)
+				if v == sentinel{
+					bail = true
+					break
+				}
+				allocSize = v
+				allocIdx = wrap:<s64>(i)
+			}
+			if LoopHoistPass.isLabelDef(prog, i){
+				nlabels += 1
+			}
+			if prog.opEq(prog, i, "ADDR_OF") || prog.opEq(prog, i, "R_ARGA"){
+				for k in 1..c{
+					let o = mut RangeEndHintPass.slotOff(prog, i, k)
+					if o != sentinel{
+						w.exp = ? resize(w.exp, nexp + 1, zs)
+						match nexp into w.exp{ w.exp[nexp] = o }
+						nexp += 1
+					}
+				}
+			}
+		}
+		if bail || allocIdx < 0 || allocSize % 8 != 0 || nlabels == 0{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		let labels = mut ? LabelIndex.buildRange(prog, fs, fe)
+		w.lastRef = ? resize(w.lastRef, span + 1, 0)
+		w.firstRef = ? resize(w.firstRef, span + 1, 0)
+		for i in fs..fe{
+			let c = mut prog.count(prog, i)
+			if c == 0 || LoopHoistPass.isLabelDef(prog, i){
+				continue
+			}
+			for k in 1..c{
+				if prog.tokStartsCh(prog, i, k, '@'){
+					let d = mut labels.find(labels, prog, i, k)
+					if d >= 0{
+						let rel = mut (wrap:<u64>(d) - fs)
+						match rel into w.lastRef{ w.lastRef[rel] = i + 1 }
+						let fr = mut 0
+						match rel in w.firstRef{ fr = w.firstRef[rel] }
+						if fr == 0{
+							match rel into w.firstRef{ w.firstRef[rel] = i + 1 }
+						}
+					}
+				}
+			}
+		}
+		// loops
+		let nl = mut 0
+		for h in fs..fe{
+			if LoopHoistPass.isLabelDef(prog, h) == false{
+				continue
+			}
+			let rel = mut (h - fs)
+			let lr = mut 0
+			let fr = mut 0
+			match rel in w.lastRef{ lr = w.lastRef[rel] }
+			match rel in w.firstRef{ fr = w.firstRef[rel] }
+			if lr == 0{
+				continue
+			}
+			let last = mut (lr - 1)
+			if last <= h || fr - 1 < h{
+				continue
+			}
+			if LoopHoistPass.singleEntry(prog, labels, fs, fe, h, last) == false{
+				continue
+			}
+			w.lh = ? resize(w.lh, nl + 1, 0)
+			w.lb = ? resize(w.lb, nl + 1, 0)
+			w.ld = ? resize(w.ld, nl + 1, 0)
+			match nl into w.lh{ w.lh[nl] = h }
+			match nl into w.lb{ w.lb[nl] = last }
+			nl += 1
+		}
+		if nl == 0{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		for a in 0..nl{
+			let ah = mut 0
+			let ab = mut 0
+			match a in w.lh{ ah = w.lh[a] }
+			match a in w.lb{ ab = w.lb[a] }
+			let dep = mut 0
+			for b in 0..nl{
+				let bh = mut 0
+				let bb = mut 0
+				match b in w.lh{ bh = w.lh[b] }
+				match b in w.lb{ bb = w.lb[b] }
+				if a != b &&then bh < ah &&then ab <= bb{
+					dep += 1
+				}
+			}
+			match a into w.ld{ w.ld[a] = dep }
+		}
+		// outermost (longest) first, ties by position: stable insertion sort
+		for z in 1..nl{
+			let zz = mut z
+			for q in 0..nl{
+				if zz == 0{
+					break
+				}
+				let p = mut (zz - 1)
+				let ph = mut 0
+				let pb = mut 0
+				let xh = mut 0
+				let xb = mut 0
+				match p in w.lh{ ph = w.lh[p] }
+				match p in w.lb{ pb = w.lb[p] }
+				match zz in w.lh{ xh = w.lh[zz] }
+				match zz in w.lb{ xb = w.lb[zz] }
+				let pl = mut (pb - ph)
+				let xl = mut (xb - xh)
+				// compare(p, x) > 0: p after x
+				let after = mut false
+				if xl > pl{
+					after = true
+				} else if xl == pl &&then ph > xh{
+					after = true
+				}
+				if after{
+					let pd = mut 0
+					let xd = mut 0
+					match p in w.ld{ pd = w.ld[p] }
+					match zz in w.ld{ xd = w.ld[zz] }
+					match p into w.lh{ w.lh[p] = xh }
+					match p into w.lb{ w.lb[p] = xb }
+					match p into w.ld{ w.ld[p] = xd }
+					match zz into w.lh{ w.lh[zz] = ph }
+					match zz into w.lb{ w.lb[zz] = pb }
+					match zz into w.ld{ w.ld[zz] = pd }
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+		// hoist loop by loop
+		let ho = mut ? new HashOrder()
+		let extra = mut 0
+		let nev = mut 0
+		for li in 0..nl{
+			let lh = mut 0
+			let lb = mut 0
+			let ldp = mut 0
+			match li in w.lh{ lh = w.lh[li] }
+			match li in w.lb{ lb = w.lb[li] }
+			match li in w.ld{ ldp = w.ld[li] }
+			let nw = mut 0
+			let nst = mut 0
+			let lb1 = mut (lb + 1)
+			for i in lh..lb1{
+				let c = mut prog.count(prog, i)
+				if c == 0{
+					continue
+				}
+				for k in 1..c{
+					let so = mut RangeEndHintPass.slotOff(prog, i, k)
+					if so == sentinel{
+						continue
+					}
+					let ww = mut LoopHoistPass.writeWidth(prog, i, c, k)
+					if ww != 0{
+						w.wOff = ? resize(w.wOff, nw + 1, zs)
+						w.wW = ? resize(w.wW, nw + 1, 0)
+						match nw into w.wOff{ w.wOff[nw] = so }
+						match nw into w.wW{ w.wW[nw] = ww }
+						nw += 1
+					}
+					if c == 4 &&then k == 3 &&then prog.opEq(prog, i, "R_MOV") &&then prog.eqLit(prog, i, 1, "8") &&then prog.startsWith(prog, i, 2, "%t") &&then LoopHoistPass.startsAccess(prog, i, lb){
+						let ts = mut wrap:<u64>(prog.tokPos(prog, i, 3))
+						let te = mut Ln.tokEnd(prog.buf, ts, prog.lineEnd(prog, i))
+						let found = mut -1
+						for z in 0..nst{
+							let zs0 = mut 0
+							let ze0 = mut 0
+							match z in w.stS{ zs0 = w.stS[z] }
+							match z in w.stE{ ze0 = w.stE[z] }
+							if LoopHoistPass.rangeEq(prog, zs0, ze0, ts, te){
+								found = wrap:<s64>(z)
+							}
+						}
+						if found < 0{
+							w.stS = ? resize(w.stS, nst + 1, 0)
+							w.stE = ? resize(w.stE, nst + 1, 0)
+							w.stC = ? resize(w.stC, nst + 1, 0)
+							match nst into w.stS{ w.stS[nst] = ts }
+							match nst into w.stE{ w.stE[nst] = te }
+							match nst into w.stC{ w.stC[nst] = 1 }
+							nst += 1
+						} else {
+							let fz = mut wrap:<u64>(found)
+							match fz into w.stC{ w.stC[fz] = w.stC[fz] + 1 }
+						}
+					}
+				}
+			}
+			if nst == 0{
+				continue
+			}
+			// iteration order of the HashMap: keys put in reverse first-seen order
+			ho.keys = ? resize(ho.keys, nst + 1, 0)
+			for z in 0..nst{
+				let src = mut (nst - 1 - z)
+				let ss = mut 0
+				let se = mut 0
+				match src in w.stS{ ss = w.stS[src] }
+				match src in w.stE{ se = w.stE[src] }
+				match z into ho.keys{ ho.keys[z] = HashOrder.stringHash(prog.buf, ss, se) }
+			}
+			? HashOrder.compute(ho, nst)
+			for z in 0..nst{
+				let pidx = mut 0
+				match z in ho.order{ pidx = ho.order[z] }
+				let ki = mut (nst - 1 - pidx)
+				let ss = mut 0
+				let se = mut 0
+				let cnt = mut 0
+				match ki in w.stS{ ss = w.stS[ki] }
+				match ki in w.stE{ se = w.stE[ki] }
+				match ki in w.stC{ cnt = w.stC[ki] }
+				let so = mut Ln.signedTok(prog.buf, ss, se, 1)
+				if so == sentinel{
+					continue
+				}
+				if so < 0 - allocSize || cnt < 2{
+					continue
+				}
+				let skip = mut false
+				for q in 0..nw{
+					let wo = mut zs
+					let wd = mut 0
+					match q in w.wOff{ wo = w.wOff[q] }
+					match q in w.wW{ wd = w.wW[q] }
+					if wo < so + 8 &&then wo + wrap:<s64>(wd) > so{
+						skip = true
+					}
+				}
+				for q in 0..nexp{
+					let eo = mut zs
+					match q in w.exp{ eo = w.exp[q] }
+					if eo <= so &&then so - eo < 4096{
+						skip = true
+					}
+				}
+				if skip{
+					continue
+				}
+				extra += 1
+				let xoff = mut (0 - (allocSize + 8 * wrap:<s64>(extra)))
+				prog.begin(prog)
+				? prog.addLit(prog, "$")
+				? prog.glueS64(prog, xoff)
+				let xs = mut prog.cur
+				let xe = mut prog.used
+				for i in lh..lb1{
+					if prog.count(prog, i) == 4 &&then prog.opEq(prog, i, "R_MOV") &&then prog.eqLit(prog, i, 1, "8") &&then prog.startsWith(prog, i, 2, "%t"){
+						let ts = mut wrap:<u64>(prog.tokPos(prog, i, 3))
+						let te = mut Ln.tokEnd(prog.buf, ts, prog.lineEnd(prog, i))
+						if LoopHoistPass.rangeEq(prog, ss, se, ts, te){
+							prog.begin(prog)
+							? prog.addLit(prog, "R_MOV 8")
+							? prog.addTok(prog, i, 2)
+							? prog.addRange(prog, xs, xe)
+							prog.setBuilt(prog, i)
+						}
+					}
+				}
+				let dd = mut ldp
+				if dd > 3{
+					dd = 3
+				}
+				let wt = mut 1
+				let dd1 = mut (dd + 1)
+				for d in 0..dd1{
+					wt = wt * 8
+				}
+				w.evH = ? resize(w.evH, nev + 1, 0)
+				w.evX = ? resize(w.evX, nev + 1, zs)
+				w.evXs = ? resize(w.evXs, nev + 1, 0)
+				w.evXe = ? resize(w.evXe, nev + 1, 0)
+				w.evSs = ? resize(w.evSs, nev + 1, 0)
+				w.evSe = ? resize(w.evSe, nev + 1, 0)
+				w.evW = ? resize(w.evW, nev + 1, 0)
+				match nev into w.evH{ w.evH[nev] = lh }
+				match nev into w.evX{ w.evX[nev] = xoff }
+				match nev into w.evXs{ w.evXs[nev] = xs }
+				match nev into w.evXe{ w.evXe[nev] = xe }
+				match nev into w.evSs{ w.evSs[nev] = ss }
+				match nev into w.evSe{ w.evSe[nev] = se }
+				match nev into w.evW{ w.evW[nev] = wt * cnt }
+				nev += 1
+			}
+		}
+		if extra == 0{
+			for q in fs..fe{
+				? prog.outLine(prog, q)
+			}
+			return false
+		}
+		// record for finish: function name, original frame size, copies
+		let nameS = mut wrap:<u64>(prog.tokPos(prog, fs, 1))
+		let nameE = mut Ln.tokEnd(prog.buf, nameS, prog.lineEnd(prog, fs))
+		let base = mut (prog.nhr * 7)
+		prog.hr = ? resize(prog.hr, base + nev * 7 + 7, 0)
+		for z in 0..nev{
+			let xs = mut 0
+			let xe = mut 0
+			let ss = mut 0
+			let se = mut 0
+			match z in w.evXs{ xs = w.evXs[z] }
+			match z in w.evXe{ xe = w.evXe[z] }
+			match z in w.evSs{ ss = w.evSs[z] }
+			match z in w.evSe{ se = w.evSe[z] }
+			let b = mut (base + z * 7)
+			let b1 = mut (b + 1)
+			let b2 = mut (b + 2)
+			let b3 = mut (b + 3)
+			let b4 = mut (b + 4)
+			let b5 = mut (b + 5)
+			let b6 = mut (b + 6)
+			match b into prog.hr{ prog.hr[b] = nameS }
+			match b1 into prog.hr{ prog.hr[b1] = nameE }
+			match b2 into prog.hr{ prog.hr[b2] = wrap:<u64>(allocSize) }
+			match b3 into prog.hr{ prog.hr[b3] = xs }
+			match b4 into prog.hr{ prog.hr[b4] = xe }
+			match b5 into prog.hr{ prog.hr[b5] = ss }
+			match b6 into prog.hr{ prog.hr[b6] = se }
+		}
+		prog.nhr = prog.nhr + nev
+		let newAlloc = mut (allocSize + 8 * wrap:<s64>(extra))
+		newAlloc = (newAlloc + 15) / 16 * 16
+		for i in fs..fe{
+			for z in 0..nev{
+				let eh = mut 0
+				match z in w.evH{ eh = w.evH[z] }
+				if eh == i{
+					let xs = mut 0
+					let xe = mut 0
+					let ss = mut 0
+					let se = mut 0
+					match z in w.evXs{ xs = w.evXs[z] }
+					match z in w.evXe{ xe = w.evXe[z] }
+					match z in w.evSs{ ss = w.evSs[z] }
+					match z in w.evSe{ se = w.evSe[z] }
+					prog.begin(prog)
+					? prog.addLit(prog, "R_MOV 8")
+					? prog.addRange(prog, xs, xe)
+					? prog.addRange(prog, ss, se)
+					? prog.outBuilt(prog)
+				}
+			}
+			if wrap:<s64>(i) == allocIdx{
+				prog.begin(prog)
+				? prog.addLit(prog, "ALLOC")
+				? prog.addS64(prog, newAlloc)
+				? prog.outBuilt(prog)
+				for z in 0..nev{
+					let xs = mut 0
+					let xe = mut 0
+					let wt = mut 0
+					match z in w.evXs{ xs = w.evXs[z] }
+					match z in w.evXe{ xe = w.evXe[z] }
+					match z in w.evW{ wt = w.evW[z] }
+					prog.begin(prog)
+					? prog.addLit(prog, "REGHINT")
+					? prog.addRange(prog, xs + 1, xe)
+					? prog.addLit(prog, "8")
+					? prog.addS64(prog, wrap:<s64>(wt))
+					? prog.outBuilt(prog)
+				}
+			} else {
+				? prog.outLine(prog, i)
+			}
+		}
+		return true
+	}
+
+	/** True when no jump from outside [h, b] lands on a label inside it. */
+	static func singleEntry(prog: ref some imut Prog, labels: ref some imut LabelIndex, fs: mut u64, fe: mut u64, h: mut u64, b: mut u64) mut bool{
+		let any = mut false
+		let h1 = mut (h + 1)
+		let b1 = mut (b + 1)
+		for i in h1..b1{
+			if LoopHoistPass.isLabelDef(prog, i){
+				any = true
+				break
+			}
+		}
+		if any == false{
+			return true
+		}
+		for i in fs..fe{
+			if i >= h &&then i <= b{
+				continue
+			}
+			let c = mut prog.count(prog, i)
+			if c == 0 || LoopHoistPass.isLabelDef(prog, i){
+				continue
+			}
+			for k in 1..c{
+				if prog.tokStartsCh(prog, i, k, '@'){
+					let d = mut labels.find(labels, prog, i, k)
+					if d > 0 &&then wrap:<u64>(d) > h &&then wrap:<u64>(d) <= b{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	// ---- finish (step 13) ----
+
+	/** Token k of line i equals the buffer range [s, e). */
+	static func tokIsR(prog: ref some imut Prog, i: mut u64, k: mut u64, s: mut u64, e: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		let z = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		return LoopHoistPass.rangeEq(prog, a, z, s, e)
+	}
+
+	static func hrGet(prog: ref some imut Prog, r: mut u64, f: mut u64) mut u64{
+		let v = mut 0
+		let ix = mut (r * 7 + f)
+		match ix in prog.hr{ v = prog.hr[ix] }
+		return v
+	}
+
+	/** Index (within the group [g0, g0+gn)) of the copy whose copy-slot name is token k of line i, or -1. */
+	static func copyIndex(prog: ref some imut Prog, i: mut u64, k: mut u64, g0: mut u64, gn: mut u64) mut s64{
+		let hi = mut (g0 + gn)
+		for r in g0..hi{
+			if LoopHoistPass.tokIsR(prog, i, k, LoopHoistPass.hrGet(prog, r, 3), LoopHoistPass.hrGet(prog, r, 4)){
+				return wrap:<s64>(r)
+			}
+		}
+		return -1
+	}
+
+	@pub
+	@throws
+	static func finish(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		if prog.nhr == 0{
+			return
+		}
+		let n = mut prog.size(prog)
+		prog.outReset(prog)
+		let cursor = mut 0
+		let ord = mut 0
+		let nf = mut 0
+		prog.fo = ? resize(prog.fo, 1, 0)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				? prog.outLine(prog, i)
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			let stop = mut (end + 1)
+			if stop > n{
+				stop = n
+			}
+			let fordinal = mut ord
+			ord += 1
+			let g0 = mut cursor
+			let gn = mut 0
+			if cursor < prog.nhr &&then prog.count(prog, i) >= 2{
+				let ns = mut LoopHoistPass.hrGet(prog, cursor, 0)
+				let ne = mut LoopHoistPass.hrGet(prog, cursor, 1)
+				if LoopHoistPass.tokIsR(prog, i, 1, ns, ne){
+					let lim_c = mut prog.nhr
+					for r in cursor..lim_c{
+						if LoopHoistPass.hrGet(prog, r, 0) == ns{
+							gn += 1
+						} else {
+							break
+						}
+					}
+					cursor += gn
+				}
+			}
+			if gn == 0{
+				for q in i..stop{
+					? prog.outLine(prog, q)
+				}
+				i = stop
+				continue
+			}
+			prog.fo = ? resize(prog.fo, nf + 1, 0)
+			match nf into prog.fo{ prog.fo[nf] = fordinal }
+			nf += 1
+			let origAlloc = mut LoopHoistPass.hrGet(prog, g0, 2)
+			// which copies are still referenced somewhere other than their own copy line
+			let alive = mut ? dyn:<u64>([])
+			alive = ? resize(alive, gn, 0)
+			for q in i..stop{
+				let c = mut prog.count(prog, q)
+				let isCopyLine = mut false
+				if c == 4 &&then prog.opEq(prog, q, "R_MOV"){
+					let z = mut LoopHoistPass.copyIndex(prog, q, 2, g0, gn)
+					if z >= 0 &&then LoopHoistPass.tokIsR(prog, q, 3, LoopHoistPass.hrGet(prog, wrap:<u64>(z), 5), LoopHoistPass.hrGet(prog, wrap:<u64>(z), 6)){
+						isCopyLine = true
+					}
+				}
+				if isCopyLine{
+					continue
+				}
+				for k in 1..c{
+					let z = mut LoopHoistPass.copyIndex(prog, q, k, g0, gn)
+					if z >= 0{
+						let zi = mut (wrap:<u64>(z) - g0)
+						match zi into alive{ alive[zi] = 1 }
+					}
+				}
+			}
+			for q in i..stop{
+				let c = mut prog.count(prog, q)
+				if c == 4 &&then prog.opEq(prog, q, "R_MOV"){
+					let z = mut LoopHoistPass.copyIndex(prog, q, 2, g0, gn)
+					if z >= 0{
+						let zi = mut (wrap:<u64>(z) - g0)
+						let av = mut 0
+						match zi in alive{ av = alive[zi] }
+						if av == 1 &&then LoopHoistPass.tokIsR(prog, q, 3, LoopHoistPass.hrGet(prog, wrap:<u64>(z), 5), LoopHoistPass.hrGet(prog, wrap:<u64>(z), 6)){
+							continue
+						}
+					}
+				}
+				if c == 2 &&then prog.opEq(prog, q, "ALLOC"){
+					prog.begin(prog)
+					? prog.addLit(prog, "ALLOC")
+					? prog.addS64(prog, wrap:<s64>(origAlloc))
+					? prog.outBuilt(prog)
+					continue
+				}
+				let touch = mut false
+				for k in 1..c{
+					let z = mut LoopHoistPass.copyIndex(prog, q, k, g0, gn)
+					if z >= 0{
+						let zi = mut (wrap:<u64>(z) - g0)
+						let av = mut 0
+						match zi in alive{ av = alive[zi] }
+						if av == 1{
+							touch = true
+						}
+					}
+				}
+				if touch == false{
+					? prog.outLine(prog, q)
+					continue
+				}
+				prog.begin(prog)
+				for k in 0..c{
+					let z = mut -1
+					if k > 0{
+						z = LoopHoistPass.copyIndex(prog, q, k, g0, gn)
+					}
+					let av = mut 0
+					if z >= 0{
+						let zi = mut (wrap:<u64>(z) - g0)
+						match zi in alive{ av = alive[zi] }
+					}
+					if av == 1{
+						? prog.addRange(prog, LoopHoistPass.hrGet(prog, wrap:<u64>(z), 5), LoopHoistPass.hrGet(prog, wrap:<u64>(z), 6))
+					} else {
+						? prog.addTok(prog, q, k)
+					}
+				}
+				? prog.outBuilt(prog)
+			}
+			i = stop
+		}
+		prog.outCommit(prog)
+		// second stage: drop `R_MOV 8 %tA %vK` before the instruction that overwrites %tA
+		let m = mut prog.size(prog)
+		let ri = mut 0
+		let wi = mut 0
+		let o2 = mut 0
+		let fc = mut 0
+		for step in 0..m{
+			if ri >= m{
+				break
+			}
+			if prog.opEq(prog, ri, "FUNC_START") == false{
+				prog.copyLine(prog, ri, wi)
+				ri += 1
+				wi += 1
+				continue
+			}
+			let end = mut ri
+			for q in 0..m{
+				if end < m &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			let stop = mut (end + 1)
+			if stop > m{
+				stop = m
+			}
+			let flagged = mut false
+			if fc < nf{
+				let fo = mut 0
+				match fc in prog.fo{ fo = prog.fo[fc] }
+				if fo == o2{
+					flagged = true
+					fc += 1
+				}
+			}
+			o2 += 1
+			let q = mut ri
+			for st in 0..m{
+				if q >= stop{
+					break
+				}
+				if flagged &&then q + 1 < stop &&then prog.count(prog, q) == 4 &&then prog.opEq(prog, q, "R_MOV") &&then prog.eqLit(prog, q, 1, "8") &&then prog.startsWith(prog, q, 2, "%t") &&then prog.startsWith(prog, q, 3, "%v"){
+					let b = mut (q + 1)
+					if prog.count(prog, b) == 4 &&then prog.opEq(prog, b, "R_LD") &&then prog.tokEq(prog, b, 2, q, 2) &&then prog.tokEq(prog, b, 3, q, 2){
+						prog.begin(prog)
+						? prog.addLit(prog, "R_LD")
+						? prog.addTok(prog, b, 1)
+						? prog.addTok(prog, q, 2)
+						? prog.addTok(prog, q, 3)
+						prog.setBuilt(prog, wi)
+						wi += 1
+						q += 2
+						continue
+					}
+					let cb = mut prog.count(prog, b)
+					if cb == 5 || cb == 6{
+						if prog.opEq(prog, b, "R_LEA") &&then prog.tokEq(prog, b, 1, q, 2) &&then prog.tokEq(prog, b, 2, q, 2) &&then prog.tokEq(prog, b, 3, q, 2) == false{
+							prog.begin(prog)
+							for k in 0..cb{
+								if k == 2{
+									? prog.addTok(prog, q, 3)
+								} else {
+									? prog.addTok(prog, b, k)
+								}
+							}
+							prog.setBuilt(prog, wi)
+							wi += 1
+							q += 2
+							continue
+						}
+					}
+				}
+				prog.copyLine(prog, q, wi)
+				wi += 1
+				q += 1
+			}
+			ri = stop
+		}
+		prog.truncate(prog, wi)
+	}
+}

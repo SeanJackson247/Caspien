@@ -1,0 +1,147 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/** Label name -> line index of its definition `@name:` (the last definition wins, like the Java HashMap put). Open addressing over arrays: no object per label. */
+@pub
+struct LabelIndex{@pub{
+	hashes: owns some mut dynarray(mut u64)
+	vals: owns some mut dynarray(mut u64)
+	mask: mut u64
+}}
+
+@throws
+impl constructor for LabelIndex(cap: mut u64) self{
+	?catch(e){ throw e }
+	let h = mut ? dyn:<u64>([])
+	h = ? resize(h, cap, 0)
+	let v = mut ? dyn:<u64>([])
+	v = ? resize(v, cap, 0)
+	return LabelIndex{hashes= h, vals= v, mask= cap - 1}
+}
+
+@pub
+impl LabelIndex{
+	/** FNV-1a of the `w` characters at `a`. */
+	static func hashRange(prog: ref some imut Prog, a: mut u64, w: mut u64) mut u64{
+		let h = mut 0xcbf29ce484222325
+		for d in 0..w{
+			h = bits_xor(h, String.charCode(prog.buf.charAt(prog.buf, a + d)))
+			h = h * 0x100000001b3
+		}
+		return h
+	}
+
+	/** Index of all label lines of `prog` (a single-token line that starts with '@' and ends with ':'). */
+	@pub
+	@throws
+	static func build(prog: ref some imut Prog) owns some mut LabelIndex{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let ix = mut ? LabelIndex.buildRange(prog, 0, n)
+		return ix
+	}
+
+	/** Index of the label lines in [lo, hi). */
+	@pub
+	@throws
+	static func buildRange(prog: ref some imut Prog, lo: mut u64, hi: mut u64) owns some mut LabelIndex{
+		?catch(e){ throw e }
+		let cap = mut 64
+		for st in 0..40{
+			if cap < (hi - lo) * 2{
+				cap = cap * 2
+			}
+		}
+		let ix = mut ? new LabelIndex(cap)
+		for i in lo..hi{
+			if prog.count(prog, i) == 1 &&then prog.tokStartsCh(prog, i, 0, '@'){
+				let s = mut prog.lineStart(prog, i)
+				let e = mut prog.lineEnd(prog, i)
+				if prog.buf.charAt(prog.buf, e - 1) == ':'{
+					ix.put(ix, prog, s, e - 1 - s, i)
+				}
+			}
+		}
+		return ix
+	}
+
+	/** Text of line `idx`'s first token minus its last char equals the `w` chars at `a`. */
+	func sameAs(_self: ref some imut self, prog: ref some imut Prog, idx: mut u64, a: mut u64, w: mut u64) mut bool{
+		let s = mut prog.lineStart(prog, idx)
+		let e = mut prog.lineEnd(prog, idx)
+		if e - 1 - s != w{
+			return false
+		}
+		for d in 0..w{
+			if prog.buf.charAt(prog.buf, s + d) != prog.buf.charAt(prog.buf, a + d){
+				return false
+			}
+		}
+		return true
+	}
+
+	func put(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, w: mut u64, line: mut u64) void{
+		let h = mut LabelIndex.hashRange(prog, a, w)
+		let pos = mut bits_and(h, _self.mask)
+		let cap = mut (_self.mask + 1)
+		for st in 0..cap{
+			let v = mut 0
+			match pos in _self.vals{
+				v = _self.vals[pos]
+			}
+			if v == 0{
+				match pos into _self.hashes{
+					_self.hashes[pos] = h
+				}
+				match pos into _self.vals{
+					_self.vals[pos] = line + 1
+				}
+				return
+			}
+			let hv = mut 0
+			match pos in _self.hashes{
+				hv = _self.hashes[pos]
+			}
+			if hv == h &&then _self.sameAs(_self, prog, v - 1, a, w){
+				match pos into _self.vals{
+					_self.vals[pos] = line + 1
+				}
+				return
+			}
+			pos = bits_and(pos + 1, _self.mask)
+		}
+	}
+
+	/** Line index of the label whose name is token `k` of line `i`, or -1. */
+	@pub
+	func find(_self: ref some imut self, prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return -1
+		}
+		let a = mut wrap:<u64>(p)
+		let q = mut Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		let w = mut (q - a)
+		let h = mut LabelIndex.hashRange(prog, a, w)
+		let pos = mut bits_and(h, _self.mask)
+		let cap = mut (_self.mask + 1)
+		for st in 0..cap{
+			let v = mut 0
+			match pos in _self.vals{
+				v = _self.vals[pos]
+			}
+			if v == 0{
+				return -1
+			}
+			let hv = mut 0
+			match pos in _self.hashes{
+				hv = _self.hashes[pos]
+			}
+			if hv == h &&then _self.sameAs(_self, prog, v - 1, a, w){
+				return wrap:<s64>(v - 1)
+			}
+			pos = bits_and(pos + 1, _self.mask)
+		}
+		return -1
+	}
+}

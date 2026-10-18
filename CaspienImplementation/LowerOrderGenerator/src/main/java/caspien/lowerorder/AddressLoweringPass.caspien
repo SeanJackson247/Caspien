@@ -1,0 +1,2652 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+import "Ln.caspien"
+import "Hob.caspien"
+import "NameIndex.caspien"
+import "RangeMap.caspien"
+import "Config.caspien"
+import "Vec.caspien"
+import "MembershipPass.caspien"
+
+/**
+ * Port of AddressLoweringPass (step 5): names and types become frame offsets and byte sizes. Types are ranges of the program buffer; sizes, alignments and struct
+ * layouts are read from the STRUCT_START .. STRUCT_END blocks in place (name index + memoised sizes). Per function: frame layout, one combined ALLOC, argument-word
+ * slots, struct/array literal detection, then every line is rewritten into the output table.
+ */
+@pub
+struct AddressLoweringPass{@pub{
+	six: owns some mut NameIndex
+	eix: owns some mut NameIndex
+	szc: owns some mut RangeMap
+	szb: owns some mut RangeMap
+	alc: owns some mut RangeMap
+	ssz: owns some mut RangeMap
+	sal: owns some mut RangeMap
+	nm: owns some mut RangeMap
+	asl: owns some mut RangeMap
+	uad: owns some mut RangeMap
+	avc: owns some mut RangeMap
+	tk: owns some mut Vec
+	lMag: owns some mut Vec
+	lTs: owns some mut Vec
+	lTe: owns some mut Vec
+	litAt: owns some mut Vec
+	arrAt: owns some mut Vec
+	un: owns some mut Vec
+	us: owns some mut Vec
+	ut: owns some mut Vec
+	kK: owns some mut Vec
+	kA: owns some mut Vec
+	kB: owns some mut Vec
+	kC: owns some mut Vec
+	pTs: owns some mut Vec
+	pTe: owns some mut Vec
+	pLn: owns some mut Vec
+	pRv: owns some mut Vec
+	rsS: owns some mut Vec
+	rsE: owns some mut Vec
+	pSt: mut u64
+	pBaS: mut u64
+	pBaE: mut u64
+	hasMiss: mut bool
+	missS: mut u64
+	missE: mut u64
+	rS: mut u64
+	rE: mut u64
+	mlOff: mut s64
+	mlTs: mut u64
+	mlTe: mut u64
+	raddr: mut s64
+	cnt: mut u64
+	uPos: mut u64
+	clsS: mut u64
+	clsE: mut u64
+	u64S: mut u64
+	u64E: mut u64
+	indS: mut u64
+	indE: mut u64
+	cInt: mut u64
+	cFloat: mut u64
+	cShadow: mut s64
+	cShared: mut bool
+	dInt: mut u64
+	dFloat: mut u64
+	dShadow: mut s64
+	dShared: mut bool
+}}
+
+@throws
+impl constructor for AddressLoweringPass(structs: mut u64, enums: mut u64) self{
+	?catch(e){ throw e }
+	let six = mut ? NameIndex.forKeys(structs + 1)
+	let eix = mut ? NameIndex.forKeys(enums + 1)
+	let szc = mut ? new RangeMap()
+	let szb = mut ? new RangeMap()
+	let alc = mut ? new RangeMap()
+	let ssz = mut ? new RangeMap()
+	let sal = mut ? new RangeMap()
+	let nm = mut ? new RangeMap()
+	let asl = mut ? new RangeMap()
+	let uad = mut ? new RangeMap()
+	let avc = mut ? new RangeMap()
+	let tk = mut ? Vec.make()
+	? tk.zero(tk, 16)
+	let lMag = mut ? Vec.make()
+	let lTs = mut ? Vec.make()
+	let lTe = mut ? Vec.make()
+	let litAt = mut ? Vec.make()
+	let arrAt = mut ? Vec.make()
+	let un = mut ? Vec.make()
+	let us = mut ? Vec.make()
+	let ut = mut ? Vec.make()
+	let kK = mut ? Vec.make()
+	let kA = mut ? Vec.make()
+	let kB = mut ? Vec.make()
+	let kC = mut ? Vec.make()
+	let pTs = mut ? Vec.make()
+	let pTe = mut ? Vec.make()
+	let pLn = mut ? Vec.make()
+	let pRv = mut ? Vec.make()
+	let rsS = mut ? Vec.make()
+	let rsE = mut ? Vec.make()
+	return AddressLoweringPass{six= six, eix= eix, szc= szc, szb= szb, alc= alc, ssz= ssz, sal= sal, nm= nm, asl= asl, uad= uad, avc= avc, tk= tk, lMag= lMag, lTs= lTs, lTe= lTe, litAt= litAt, arrAt= arrAt, un= un, us= us, ut= ut, kK= kK, kA= kA, kB= kB, kC= kC, pTs= pTs, pTe= pTe, pLn= pLn, pRv= pRv, rsS= rsS, rsE= rsE, pSt= 0, pBaS= 0, pBaE= 0, hasMiss= false, missS= 0, missE= 0, rS= 0, rE= 0, mlOff= 0, mlTs= 0, mlTe= 0, raddr= 0, cnt= 0, uPos= 0, clsS= 0, clsE= 0, u64S= 0, u64E= 0, indS= 0, indE= 0, cInt= 0, cFloat= 0, cShadow= 0, cShared= false, dInt= 0, dFloat= 0, dShadow= 0, dShared= false}
+}
+
+@pub
+impl AddressLoweringPass{
+	// ---------------------------------------------------------------- text helpers
+
+	/** Tokens 0..5 of line `i` into `tk` (start, end pairs) and the token count into `cnt`. */
+	func ld(_self: ref some mut self, prog: ref some imut Prog, i: mut u64) void{
+		let s = mut prog.lineStart(prog, i)
+		let e = mut prog.lineEnd(prog, i)
+		let x = mut s
+		let c = mut 0
+		let guard = mut (e + 1)
+		for step in 0..guard{
+			if x >= e{
+				break
+			}
+			if prog.buf.charAt(prog.buf, x) == ' '{
+				x += 1
+				continue
+			}
+			let q = mut Ln.tokEnd(prog.buf, x, e)
+			if c < 6{
+				let b = mut (c * 2)
+				_self.tk.set(_self.tk, b, x)
+				_self.tk.set(_self.tk, b + 1, q)
+			}
+			c += 1
+			x = q
+		}
+		_self.cnt = c
+	}
+
+	func ta(_self: ref some imut self, j: mut u64) mut u64{
+		return _self.tk.get(_self.tk, j * 2)
+	}
+
+	func tz(_self: ref some imut self, j: mut u64) mut u64{
+		return _self.tk.get(_self.tk, j * 2 + 1)
+	}
+
+	/** Token k of line i into rS/rE; false when absent. */
+	func tokR(_self: ref some mut self, prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return false
+		}
+		let a = mut wrap:<u64>(p)
+		_self.rS = a
+		_self.rE = Ln.tokEnd(prog.buf, a, prog.lineEnd(prog, i))
+		return true
+	}
+
+	/** Last token of line i into rS/rE; false for an empty line. */
+	func lastTok(_self: ref some mut self, prog: ref some imut Prog, i: mut u64) mut bool{
+		let c = mut prog.count(prog, i)
+		if c == 0{
+			return false
+		}
+		return _self.tokR(_self, prog, i, c - 1)
+	}
+
+	func tokDigits(_self: ref some mut self, prog: ref some imut Prog, i: mut u64, k: mut u64) mut bool{
+		if _self.tokR(_self, prog, i, k) == false{
+			return false
+		}
+		return Hob.isDigits(prog, _self.rS, _self.rE)
+	}
+
+	/** CanonicalType.parse of [a, z): storage code in pSt (0 none, 1 owns, 2 ref, 3 raw, 4 auto, 5 static), base type in [pBaS, pBaE). */
+	func pt(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) void{
+		let rs = mut a
+		_self.pSt = 0
+		let u1 = mut Hob.indexOf(prog, rs, z, '_')
+		if u1 > 0{
+			let up = mut wrap:<u64>(u1)
+			let w = mut (up - rs)
+			let code = mut 0
+			if w == 4{
+				if Hob.eqLit(prog, rs, up, "owns"){
+					code = 1
+				} else if Hob.eqLit(prog, rs, up, "auto"){
+					code = 4
+				}
+			} else if w == 3{
+				if Hob.eqLit(prog, rs, up, "ref"){
+					code = 2
+				} else if Hob.eqLit(prog, rs, up, "raw"){
+					code = 3
+				}
+			} else if w == 6{
+				if Hob.eqLit(prog, rs, up, "static"){
+					code = 5
+				}
+			}
+			if code != 0{
+				_self.pSt = code
+				rs = up + 1
+			}
+		}
+		let u2 = mut Hob.indexOf(prog, rs, z, '_')
+		if u2 > 0{
+			let up = mut wrap:<u64>(u2)
+			if Hob.eqLit(prog, rs, up, "some"){
+				rs = up + 1
+			}
+		}
+		let bs = mut rs
+		let u3 = mut Hob.indexOf(prog, rs, z, '_')
+		if u3 > 0{
+			let up = mut wrap:<u64>(u3)
+			if Hob.eqLit(prog, rs, up, "mut") || Hob.eqLit(prog, rs, up, "imut") || Hob.eqLit(prog, rs, up, "indeterminate"){
+				bs = up + 1
+			}
+		}
+		if Hob.startsLit(prog, bs, z, "atomic_"){
+			bs = bs + 7
+		}
+		_self.pBaS = bs
+		_self.pBaE = z
+	}
+
+	func isFloatType(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		_self.pt(_self, prog, a, z)
+		if _self.pBaE - _self.pBaS != 3{
+			return false
+		}
+		return Hob.eqLit(prog, _self.pBaS, _self.pBaE, "f32") || Hob.eqLit(prog, _self.pBaS, _self.pBaE, "f64")
+	}
+
+	func isSignedType(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		_self.pt(_self, prog, a, z)
+		let w = mut (_self.pBaE - _self.pBaS)
+		if w == 2{
+			return Hob.eqLit(prog, _self.pBaS, _self.pBaE, "s8")
+		}
+		if w == 3{
+			return Hob.eqLit(prog, _self.pBaS, _self.pBaE, "s16") || Hob.eqLit(prog, _self.pBaS, _self.pBaE, "s32") || Hob.eqLit(prog, _self.pBaS, _self.pBaE, "s64")
+		}
+		return false
+	}
+
+	/** Position of the '[' of a trailing "[...]" in [a, z), or -1. */
+	static func arrOpen(prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		if z <= a{
+			return -1
+		}
+		if prog.buf.charAt(prog.buf, z - 1) != ']'{
+			return -1
+		}
+		return Hob.lastIndexOf(prog, a, z, '[')
+	}
+
+	/** Declared length of the fixed array [a, z) whose '[' is at `open`; -1 if it is not a plain number. */
+	static func arrLen(prog: ref some imut Prog, open: mut u64, z: mut u64) mut s64{
+		let s = mut (open + 1)
+		let e = mut (z - 1)
+		if e <= s{
+			return -1
+		}
+		if Hob.isDigits(prog, s, e) == false{
+			return -1
+		}
+		return wrap:<s64>(Hob.digitsValue(prog, s, e))
+	}
+
+	/** Text.splitArrayType(s, 0): position of the '[' of "name[N]" (name not empty, N digits), or -1. */
+	static func splitArr(prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		if z < a + 3{
+			return -1
+		}
+		if prog.buf.charAt(prog.buf, z - 1) != ']'{
+			return -1
+		}
+		let j = mut wrap:<s64>(z - 2)
+		let aS = mut wrap:<s64>(a)
+		let lim = mut (z - a)
+		for st in 0..lim{
+			if j < aS{
+				break
+			}
+			if String.isDigit(prog.buf.charAt(prog.buf, wrap:<u64>(j))) == false{
+				break
+			}
+			j -= 1
+		}
+		if j == wrap:<s64>(z - 2){
+			return -1
+		}
+		if j <= aS{
+			return -1
+		}
+		if prog.buf.charAt(prog.buf, wrap:<u64>(j)) != '['{
+			return -1
+		}
+		return j
+	}
+
+	/** "dynarray(elem)": the element in [rS, rE). */
+	func dynElem(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z < a + 10{
+			return false
+		}
+		if Hob.startsLit(prog, a, z, "dynarray(") &&then prog.buf.charAt(prog.buf, z - 1) == ')'{
+			_self.rS = a + 9
+			_self.rE = z - 1
+			return true
+		}
+		return false
+	}
+
+	/** "unsafe_dynarray(elem)": the element in [rS, rE). */
+	func udynElem(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z < a + 17{
+			return false
+		}
+		if Hob.startsLit(prog, a, z, "unsafe_dynarray(") &&then prog.buf.charAt(prog.buf, z - 1) == ')'{
+			_self.rS = a + 16
+			_self.rE = z - 1
+			return true
+		}
+		return false
+	}
+
+	static func isWord(prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		if z <= a{
+			return false
+		}
+		for q in a..z{
+			let c = mut prog.buf.charAt(prog.buf, q)
+			if Hob.isLetterOrDigit(c) == false &&then c != '_'{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Kind of the line inside a struct block: 1 member, 2 padding, 3 end, 0 other. */
+	func ek(_self: ref some imut self, prog: ref some imut Prog, q: mut u64) mut u64{
+		if prog.opEq(prog, q, "STRUCT_MEMBER") &&then prog.count(prog, q) >= 3{
+			return 1
+		}
+		if prog.opEq(prog, q, "STRUCT_PADDING") &&then prog.count(prog, q) >= 2{
+			return 2
+		}
+		if prog.opEq(prog, q, "STRUCT_END"){
+			return 3
+		}
+		return 0
+	}
+
+	/** First layout entry line (member or padding) of the struct declared at `sl`, or -1. */
+	func firstEntry(_self: ref some imut self, prog: ref some imut Prog, sl: mut u64) mut s64{
+		let n = mut prog.size(prog)
+		let q = mut (sl + 1)
+		for st in 0..n{
+			if q >= n{
+				break
+			}
+			let k = mut _self.ek(_self, prog, q)
+			if k == 3{
+				return -1
+			}
+			if k != 0{
+				return wrap:<s64>(q)
+			}
+			q += 1
+		}
+		return -1
+	}
+
+	/** First member line of the struct declared at `sl`, or -1. */
+	func firstMember(_self: ref some imut self, prog: ref some imut Prog, sl: mut u64) mut s64{
+		let n = mut prog.size(prog)
+		let q = mut (sl + 1)
+		for st in 0..n{
+			if q >= n{
+				break
+			}
+			let k = mut _self.ek(_self, prog, q)
+			if k == 3{
+				return -1
+			}
+			if k == 1{
+				return wrap:<s64>(q)
+			}
+			q += 1
+		}
+		return -1
+	}
+
+	// ---------------------------------------------------------------- sizes
+
+	/** Size of a primitive base type, -1 if [a, z) is none. */
+	func primSize(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		let w = mut (z - a)
+		if w == 2{
+			if Hob.eqLit(prog, a, z, "u8") || Hob.eqLit(prog, a, z, "s8"){
+				return 1
+			}
+		} else if w == 3{
+			if Hob.eqLit(prog, a, z, "u16") || Hob.eqLit(prog, a, z, "s16"){
+				return 2
+			}
+			if Hob.eqLit(prog, a, z, "u32") || Hob.eqLit(prog, a, z, "s32") || Hob.eqLit(prog, a, z, "f32"){
+				return 4
+			}
+			if Hob.eqLit(prog, a, z, "u64") || Hob.eqLit(prog, a, z, "s64") || Hob.eqLit(prog, a, z, "f64"){
+				return 8
+			}
+		} else if w == 4{
+			if Hob.eqLit(prog, a, z, "bool") || Hob.eqLit(prog, a, z, "char"){
+				return 1
+			}
+			if Hob.eqLit(prog, a, z, "void"){
+				return 0
+			}
+		} else if w == 6{
+			if Hob.eqLit(prog, a, z, "string"){
+				return 8
+			}
+		} else if w == 9{
+			if Hob.eqLit(prog, a, z, "code_addr"){
+				return 8
+			}
+		}
+		return -1
+	}
+
+	/** Size given the cached struct sizes; the first struct still missing is left in missS/missE (hasMiss). */
+	func sizeNR(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64, asBase: mut bool) mut u64{
+		let mult = mut 1
+		let cs = mut a
+		let ce = mut z
+		let first = mut asBase
+		for step in 0..64{
+			let bs = mut 0
+			let be = mut 0
+			if first{
+				bs = cs
+				be = ce
+				first = false
+			} else if _self.six.find(_self.six, prog, cs, ce) >= 0{
+				bs = cs
+				be = ce
+			} else {
+				_self.pt(_self, prog, cs, ce)
+				if _self.pSt != 0{
+					return mult * 8
+				}
+				bs = _self.pBaS
+				be = _self.pBaE
+			}
+			let ps = mut _self.primSize(_self, prog, bs, be)
+			if ps >= 0{
+				return mult * wrap:<u64>(ps)
+			}
+			if _self.dynElem(_self, prog, bs, be){
+				return mult * 8
+			}
+			let open = mut AddressLoweringPass.arrOpen(prog, bs, be)
+			if open >= 0{
+				let op = mut wrap:<u64>(open)
+				let ln = mut AddressLoweringPass.arrLen(prog, op, be)
+				if ln < 0{
+					return mult * 8
+				}
+				mult = mult * wrap:<u64>(ln)
+				cs = bs
+				ce = op
+				continue
+			}
+			if Hob.eqLit(prog, bs, be, "range") || Hob.startsLit(prog, bs, be, "range("){
+				return mult * 16
+			}
+			if _self.six.find(_self.six, prog, bs, be) >= 0{
+				let cached = mut _self.ssz.get1(_self.ssz, prog, bs, be)
+				if cached < 0{
+					_self.hasMiss = true
+					_self.missS = bs
+					_self.missE = be
+					return 0
+				}
+				return mult * wrap:<u64>(cached)
+			}
+			return mult * 8
+		}
+		return mult * 8
+	}
+
+	/** Fills the size cache of struct [rs, re) and of every struct below it (explicit stack, seeded 0 while on it). */
+	@throws
+	func resolveSizes(_self: ref some mut self, prog: ref some imut Prog, rs: mut u64, re: mut u64) void{
+		?catch(e){ throw e }
+		_self.rsS.clear(_self.rsS)
+		_self.rsE.clear(_self.rsE)
+		? _self.ssz.put(_self.ssz, prog, rs, re, 0, 0)
+		? _self.rsS.push(_self.rsS, rs)
+		? _self.rsE.push(_self.rsE, re)
+		let nlines = mut prog.size(prog)
+		for outer in 0..100000000{
+			if _self.rsS.n == 0{
+				break
+			}
+			let top = mut (_self.rsS.n - 1)
+			let ns = mut _self.rsS.get(_self.rsS, top)
+			let ne = mut _self.rsE.get(_self.rsE, top)
+			let sl = mut _self.six.find(_self.six, prog, ns, ne)
+			let total = mut 0
+			let blocked = mut false
+			if sl >= 0{
+				let q = mut (wrap:<u64>(sl) + 1)
+				for st in 0..nlines{
+					if q >= nlines{
+						break
+					}
+					let kind = mut _self.ek(_self, prog, q)
+					if kind == 3{
+						break
+					}
+					if kind == 2{
+						let pv = mut prog.numTok(prog, q, 1)
+						if pv > 0{
+							total += wrap:<u64>(pv)
+						}
+					} else if kind == 1{
+						if _self.tokR(_self, prog, q, 2){
+							let ta0 = mut _self.rS
+							let tz0 = mut _self.rE
+							_self.hasMiss = false
+							let v = mut _self.sizeNR(_self, prog, ta0, tz0, false)
+							if _self.hasMiss{
+								let ms = mut _self.missS
+								let me = mut _self.missE
+								? _self.ssz.put(_self.ssz, prog, ms, me, 0, 0)
+								? _self.rsS.push(_self.rsS, ms)
+								? _self.rsE.push(_self.rsE, me)
+								_self.hasMiss = false
+								blocked = true
+								break
+							}
+							total += v
+						}
+					}
+					q += 1
+				}
+			}
+			if blocked == false{
+				? _self.ssz.put(_self.ssz, prog, ns, ne, total, 0)
+				let dropS = mut _self.rsS.pop(_self.rsS)
+				let dropE = mut _self.rsE.pop(_self.rsE)
+			}
+		}
+	}
+
+	@throws
+	func sizeFresh(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64, asBase: mut bool) mut u64{
+		?catch(e){ throw e }
+		_self.hasMiss = false
+		let v = mut _self.sizeNR(_self, prog, a, z, asBase)
+		if _self.hasMiss{
+			let ms = mut _self.missS
+			let me = mut _self.missE
+			? _self.resolveSizes(_self, prog, ms, me)
+			_self.hasMiss = false
+			v = _self.sizeNR(_self, prog, a, z, asBase)
+			_self.hasMiss = false
+		}
+		return v
+	}
+
+	/** Size in bytes of the canonical type [a, z). */
+	@throws
+	func sizeOf(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut _self.szc.get1(_self.szc, prog, a, z)
+		if c >= 0{
+			return wrap:<u64>(c)
+		}
+		let v = mut ? _self.sizeFresh(_self, prog, a, z, false)
+		? _self.szc.put(_self.szc, prog, a, z, v, 0)
+		return v
+	}
+
+	/** Size of the base type text [a, z) itself (sizeOf of "mut_" + text). */
+	@throws
+	func sizeBase(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut _self.szb.get1(_self.szb, prog, a, z)
+		if c >= 0{
+			return wrap:<u64>(c)
+		}
+		let v = mut ? _self.sizeFresh(_self, prog, a, z, true)
+		? _self.szb.put(_self.szb, prog, a, z, v, 0)
+		return v
+	}
+
+	/** Alignment given the cached struct alignments; first missing struct in missS/missE. */
+	func alignNR(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		let cs = mut a
+		let ce = mut z
+		for step in 0..64{
+			_self.pt(_self, prog, cs, ce)
+			if _self.pSt != 0{
+				return 8
+			}
+			let bs = mut _self.pBaS
+			let be = mut _self.pBaE
+			let ps = mut _self.primSize(_self, prog, bs, be)
+			if ps >= 0{
+				if ps == 0{
+					return 1
+				}
+				return wrap:<u64>(ps)
+			}
+			if _self.dynElem(_self, prog, bs, be){
+				return 8
+			}
+			let open = mut AddressLoweringPass.arrOpen(prog, bs, be)
+			if open >= 0{
+				cs = bs
+				ce = wrap:<u64>(open)
+				continue
+			}
+			if Hob.eqLit(prog, bs, be, "range") || Hob.startsLit(prog, bs, be, "range("){
+				return 8
+			}
+			if _self.six.find(_self.six, prog, bs, be) >= 0{
+				let cached = mut _self.sal.get1(_self.sal, prog, bs, be)
+				if cached < 0{
+					_self.hasMiss = true
+					_self.missS = bs
+					_self.missE = be
+					return 1
+				}
+				return wrap:<u64>(cached)
+			}
+			return 8
+		}
+		return 8
+	}
+
+	@throws
+	func resolveAligns(_self: ref some mut self, prog: ref some imut Prog, rs: mut u64, re: mut u64) void{
+		?catch(e){ throw e }
+		_self.rsS.clear(_self.rsS)
+		_self.rsE.clear(_self.rsE)
+		? _self.sal.put(_self.sal, prog, rs, re, 1, 0)
+		? _self.rsS.push(_self.rsS, rs)
+		? _self.rsE.push(_self.rsE, re)
+		let nlines = mut prog.size(prog)
+		for outer in 0..100000000{
+			if _self.rsS.n == 0{
+				break
+			}
+			let top = mut (_self.rsS.n - 1)
+			let ns = mut _self.rsS.get(_self.rsS, top)
+			let ne = mut _self.rsE.get(_self.rsE, top)
+			let sl = mut _self.six.find(_self.six, prog, ns, ne)
+			let maxAlign = mut 1
+			let blocked = mut false
+			if sl >= 0{
+				let q = mut (wrap:<u64>(sl) + 1)
+				for st in 0..nlines{
+					if q >= nlines{
+						break
+					}
+					let kind = mut _self.ek(_self, prog, q)
+					if kind == 3{
+						break
+					}
+					if kind == 1{
+						if _self.tokR(_self, prog, q, 2){
+							let ta0 = mut _self.rS
+							let tz0 = mut _self.rE
+							_self.hasMiss = false
+							let v = mut _self.alignNR(_self, prog, ta0, tz0)
+							if _self.hasMiss{
+								let ms = mut _self.missS
+								let me = mut _self.missE
+								? _self.sal.put(_self.sal, prog, ms, me, 1, 0)
+								? _self.rsS.push(_self.rsS, ms)
+								? _self.rsE.push(_self.rsE, me)
+								_self.hasMiss = false
+								blocked = true
+								break
+							}
+							if v > maxAlign{
+								maxAlign = v
+							}
+						}
+					}
+					q += 1
+				}
+			}
+			if blocked == false{
+				? _self.sal.put(_self.sal, prog, ns, ne, maxAlign, 0)
+				let dropS = mut _self.rsS.pop(_self.rsS)
+				let dropE = mut _self.rsE.pop(_self.rsE)
+			}
+		}
+	}
+
+	/** Alignment in bytes of the canonical type [a, z). */
+	@throws
+	func alignOf(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut _self.alc.get1(_self.alc, prog, a, z)
+		if c >= 0{
+			return wrap:<u64>(c)
+		}
+		_self.hasMiss = false
+		let v = mut _self.alignNR(_self, prog, a, z)
+		if _self.hasMiss{
+			let ms = mut _self.missS
+			let me = mut _self.missE
+			? _self.resolveAligns(_self, prog, ms, me)
+			_self.hasMiss = false
+			v = _self.alignNR(_self, prog, a, z)
+			_self.hasMiss = false
+		}
+		? _self.alc.put(_self.alc, prog, a, z, v, 0)
+		return v
+	}
+
+	// ---------------------------------------------------------------- addresses
+
+	/** Offset and declared type of member [ma, me) in the layout of base type [ba, be): mlOff/mlTs/mlTe; false when absent. */
+	@throws
+	func memberLoc(_self: ref some mut self, prog: ref some imut Prog, ba: mut u64, be: mut u64, ma: mut u64, me: mut u64) mut bool{
+		?catch(e){ throw e }
+		if Hob.eqLit(prog, ma, me, "___type"){
+			_self.mlOff = 0
+			_self.mlTs = _self.u64S
+			_self.mlTe = _self.u64E
+			return true
+		}
+		if Hob.eqLit(prog, ba, be, "range") || Hob.startsLit(prog, ba, be, "range("){
+			if Hob.eqLit(prog, ma, me, "start"){
+				_self.mlOff = 0
+				_self.mlTs = _self.indS
+				_self.mlTe = _self.indE
+				return true
+			}
+			if Hob.eqLit(prog, ma, me, "end"){
+				let isz = mut ? _self.sizeOf(_self, prog, _self.indS, _self.indE)
+				_self.mlOff = wrap:<s64>(isz)
+				_self.mlTs = _self.indS
+				_self.mlTe = _self.indE
+				return true
+			}
+			return false
+		}
+		let sl = mut _self.six.find(_self.six, prog, ba, be)
+		if sl < 0{
+			return false
+		}
+		let n = mut prog.size(prog)
+		let off = mut 0
+		let q = mut (wrap:<u64>(sl) + 1)
+		for st in 0..n{
+			if q >= n{
+				break
+			}
+			let kind = mut _self.ek(_self, prog, q)
+			if kind == 3{
+				break
+			}
+			if kind == 2{
+				let pv = mut prog.numTok(prog, q, 1)
+				if pv > 0{
+					off += wrap:<u64>(pv)
+				}
+			} else if kind == 1{
+				if _self.tokR(_self, prog, q, 1){
+					let na = mut _self.rS
+					let nz = mut _self.rE
+					if _self.tokR(_self, prog, q, 2){
+						let tya = mut _self.rS
+						let tyz = mut _self.rE
+						if Hob.eq(prog, na, nz, ma, me){
+							_self.mlOff = wrap:<s64>(off)
+							_self.mlTs = tya
+							_self.mlTe = tyz
+							return true
+						}
+						let msz = mut ? _self.sizeOf(_self, prog, tya, tyz)
+						off += msz
+					}
+				}
+			}
+			q += 1
+		}
+		return false
+	}
+
+	/** Flat frame address of a name or dotted chain [a, z) into raddr; false when a segment cannot be resolved. */
+	@throws
+	func resolveAddr(_self: ref some mut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut bool{
+		?catch(e){ throw e }
+		let dot = mut Hob.indexOf(prog, a, z, '.')
+		let re = mut z
+		if dot >= 0{
+			re = wrap:<u64>(dot)
+		}
+		let idx = mut _self.nm.get1(_self.nm, prog, a, re)
+		if idx < 0{
+			return false
+		}
+		let ix = mut wrap:<u64>(idx)
+		let addr = mut (0 - wrap:<s64>(_self.lMag.get(_self.lMag, ix)))
+		if dot < 0{
+			_self.raddr = addr
+			return true
+		}
+		let cts = mut _self.lTs.get(_self.lTs, ix)
+		let cte = mut _self.lTe.get(_self.lTe, ix)
+		let rem = mut (wrap:<u64>(dot) + 1)
+		let lim = mut (z - a + 1)
+		for step in 0..lim{
+			if rem >= z{
+				break
+			}
+			_self.pt(_self, prog, cts, cte)
+			if _self.pSt != 0{
+				return false
+			}
+			let bs = mut _self.pBaS
+			let be = mut _self.pBaE
+			let nd = mut Hob.indexOf(prog, rem, z, '.')
+			let segE = mut z
+			if nd >= 0{
+				segE = wrap:<u64>(nd)
+			}
+			let open = mut AddressLoweringPass.arrOpen(prog, bs, be)
+			if open >= 0 &&then Hob.isDigits(prog, rem, segE){
+				let op = mut wrap:<u64>(open)
+				let esz = mut ? _self.sizeOf(_self, prog, bs, op)
+				addr += wrap:<s64>(Hob.digitsValue(prog, rem, segE) * esz)
+				cts = bs
+				cte = op
+			} else {
+				let found = mut ? _self.memberLoc(_self, prog, bs, be, rem, segE)
+				if found == false{
+					return false
+				}
+				addr += _self.mlOff
+				cts = _self.mlTs
+				cte = _self.mlTe
+			}
+			if nd < 0{
+				rem = z
+			} else {
+				rem = segE + 1
+			}
+		}
+		_self.raddr = addr
+		return true
+	}
+
+	// ---------------------------------------------------------------- frame, convention, argument words
+
+	/** Assigns every ALLOC of the function [start, end] a frame offset; returns the frame size rounded up to 16. */
+	@throws
+	func frame(_self: ref some mut self, prog: ref some imut Prog, start: mut u64, end: mut u64) mut u64{
+		?catch(e){ throw e }
+		_self.nm.clear(_self.nm)
+		_self.lMag.clear(_self.lMag)
+		_self.lTs.clear(_self.lTs)
+		_self.lTe.clear(_self.lTe)
+		let cm = mut 0
+		let last = mut (end + 1)
+		for k in start..last{
+			if prog.opEq(prog, k, "ALLOC") == false{
+				continue
+			}
+			if prog.count(prog, k) < 3{
+				continue
+			}
+			if _self.tokR(_self, prog, k, 1) == false{
+				continue
+			}
+			let ns = mut _self.rS
+			let ne = mut _self.rE
+			if _self.tokR(_self, prog, k, 2) == false{
+				continue
+			}
+			let ts = mut _self.rS
+			let te = mut _self.rE
+			let idx = mut _self.nm.get1(_self.nm, prog, ns, ne)
+			if idx >= 0{
+				let ix = mut wrap:<u64>(idx)
+				let ots = mut _self.lTs.get(_self.lTs, ix)
+				let ote = mut _self.lTe.get(_self.lTe, ix)
+				let osz = mut ? _self.sizeOf(_self, prog, ots, ote)
+				let nsz = mut ? _self.sizeOf(_self, prog, ts, te)
+				if osz >= nsz{
+					let oal = mut ? _self.alignOf(_self, prog, ots, ote)
+					let nal = mut ? _self.alignOf(_self, prog, ts, te)
+					if oal >= nal{
+						_self.lTs.set(_self.lTs, ix, ts)
+						_self.lTe.set(_self.lTe, ix, te)
+						continue
+					}
+				}
+			}
+			let al = mut ? _self.alignOf(_self, prog, ts, te)
+			let sz = mut ? _self.sizeOf(_self, prog, ts, te)
+			let r = mut 0
+			match al != 0{ r = cm % al }
+			if r != 0{
+				cm = cm + (al - r)
+			}
+			cm = cm + sz
+			if idx >= 0{
+				let ix = mut wrap:<u64>(idx)
+				_self.lMag.set(_self.lMag, ix, cm)
+				_self.lTs.set(_self.lTs, ix, ts)
+				_self.lTe.set(_self.lTe, ix, te)
+			} else {
+				let ix = mut _self.lMag.n
+				? _self.lMag.push(_self.lMag, cm)
+				? _self.lTs.push(_self.lTs, ts)
+				? _self.lTe.push(_self.lTe, te)
+				? _self.nm.put(_self.nm, prog, ns, ne, ix, 0)
+			}
+		}
+		let rem = mut (cm % 16)
+		if rem != 0{
+			cm = cm + (16 - rem)
+		}
+		return cm
+	}
+
+	/** Convention index whose name is the text [a, z), -1 if none. */
+	func convIndex(_self: ref some imut self, prog: ref some imut Prog, cfg: ref some imut Config, a: mut u64, z: mut u64) mut s64{
+		let n = mut cfg.conventions.size(cfg.conventions)
+		for i in 0..n{
+			let c = mut cfg.conventions.get(cfg.conventions, i)
+			match Some(c){
+				let nl = mut c.name.length(c.name)
+				if nl == z - a{
+					let same = mut true
+					for d in 0..nl{
+						if c.name.charAt(c.name, d) != prog.buf.charAt(prog.buf, a + d){
+							same = false
+							break
+						}
+					}
+					if same{
+						return wrap:<s64>(i)
+					}
+				}
+			}
+		}
+		return -1
+	}
+
+	func setConv(_self: ref some mut self, cfg: ref some imut Config, di: mut u64) void{
+		let c = mut cfg.conventions.get(cfg.conventions, di)
+		match Some(c){
+			_self.cInt = c.intCount
+			_self.cFloat = c.floatCount
+			_self.cShadow = c.shadowStack
+			_self.cShared = c.shared
+		}
+	}
+
+	/** The function's calling convention: its @call_convention(name) decorator, else the default. */
+	func resolveConv(_self: ref some mut self, prog: ref some imut Prog, cfg: ref some imut Config, start: mut u64, end: mut u64) void{
+		_self.cInt = _self.dInt
+		_self.cFloat = _self.dFloat
+		_self.cShadow = _self.dShadow
+		_self.cShared = _self.dShared
+		let last = mut (end + 1)
+		for k in start..last{
+			if prog.opEq(prog, k, "FUNC_DECORATE") == false{
+				continue
+			}
+			if prog.count(prog, k) < 2{
+				continue
+			}
+			if _self.tokR(_self, prog, k, 1) == false{
+				continue
+			}
+			let a = mut _self.rS
+			let z = mut _self.rE
+			if Hob.startsLit(prog, a, z, "@call_convention(") &&then z > a + 17 &&then prog.buf.charAt(prog.buf, z - 1) == ')'{
+				let ia = mut (a + 17)
+				let iz = mut (z - 1)
+				if iz - ia >= 2 &&then prog.buf.charAt(prog.buf, ia) == '"' &&then prog.buf.charAt(prog.buf, iz - 1) == '"'{
+					ia += 1
+					iz -= 1
+				}
+				let ci = mut _self.convIndex(_self, prog, cfg, ia, iz)
+				if ci >= 0{
+					_self.setConv(_self, cfg, wrap:<u64>(ci))
+				}
+				return
+			}
+		}
+	}
+
+	/** "ARGn" / "FARGn" token [a, z): 1 int word, 2 float word, 0 neither. */
+	func wordKind(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut u64{
+		if Hob.startsLit(prog, a, z, "FARG") &&then z > a + 4 &&then Hob.isDigits(prog, a + 4, z){
+			return 2
+		}
+		if Hob.startsLit(prog, a, z, "ARG") &&then z > a + 3 &&then Hob.isDigits(prog, a + 3, z){
+			return 1
+		}
+		return 0
+	}
+
+	/** Slot of every parameter-loading ARGn/FARGn word of the function: kind 0 register (value = index), 1 stack (value = offset). */
+	@throws
+	func resolveArgSlots(_self: ref some mut self, prog: ref some imut Prog, start: mut u64, end: mut u64) void{
+		?catch(e){ throw e }
+		_self.asl.clear(_self.asl)
+		let sharedIdx = mut 0
+		let intIdx = mut 0
+		let floatIdx = mut 0
+		let stackWords = mut 0
+		let last = mut (end + 1)
+		for k in start..last{
+			if prog.count(prog, k) != 3{
+				continue
+			}
+			if prog.opEq(prog, k, "PUSH") == false{
+				continue
+			}
+			if _self.tokR(_self, prog, k, 1) == false{
+				continue
+			}
+			let a = mut _self.rS
+			let z = mut _self.rE
+			let wk = mut _self.wordKind(_self, prog, a, z)
+			if wk == 0{
+				continue
+			}
+			let idx = mut 0
+			if _self.cShared{
+				idx = sharedIdx
+				sharedIdx += 1
+			} else if wk == 2{
+				idx = floatIdx
+				floatIdx += 1
+			} else {
+				idx = intIdx
+				intIdx += 1
+			}
+			let cutoff = mut _self.cInt
+			if wk == 2{
+				cutoff = _self.cFloat
+			}
+			if idx < cutoff{
+				? _self.asl.put(_self.asl, prog, a, z, 0, idx)
+			} else {
+				let off = mut (16 + _self.cShadow + wrap:<s64>(stackWords * 8))
+				? _self.asl.put(_self.asl, prog, a, z, 1, wrap:<u64>(off))
+				stackWords += 1
+			}
+		}
+	}
+
+	// ---------------------------------------------------------------- enums and literals
+
+	/** Class id of struct base type [a, z), -1 when the Class enum does not list it. */
+	func classIdOf(_self: ref some imut self, prog: ref some imut Prog, a: mut u64, z: mut u64) mut s64{
+		let el = mut _self.eix.find(_self.eix, prog, _self.clsS, _self.clsE)
+		if el < 0{
+			return -1
+		}
+		return MembershipPass.variantValue(prog, wrap:<u64>(el), a, z)
+	}
+
+	/** Appends the token [a, z) with "true"/"false" and "Enum.Variant" resolved to numbers. */
+	@throws
+	func addResolved(_self: ref some imut self, prog: ref some mut Prog, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		if Hob.eqLit(prog, a, z, "true"){
+			? prog.addLit(prog, "1")
+			return
+		}
+		if Hob.eqLit(prog, a, z, "false"){
+			? prog.addLit(prog, "0")
+			return
+		}
+		let dot = mut Hob.indexOf(prog, a, z, '.')
+		if dot > 0{
+			let dp = mut wrap:<u64>(dot)
+			if dp > a &&then dp + 1 < z{
+				let el = mut _self.eix.find(_self.eix, prog, a, dp)
+				if el >= 0{
+					let v = mut MembershipPass.variantValue(prog, wrap:<u64>(el), dp + 1, z)
+					if v >= 0{
+						? prog.addS64(prog, v)
+						return
+					}
+				}
+			}
+		}
+		? prog.addRange(prog, a, z)
+	}
+
+	// ---------------------------------------------------------------- struct literal detection
+
+	/** Fills litAt (index k - start): the literal's first line + 1 for every ASSIGN that stores a stack struct literal. */
+	@throws
+	func findLits(_self: ref some mut self, prog: ref some imut Prog, start: mut u64, end: mut u64) void{
+		?catch(e){ throw e }
+		_self.pTs.clear(_self.pTs)
+		_self.pTe.clear(_self.pTe)
+		_self.pLn.clear(_self.pLn)
+		_self.pRv.clear(_self.pRv)
+		_self.uad.clear(_self.uad)
+		let last = mut (end + 1)
+		for k in start..last{
+			let c = mut prog.count(prog, k)
+			if c == 0{
+				continue
+			}
+			let isAssign = mut false
+			if c == 4{
+				if prog.opEq(prog, k, "ASSIGN") || prog.opEq(prog, k, "ATOMIC_ASSIGN"){
+					isAssign = true
+				}
+			}
+			if c == 3 &&then k + 1 <= end &&then prog.opEq(prog, k, "ADDR"){
+				let nx = mut (k + 1)
+				let isTid = mut false
+				if prog.count(prog, nx) == 3 &&then prog.opEq(prog, nx, "PUSH") &&then prog.eqLit(prog, nx, 2, "imut_u64"){
+					isTid = _self.tokDigits(_self, prog, nx, 1)
+				}
+				if _self.tokR(_self, prog, k, 2){
+					let tya = mut _self.rS
+					let tyz = mut _self.rE
+					_self.pt(_self, prog, tya, tyz)
+					let st = mut _self.pSt
+					let bs = mut _self.pBaS
+					let be = mut _self.pBaE
+					if isTid{
+						if st == 0 &&then _self.six.find(_self.six, prog, bs, be) >= 0{
+							? _self.pTs.push(_self.pTs, tya)
+							? _self.pTe.push(_self.pTe, tyz)
+							? _self.pLn.push(_self.pLn, k)
+							? _self.pRv.push(_self.pRv, 0)
+						}
+					} else if st == 0{
+						let sl = mut _self.six.find(_self.six, prog, bs, be)
+						if sl >= 0{
+							let fe = mut _self.firstEntry(_self, prog, wrap:<u64>(sl))
+							if fe >= 0{
+								let fl = mut wrap:<u64>(fe)
+								if _self.ek(_self, prog, fl) == 1{
+									if _self.tokR(_self, prog, fl, 1){
+										if Hob.eqLit(prog, _self.rS, _self.rE, "___type") == false{
+											? _self.uad.put(_self.uad, prog, tya, tyz, k, 1)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			} else if c == 3 &&then k + 1 <= end &&then prog.opEq(prog, k, "PUSH"){
+				let isRet = mut false
+				if prog.eqLit(prog, k, 1, "$ret_dest") || prog.startsWith(prog, k, 1, "$ret_dest__i"){
+					isRet = true
+				}
+				if isRet &&then prog.startsWith(prog, k, 2, "raw_"){
+					let nx = mut (k + 1)
+					if prog.count(prog, nx) == 3 &&then prog.opEq(prog, nx, "PUSH") &&then prog.eqLit(prog, nx, 2, "imut_u64"){
+						let tidOk = mut _self.tokDigits(_self, prog, nx, 1)
+						if tidOk == false{
+							if _self.tokR(_self, prog, nx, 1){
+								let ra = mut _self.rS
+								let rz = mut _self.rE
+								if rz - ra >= 8 &&then Hob.eqLit(prog, rz - 8, rz, ".___type"){
+									tidOk = true
+								}
+							}
+						}
+						if tidOk &&then _self.tokR(_self, prog, k, 2){
+							let tya = mut (_self.rS + 4)
+							let tyz = mut _self.rE
+							_self.pt(_self, prog, tya, tyz)
+							let st = mut _self.pSt
+							let bs = mut _self.pBaS
+							let be = mut _self.pBaE
+							if st == 0 &&then _self.six.find(_self.six, prog, bs, be) >= 0{
+								? _self.pTs.push(_self.pTs, tya)
+								? _self.pTe.push(_self.pTe, tyz)
+								? _self.pLn.push(_self.pLn, k)
+								? _self.pRv.push(_self.pRv, 1)
+							}
+						}
+					}
+				}
+			} else if isAssign &&then _self.pTs.n > 0 &&then _self.pRv.get(_self.pRv, _self.pTs.n - 1) == 1{
+				let top = mut (_self.pTs.n - 1)
+				let tya = mut _self.pTs.get(_self.pTs, top)
+				let tyz = mut _self.pTe.get(_self.pTe, top)
+				if _self.tokR(_self, prog, k, 1){
+					let a1 = mut _self.rS
+					let z1 = mut _self.rE
+					if _self.tokR(_self, prog, k, 3){
+						if RangeMap.sameText(prog, a1, z1, tya, tyz) &&then RangeMap.sameText(prog, _self.rS, _self.rE, tya, tyz){
+							let sline = mut _self.pLn.get(_self.pLn, top)
+							let d0 = mut _self.pTs.pop(_self.pTs)
+							let d1 = mut _self.pTe.pop(_self.pTe)
+							let d2 = mut _self.pLn.pop(_self.pLn)
+							let d3 = mut _self.pRv.pop(_self.pRv)
+							_self.litAt.set(_self.litAt, k - start, sline + 1)
+						}
+					}
+				}
+			} else if isAssign &&then _self.pTs.n > 0 &&then _self.sameAssign(_self, prog, k, _self.pTs.get(_self.pTs, _self.pTs.n - 1), _self.pTe.get(_self.pTe, _self.pTs.n - 1)){
+				let top = mut (_self.pTs.n - 1)
+				let sline = mut _self.pLn.get(_self.pLn, top)
+				let d0 = mut _self.pTs.pop(_self.pTs)
+				let d1 = mut _self.pTe.pop(_self.pTe)
+				let d2 = mut _self.pLn.pop(_self.pLn)
+				let d3 = mut _self.pRv.pop(_self.pRv)
+				_self.litAt.set(_self.litAt, k - start, sline + 1)
+			} else if isAssign &&then _self.threeSame(_self, prog, k){
+				let a1 = mut _self.rS
+				let z1 = mut _self.rE
+				if _self.uad.get2(_self.uad, prog, a1, z1) == 1{
+					let si = mut wrap:<u64>(_self.uad.get1(_self.uad, prog, a1, z1))
+					? _self.uad.put(_self.uad, prog, a1, z1, si, 0)
+					let wholeCopy = mut false
+					if k == si + 2 &&then prog.opEq(prog, si + 1, "PUSH"){
+						if _self.lastTok(_self, prog, si + 1){
+							wholeCopy = Hob.eq(prog, _self.rS, _self.rE, a1, z1)
+						}
+					}
+					if wholeCopy == false &&then k > si + 1{
+						_self.litAt.set(_self.litAt, k - start, si + 1)
+					}
+				}
+			}
+		}
+	}
+
+	/** Tokens 1..3 of line k are all the text [a, z). */
+	func sameAssign(_self: ref some mut self, prog: ref some imut Prog, k: mut u64, a: mut u64, z: mut u64) mut bool{
+		for j in 1..4{
+			if _self.tokR(_self, prog, k, j) == false{
+				return false
+			}
+			if RangeMap.sameText(prog, _self.rS, _self.rE, a, z) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Tokens 1..3 of line k are equal to each other; token 1 is left in rS/rE. */
+	func threeSame(_self: ref some mut self, prog: ref some imut Prog, k: mut u64) mut bool{
+		if _self.tokR(_self, prog, k, 1) == false{
+			return false
+		}
+		let a1 = mut _self.rS
+		let z1 = mut _self.rE
+		for j in 2..4{
+			if _self.tokR(_self, prog, k, j) == false{
+				return false
+			}
+			if RangeMap.sameText(prog, _self.rS, _self.rE, a1, z1) == false{
+				return false
+			}
+		}
+		_self.rS = a1
+		_self.rE = z1
+		return true
+	}
+
+	/** Fills arrAt (index k - start): the literal's ADDR line + 1 for ASSIGNs that store a stack array literal of elements narrower than 8 bytes. */
+	@throws
+	func findArrs(_self: ref some mut self, prog: ref some imut Prog, start: mut u64, end: mut u64) void{
+		?catch(e){ throw e }
+		_self.pTs.clear(_self.pTs)
+		_self.pTe.clear(_self.pTe)
+		_self.pLn.clear(_self.pLn)
+		let last = mut (end + 1)
+		for k in start..last{
+			let c = mut prog.count(prog, k)
+			if c == 3 &&then prog.opEq(prog, k, "ADDR"){
+				if _self.tokR(_self, prog, k, 2){
+					let tya = mut _self.rS
+					let tyz = mut _self.rE
+					_self.pt(_self, prog, tya, tyz)
+					let st = mut _self.pSt
+					let bs = mut _self.pBaS
+					let be = mut _self.pBaE
+					if st == 0{
+						let open = mut AddressLoweringPass.arrOpen(prog, bs, be)
+						if open >= 0{
+							let op = mut wrap:<u64>(open)
+							if Hob.indexOf(prog, bs, op, '[') < 0 &&then _self.six.find(_self.six, prog, bs, op) < 0{
+								let esz = mut ? _self.sizeOf(_self, prog, bs, op)
+								if esz < 8{
+									? _self.pTs.push(_self.pTs, tya)
+									? _self.pTe.push(_self.pTe, tyz)
+									? _self.pLn.push(_self.pLn, k)
+								}
+							}
+						}
+					}
+				}
+			} else if c == 4 &&then _self.pTs.n > 0{
+				if prog.opEq(prog, k, "ASSIGN") || prog.opEq(prog, k, "ATOMIC_ASSIGN"){
+					let top = mut (_self.pTs.n - 1)
+					let tya = mut _self.pTs.get(_self.pTs, top)
+					let tyz = mut _self.pTe.get(_self.pTe, top)
+					if _self.sameAssign(_self, prog, k, tya, tyz){
+						let sline = mut _self.pLn.get(_self.pLn, top)
+						let d0 = mut _self.pTs.pop(_self.pTs)
+						let d1 = mut _self.pTe.pop(_self.pTe)
+						let d2 = mut _self.pLn.pop(_self.pLn)
+						_self.arrAt.set(_self.arrAt, k - start, sline + 1)
+					}
+				}
+			}
+		}
+	}
+
+	// ---------------------------------------------------------------- literal value units
+
+	static func isBinaryOp(prog: ref some imut Prog, j: mut u64) mut bool{
+		if prog.opEq(prog, j, "ADD") || prog.opEq(prog, j, "SUB") || prog.opEq(prog, j, "MUL") || prog.opEq(prog, j, "DIV") || prog.opEq(prog, j, "MOD"){
+			return true
+		}
+		if prog.opEq(prog, j, "SHL") || prog.opEq(prog, j, "SHR") || prog.opEq(prog, j, "ROTL") || prog.opEq(prog, j, "ROTR"){
+			return true
+		}
+		if prog.opEq(prog, j, "BITS_OR") || prog.opEq(prog, j, "BITS_AND") || prog.opEq(prog, j, "BITS_XOR") || prog.opEq(prog, j, "BITS_LEFT") || prog.opEq(prog, j, "BITS_RIGHT"){
+			return true
+		}
+		if prog.opEq(prog, j, "AND") || prog.opEq(prog, j, "OR") || prog.opEq(prog, j, "EQ") || prog.opEq(prog, j, "NEQ"){
+			return true
+		}
+		if prog.opEq(prog, j, "LT") || prog.opEq(prog, j, "LT_EQ") || prog.opEq(prog, j, "GT") || prog.opEq(prog, j, "GT_EQ") || prog.opEq(prog, j, "LOOKUP"){
+			return true
+		}
+		return false
+	}
+
+	static func isUnaryOp(prog: ref some imut Prog, j: mut u64) mut bool{
+		if prog.opEq(prog, j, "NEG") || prog.opEq(prog, j, "NOT") || prog.opEq(prog, j, "BITS_NOT") || prog.opEq(prog, j, "TRUNC"){
+			return true
+		}
+		if prog.opEq(prog, j, "SEXT") || prog.opEq(prog, j, "ZEXT") || prog.opEq(prog, j, "FCONV"){
+			return true
+		}
+		return false
+	}
+
+	/** Simulates the operand stack over the lines strictly between `from` and `to`; the producer line of each top-level value goes to `un`. False when a line is not understood. */
+	@throws
+	func splitUnits(_self: ref some mut self, prog: ref some imut Prog, from: mut u64, to: mut u64) mut bool{
+		?catch(e){ throw e }
+		_self.us.clear(_self.us)
+		_self.ut.clear(_self.ut)
+		_self.un.clear(_self.un)
+		let j = mut (from + 1)
+		for st in 0..100000000{
+			if j >= to{
+				break
+			}
+			let c = mut prog.count(prog, j)
+			if c == 0{
+				j += 1
+				continue
+			}
+			if _self.tokR(_self, prog, j, 0) == false{
+				j += 1
+				continue
+			}
+			let m0 = mut _self.rS
+			let m1 = mut _self.rE
+			if prog.buf.charAt(prog.buf, m0) == '@'{
+				j += 1
+				continue
+			}
+			let sz = mut _self.us.n
+			if prog.opEq(prog, j, "PUSH"){
+				let tid = mut 0
+				if c == 3 &&then prog.eqLit(prog, j, 2, "imut_u64") &&then _self.tokDigits(_self, prog, j, 1){
+					tid = 1
+				}
+				? _self.us.push(_self.us, j)
+				? _self.ut.push(_self.ut, tid)
+			} else if prog.opEq(prog, j, "PUSH_LABEL") || prog.opEq(prog, j, "ADDR") || prog.opEq(prog, j, "PUSH_RET"){
+				? _self.us.push(_self.us, j)
+				? _self.ut.push(_self.ut, 0)
+			} else if prog.opEq(prog, j, "DUP_TOP"){
+				if sz == 0{
+					return false
+				}
+				? _self.us.push(_self.us, j)
+				? _self.ut.push(_self.ut, 0)
+			} else if prog.opEq(prog, j, "CMP") || prog.opEq(prog, j, "POP"){
+				if sz == 0{
+					return false
+				}
+				let d0 = mut _self.us.pop(_self.us)
+				let d1 = mut _self.ut.pop(_self.ut)
+			} else if prog.opEq(prog, j, "JMP") || prog.opEq(prog, j, "GT_REGISTER") || prog.opEq(prog, j, "STACK_LOCK") || prog.opEq(prog, j, "CC_START") || prog.opEq(prog, j, "CC_END"){
+				j += 0
+			} else if prog.opEq(prog, j, "CALL") || prog.opEq(prog, j, "RECURSIVE_CALL") || prog.opEq(prog, j, "EXTERN_CALL") || prog.opEq(prog, j, "VARARGS_XMM_COUNT"){
+				j += 0
+			} else if prog.opEq(prog, j, "ASSIGN") || prog.opEq(prog, j, "ATOMIC_ASSIGN"){
+				if sz < 2{
+					return false
+				}
+				for q in 0..2{
+					let d0 = mut _self.us.pop(_self.us)
+					let d1 = mut _self.ut.pop(_self.ut)
+				}
+			} else if prog.opEq(prog, j, "NEW"){
+				let wanted = mut -1
+				if c >= 2 &&then _self.tokR(_self, prog, j, 1){
+					_self.pt(_self, prog, _self.rS, _self.rE)
+					wanted = _self.classIdOf(_self, prog, _self.pBaS, _self.pBaE)
+				}
+				let q = mut (wrap:<s64>(sz) - 1)
+				for w in 0..sz{
+					if q < 0{
+						break
+					}
+					let qi = mut wrap:<u64>(q)
+					let isTid = mut _self.ut.get(_self.ut, qi)
+					if isTid == 1{
+						if wanted < 0{
+							break
+						}
+						let pl = mut _self.us.get(_self.us, qi)
+						if prog.numTok(prog, pl, 1) == wanted{
+							break
+						}
+					}
+					q -= 1
+				}
+				if q < 0{
+					return false
+				}
+				let qn = mut wrap:<u64>(q)
+				for w in 0..sz{
+					if _self.us.n > qn{
+						let d0 = mut _self.us.pop(_self.us)
+						let d1 = mut _self.ut.pop(_self.ut)
+					}
+				}
+				? _self.us.push(_self.us, j)
+				? _self.ut.push(_self.ut, 0)
+			} else if c == 4 &&then sz >= 2 &&then AddressLoweringPass.isBinaryOp(prog, j){
+				let d0 = mut _self.us.pop(_self.us)
+				let d1 = mut _self.ut.pop(_self.ut)
+				let d2 = mut _self.us.pop(_self.us)
+				let d3 = mut _self.ut.pop(_self.ut)
+				? _self.us.push(_self.us, j)
+				? _self.ut.push(_self.ut, 0)
+			} else if sz > 0 &&then AddressLoweringPass.isUnaryOp(prog, j){
+				_self.us.set(_self.us, sz - 1, j)
+				_self.ut.set(_self.ut, sz - 1, 0)
+			} else {
+				return false
+			}
+			j += 1
+		}
+		let m = mut _self.us.n
+		for q in 0..m{
+			? _self.un.push(_self.un, _self.us.get(_self.us, q))
+		}
+		return true
+	}
+
+	// ---------------------------------------------------------------- layout descriptor tokens
+
+	/** Appends the token "<ch><v>" (ch 0 = m, 1 = p) to the line being built. */
+	@throws
+	static func emitMP(prog: ref some mut Prog, ch: mut u64, v: mut u64) void{
+		?catch(e){ throw e }
+		if ch == 0{
+			? prog.addLit(prog, "m")
+		} else {
+			? prog.addLit(prog, "p")
+		}
+		? prog.glueS64(prog, wrap:<s64>(v))
+	}
+
+	@throws
+	static func emitArr(prog: ref some mut Prog, e: mut u64, n: mut u64) void{
+		?catch(e0){ throw e0 }
+		? prog.addLit(prog, "a")
+		? prog.glueS64(prog, wrap:<s64>(e))
+		? prog.glueCh(prog, 'x')
+		? prog.glueS64(prog, wrap:<s64>(n))
+	}
+
+	@throws
+	func pushTask(_self: ref some mut self, kind: mut u64, a: mut u64, b: mut u64, c: mut u64) void{
+		?catch(e){ throw e }
+		? _self.kK.push(_self.kK, kind)
+		? _self.kA.push(_self.kA, a)
+		? _self.kB.push(_self.kB, b)
+		? _self.kC.push(_self.kC, c)
+	}
+
+	/** Descriptor tokens for the struct at line `sl0` from the value units in `un` (uPos is the next unit). False when the units do not fit. */
+	@throws
+	func layoutFromUnits(_self: ref some mut self, prog: ref some mut Prog, sl0: mut u64) mut bool{
+		?catch(e){ throw e }
+		_self.kK.clear(_self.kK)
+		_self.kA.clear(_self.kA)
+		_self.kB.clear(_self.kB)
+		_self.kC.clear(_self.kC)
+		_self.uPos = 0
+		let nu = mut _self.un.n
+		let nlines = mut prog.size(prog)
+		? _self.pushTask(_self, 0, sl0 + 1, 0, 0)
+		for outer in 0..100000000{
+			if _self.kK.n == 0{
+				break
+			}
+			let kind = mut _self.kK.pop(_self.kK)
+			let a = mut _self.kA.pop(_self.kA)
+			let b = mut _self.kB.pop(_self.kB)
+			let cc = mut _self.kC.pop(_self.kC)
+			if kind == 0{
+				let q = mut a
+				for st in 0..nlines{
+					if q >= nlines{
+						break
+					}
+					let ekind = mut _self.ek(_self, prog, q)
+					if ekind == 3{
+						break
+					}
+					if ekind == 2{
+						let pv = mut prog.numTok(prog, q, 1)
+						if pv < 0{
+							pv = 0
+						}
+						? AddressLoweringPass.emitMP(prog, 1, wrap:<u64>(pv))
+						q += 1
+						continue
+					}
+					if ekind == 1{
+						if _self.tokR(_self, prog, q, 2) == false{
+							q += 1
+							continue
+						}
+						let tya = mut _self.rS
+						let tyz = mut _self.rE
+						_self.pt(_self, prog, tya, tyz)
+						let st0 = mut _self.pSt
+						let bs = mut _self.pBaS
+						let be = mut _self.pBaE
+						let plain = mut false
+						if st0 != 0{
+							plain = true
+						} else if AddressLoweringPass.splitArr(prog, bs, be) < 0 &&then _self.six.find(_self.six, prog, bs, be) < 0{
+							plain = true
+						}
+						if plain{
+							if _self.uPos >= nu{
+								return false
+							}
+							let msz = mut ? _self.sizeOf(_self, prog, tya, tyz)
+							? AddressLoweringPass.emitMP(prog, 0, msz)
+							_self.uPos += 1
+							q += 1
+							continue
+						}
+						? _self.pushTask(_self, 0, q + 1, 0, 0)
+						? _self.pushTask(_self, 1, bs, be, 0)
+						break
+					}
+					q += 1
+				}
+			} else if kind == 2{
+				if cc > 0{
+					? _self.pushTask(_self, 2, a, b, cc - 1)
+					? _self.pushTask(_self, 1, a, b, 0)
+				}
+			} else {
+				if _self.uPos >= nu{
+					return false
+				}
+				let prod = mut _self.un.get(_self.un, _self.uPos)
+				let lastOk = mut _self.lastTok(_self, prog, prod)
+				let ls = mut _self.rS
+				let le = mut _self.rE
+				let lastEq = mut false
+				if lastOk{
+					_self.pt(_self, prog, ls, le)
+					lastEq = Hob.eq(prog, _self.pBaS, _self.pBaE, a, b)
+				}
+				let open = mut AddressLoweringPass.splitArr(prog, a, b)
+				let isArray = mut false
+				if open >= 0{
+					isArray = true
+				}
+				let sl2 = mut -1
+				if isArray == false{
+					sl2 = _self.six.find(_self.six, prog, a, b)
+				}
+				if (isArray || sl2 >= 0) &&then lastEq{
+					let bsz = mut ? _self.sizeBase(_self, prog, a, b)
+					? AddressLoweringPass.emitMP(prog, 0, bsz)
+					_self.uPos += 1
+				} else if sl2 >= 0{
+					? _self.pushTask(_self, 0, wrap:<u64>(sl2) + 1, 0, 0)
+				} else if isArray{
+					let op = mut wrap:<u64>(open)
+					let cnt = mut wrap:<u64>(Hob.digitsValue(prog, op + 1, b - 1))
+					let nested = mut false
+					if AddressLoweringPass.splitArr(prog, a, op) >= 0{
+						nested = true
+					} else if _self.six.find(_self.six, prog, a, op) >= 0{
+						nested = true
+					}
+					if nested == false{
+						let narrow = mut 0
+						if AddressLoweringPass.isWord(prog, a, op) &&then cnt > 0{
+							let esz = mut ? _self.sizeBase(_self, prog, a, op)
+							if esz > 0 &&then esz < 8{
+								narrow = esz
+							}
+						}
+						if narrow > 0{
+							? AddressLoweringPass.emitArr(prog, narrow, cnt)
+						} else {
+							let bsz = mut ? _self.sizeBase(_self, prog, a, b)
+							? AddressLoweringPass.emitMP(prog, 0, bsz)
+						}
+						_self.uPos += cnt
+						if _self.uPos > nu{
+							return false
+						}
+					} else {
+						? _self.pushTask(_self, 2, a, op, cnt)
+					}
+				} else {
+					let bsz = mut ? _self.sizeBase(_self, prog, a, b)
+					? AddressLoweringPass.emitMP(prog, 0, bsz)
+					_self.uPos += 1
+				}
+			}
+		}
+		return true
+	}
+
+	/** Appends the layout descriptor tokens of the struct at line `sl` for the literal whose value lines lie strictly between `from` and `to`. */
+	@throws
+	func layoutTokens(_self: ref some mut self, prog: ref some mut Prog, sl: mut u64, from: mut u64, to: mut u64) void{
+		?catch(e){ throw e }
+		let used0 = mut prog.used
+		let ok = mut ? _self.splitUnits(_self, prog, from, to)
+		if ok{
+			let good = mut ? _self.layoutFromUnits(_self, prog, sl)
+			if good &&then _self.uPos == _self.un.n{
+				return
+			}
+			prog.used = used0
+		}
+		// fallback: count the array-typed value lines
+		_self.avc.clear(_self.avc)
+		let j = mut (from + 1)
+		for st in 0..100000000{
+			if j >= to{
+				break
+			}
+			if prog.count(prog, j) >= 2{
+				if _self.lastTok(_self, prog, j){
+					let la = mut _self.rS
+					let lz = mut _self.rE
+					if prog.buf.charAt(prog.buf, lz - 1) == ']'{
+						_self.pt(_self, prog, la, lz)
+						let bs = mut _self.pBaS
+						let be = mut _self.pBaE
+						let old = mut _self.avc.get1(_self.avc, prog, bs, be)
+						if old < 0{
+							? _self.avc.put(_self.avc, prog, bs, be, 1, 0)
+						} else {
+							? _self.avc.put(_self.avc, prog, bs, be, wrap:<u64>(old) + 1, 0)
+						}
+					}
+				}
+			}
+			j += 1
+		}
+		let n = mut prog.size(prog)
+		let q = mut (sl + 1)
+		for st in 0..n{
+			if q >= n{
+				break
+			}
+			let kind = mut _self.ek(_self, prog, q)
+			if kind == 3{
+				break
+			}
+			if kind == 2{
+				let pv = mut prog.numTok(prog, q, 1)
+				if pv < 0{
+					pv = 0
+				}
+				? AddressLoweringPass.emitMP(prog, 1, wrap:<u64>(pv))
+			} else if kind == 1{
+				if _self.tokR(_self, prog, q, 2){
+					let mta = mut _self.rS
+					let mtz = mut _self.rE
+					let handled = mut ? _self.elementwiseToken(_self, prog, mta, mtz, sl)
+					if handled == false{
+						let msz = mut ? _self.sizeOf(_self, prog, mta, mtz)
+						? AddressLoweringPass.emitMP(prog, 0, msz)
+					}
+				}
+			}
+			q += 1
+		}
+	}
+
+	/** Emits "a<elem>x<n>" for a narrow-scalar fixed-array member written element by element; false when the member is not one (nothing emitted). */
+	@throws
+	func elementwiseToken(_self: ref some mut self, prog: ref some mut Prog, ma: mut u64, mz: mut u64, sl: mut u64) mut bool{
+		?catch(e){ throw e }
+		_self.pt(_self, prog, ma, mz)
+		let st = mut _self.pSt
+		let bs = mut _self.pBaS
+		let be = mut _self.pBaE
+		if st != 0{
+			return false
+		}
+		let open = mut AddressLoweringPass.splitArr(prog, bs, be)
+		if open < 0{
+			return false
+		}
+		let op = mut wrap:<u64>(open)
+		if AddressLoweringPass.isWord(prog, bs, op) == false{
+			return false
+		}
+		if _self.six.find(_self.six, prog, bs, op) >= 0{
+			return false
+		}
+		let elem = mut ? _self.sizeBase(_self, prog, bs, op)
+		let n = mut Hob.digitsValue(prog, op + 1, be - 1)
+		if elem >= 8 || elem == 0 || n == 0{
+			return false
+		}
+		let blockValues = mut _self.avc.get1(_self.avc, prog, bs, be)
+		if blockValues < 0{
+			blockValues = 0
+		}
+		let sameType = mut 0
+		let nl = mut prog.size(prog)
+		let q = mut (sl + 1)
+		for step in 0..nl{
+			if q >= nl{
+				break
+			}
+			let kind = mut _self.ek(_self, prog, q)
+			if kind == 3{
+				break
+			}
+			if kind == 1{
+				if _self.tokR(_self, prog, q, 2){
+					let xa = mut _self.rS
+					let xz = mut _self.rE
+					_self.pt(_self, prog, xa, xz)
+					if Hob.eq(prog, _self.pBaS, _self.pBaE, bs, be){
+						sameType += 1
+					}
+				}
+			}
+			q += 1
+		}
+		if blockValues > 0 &&then sameType > 1{
+			throw "cannot tell how the array members of a struct literal are written (some as element lists, some taken from a variable) -- write them all the same way"
+		}
+		if blockValues == 0{
+			? AddressLoweringPass.emitArr(prog, elem, n)
+			return true
+		}
+		return false
+	}
+
+	/** Line just before a heap struct literal's own type-id push for the NEW at `newIdx`, or -1. */
+	func findNewRunStart(_self: ref some mut self, prog: ref some imut Prog, start: mut u64, newIdx: mut u64) mut s64{
+		let wanted = mut -1
+		let selfS = mut 0
+		let selfE = mut 0
+		if _self.tokR(_self, prog, newIdx, 1){
+			_self.pt(_self, prog, _self.rS, _self.rE)
+			selfS = _self.pBaS
+			selfE = _self.pBaE
+			wanted = _self.classIdOf(_self, prog, selfS, selfE)
+		}
+		let depth = mut 1
+		let span = mut (newIdx - start)
+		for d in 0..span{
+			let j = mut (newIdx - 1 - d)
+			let c = mut prog.count(prog, j)
+			if c == 0{
+				continue
+			}
+			if prog.opEq(prog, j, "NEW"){
+				let counts = mut false
+				if wanted < 0{
+					counts = true
+				} else if c >= 2 &&then _self.tokR(_self, prog, j, 1){
+					_self.pt(_self, prog, _self.rS, _self.rE)
+					counts = Hob.eq(prog, _self.pBaS, _self.pBaE, selfS, selfE)
+				}
+				if counts{
+					depth += 1
+				}
+			} else if c == 3 &&then prog.opEq(prog, j, "PUSH") &&then prog.eqLit(prog, j, 2, "imut_u64") &&then _self.tokDigits(_self, prog, j, 1){
+				if wanted >= 0 &&then prog.numTok(prog, j, 1) != wanted{
+					continue
+				}
+				depth -= 1
+				if depth == 0{
+					return wrap:<s64>(j) - 1
+				}
+			}
+		}
+		return -1
+	}
+
+	// ---------------------------------------------------------------- line rewrites
+
+	/** "<mnemonic>[_INT|_FLOAT] size" with the mnemonic copied from [m0, m1); `signed` puts an S in front of an _INT form. */
+	@throws
+	static func emitTyped(prog: ref some mut Prog, signed: mut bool, m0: mut u64, m1: mut u64, suffix: mut u64, size: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		if signed &&then suffix == 1{
+			? prog.addLit(prog, "S")
+			? prog.glueRange(prog, m0, m1)
+		} else {
+			? prog.addRange(prog, m0, m1)
+		}
+		if suffix == 1{
+			? prog.glueLit(prog, "_INT")
+		} else if suffix == 2{
+			? prog.glueLit(prog, "_FLOAT")
+		}
+		? prog.addS64(prog, wrap:<s64>(size))
+		? prog.outBuilt(prog)
+	}
+
+	/** "<mnemonic> size" with the mnemonic copied from [m0, m1). */
+	@throws
+	static func emitSized(prog: ref some mut Prog, m0: mut u64, m1: mut u64, size: mut u64) void{
+		?catch(e){ throw e }
+		prog.begin(prog)
+		? prog.addRange(prog, m0, m1)
+		? prog.addS64(prog, wrap:<s64>(size))
+		? prog.outBuilt(prog)
+	}
+
+	/** "ALLOC_STATIC|GLOBAL name type [value]" -> "... name size [value]" (tokens of the current line are loaded). */
+	@throws
+	func staticDecl(_self: ref some mut self, prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let c = mut _self.cnt
+		let size = mut ? _self.sizeOf(_self, prog, _self.ta(_self, 2), _self.tz(_self, 2))
+		prog.begin(prog)
+		? prog.addRange(prog, _self.ta(_self, 0), _self.tz(_self, 0))
+		? prog.addRange(prog, _self.ta(_self, 1), _self.tz(_self, 1))
+		? prog.addS64(prog, wrap:<s64>(size))
+		if c == 4{
+			? _self.addResolved(_self, prog, _self.ta(_self, 3), _self.tz(_self, 3))
+		}
+		? prog.outBuilt(prog)
+	}
+
+	/** Rewrites the in-function line k into the output table; false leaves it to the caller (copied as is). */
+	@throws
+	func rw(_self: ref some mut self, prog: ref some mut Prog, k: mut u64, hasPrev: mut bool, prevK: mut u64, fnStart: mut u64) mut bool{
+		?catch(e){ throw e }
+		_self.ld(_self, prog, k)
+		let c = mut _self.cnt
+		if c == 0{
+			return false
+		}
+		let m0 = mut _self.ta(_self, 0)
+		let m1 = mut _self.tz(_self, 0)
+		let a1 = mut _self.ta(_self, 1)
+		let z1 = mut _self.tz(_self, 1)
+		let a2 = mut _self.ta(_self, 2)
+		let z2 = mut _self.tz(_self, 2)
+		let a3 = mut _self.ta(_self, 3)
+		let z3 = mut _self.tz(_self, 3)
+		let ch0 = mut prog.buf.charAt(prog.buf, m0)
+		if ch0 == '@'{
+			return false
+		}
+		if c == 3 || c == 4{
+			if Hob.eqLit(prog, m0, m1, "ALLOC_STATIC") || Hob.eqLit(prog, m0, m1, "GLOBAL"){
+				? _self.staticDecl(_self, prog)
+				return true
+			}
+		}
+		if c == 3{
+			let isPush = mut false
+			if Hob.eqLit(prog, m0, m1, "PUSH") || Hob.eqLit(prog, m0, m1, "ATOMIC_PUSH"){
+				isPush = true
+			}
+			if isPush || Hob.eqLit(prog, m0, m1, "ADDR"){
+				let size = mut ? _self.sizeOf(_self, prog, a2, z2)
+				if isPush{
+					let sk = mut _self.asl.get1(_self.asl, prog, a1, z1)
+					if sk >= 0{
+						let sv = mut _self.asl.get2(_self.asl, prog, a1, z1)
+						prog.begin(prog)
+						? prog.addRange(prog, m0, m1)
+						? prog.addS64(prog, wrap:<s64>(size))
+						if sk == 1{
+							? prog.addLit(prog, "$")
+							? prog.glueS64(prog, wrap:<s64>(sv))
+						} else {
+							if Hob.startsLit(prog, a1, z1, "FARG"){
+								? prog.addLit(prog, "FARG")
+							} else {
+								? prog.addLit(prog, "ARG")
+							}
+							? prog.glueS64(prog, wrap:<s64>(sv))
+						}
+						? prog.outBuilt(prog)
+						return true
+					}
+				}
+				let found = mut ? _self.resolveAddr(_self, prog, a1, z1)
+				prog.begin(prog)
+				? prog.addRange(prog, m0, m1)
+				? prog.addS64(prog, wrap:<s64>(size))
+				if found{
+					? prog.addLit(prog, "$")
+					? prog.glueS64(prog, _self.raddr)
+				} else {
+					? _self.addResolved(_self, prog, a1, z1)
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "POP"){
+				let size = mut ? _self.sizeOf(_self, prog, a2, z2)
+				let found = mut ? _self.resolveAddr(_self, prog, a1, z1)
+				prog.begin(prog)
+				? prog.addLit(prog, "POP")
+				if found{
+					? prog.addLit(prog, "$")
+					? prog.glueS64(prog, _self.raddr)
+				} else {
+					? prog.addRange(prog, a1, z1)
+				}
+				? prog.addS64(prog, wrap:<s64>(size))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "PUSH_FIELDNAME"){
+				if hasPrev == false{
+					return false
+				}
+				if _self.lastTok(_self, prog, prevK) == false{
+					return false
+				}
+				_self.pt(_self, prog, _self.rS, _self.rE)
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				let found = mut ? _self.memberLoc(_self, prog, bs, be, a1, z1)
+				if found == false{
+					return false
+				}
+				let off = mut _self.mlOff
+				let size = mut ? _self.sizeOf(_self, prog, a2, z2)
+				prog.begin(prog)
+				? prog.addLit(prog, "PUSH_FIELDNAME")
+				? prog.addS64(prog, off)
+				? prog.addS64(prog, wrap:<s64>(size))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "NEW_UDYN") || Hob.eqLit(prog, m0, m1, "NEW_DYN"){
+				_self.pt(_self, prog, a1, z1)
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				let isU = mut Hob.eqLit(prog, m0, m1, "NEW_UDYN")
+				let got = mut false
+				if isU{
+					got = _self.udynElem(_self, prog, bs, be)
+				} else {
+					got = _self.dynElem(_self, prog, bs, be)
+				}
+				if got == false{
+					return false
+				}
+				let esz = mut ? _self.sizeOf(_self, prog, _self.rS, _self.rE)
+				let count = mut prog.numTok(prog, k, 2)
+				if count < 0{
+					return false
+				}
+				let total = mut (esz * wrap:<u64>(count))
+				prog.begin(prog)
+				? prog.addRange(prog, m0, m1)
+				? prog.addS64(prog, wrap:<s64>(total))
+				if isU == false{
+					? prog.addS64(prog, count)
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "URESIZE"){
+				_self.pt(_self, prog, a1, z1)
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				let got = mut _self.udynElem(_self, prog, bs, be)
+				if got == false{
+					got = _self.dynElem(_self, prog, bs, be)
+				}
+				if got == false{
+					return false
+				}
+				let size = mut ? _self.sizeOf(_self, prog, _self.rS, _self.rE)
+				? AddressLoweringPass.emitSized(prog, m0, m1, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "CLONE"){
+				_self.pt(_self, prog, a1, z1)
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				if _self.dynElem(_self, prog, bs, be){
+					let esz = mut ? _self.sizeOf(_self, prog, _self.rS, _self.rE)
+					prog.begin(prog)
+					? prog.addLit(prog, "CLONE_DYN")
+					? prog.addS64(prog, wrap:<s64>(esz))
+					? prog.outBuilt(prog)
+				} else {
+					let psz = mut ? _self.sizeOf(_self, prog, bs, be)
+					prog.begin(prog)
+					? prog.addLit(prog, "CLONE")
+					? prog.addS64(prog, wrap:<s64>(psz))
+					? prog.outBuilt(prog)
+				}
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "NEG"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				prog.begin(prog)
+				if _self.isFloatType(_self, prog, a1, z1){
+					? prog.addLit(prog, "NEG_FLOAT")
+				} else {
+					? prog.addLit(prog, "NEG")
+				}
+				? prog.addS64(prog, wrap:<s64>(size))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "NOT") || Hob.eqLit(prog, m0, m1, "BITS_NOT"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				? AddressLoweringPass.emitSized(prog, m0, m1, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "SEXT") || Hob.eqLit(prog, m0, m1, "ZEXT") || Hob.eqLit(prog, m0, m1, "TRUNC") || Hob.eqLit(prog, m0, m1, "FCONV"){
+				let s1 = mut ? _self.sizeOf(_self, prog, a1, z1)
+				let s2 = mut ? _self.sizeOf(_self, prog, a2, z2)
+				prog.begin(prog)
+				? prog.addRange(prog, m0, m1)
+				? prog.addS64(prog, wrap:<s64>(s1))
+				? prog.addS64(prog, wrap:<s64>(s2))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "INC") || Hob.eqLit(prog, m0, m1, "DEC"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				let fl = mut _self.isFloatType(_self, prog, a1, z1)
+				let suffix = mut 1
+				if fl{
+					suffix = 2
+				}
+				? AddressLoweringPass.emitTyped(prog, false, m0, m1, suffix, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "EXTERN_CALL"){
+				prog.begin(prog)
+				? prog.addLit(prog, "CALL")
+				? prog.addRange(prog, a1, z1)
+				? prog.addRange(prog, a2, z2)
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "NEW_FROM_STRING"){
+				let unsafeTarget = mut false
+				if z1 - a1 >= 16{
+					let hitLim = mut (z1 - 15)
+					for q in a1..hitLim{
+						if Hob.startsLit(prog, q, z1, "unsafe_dynarray("){
+							unsafeTarget = true
+							break
+						}
+					}
+				}
+				prog.begin(prog)
+				if unsafeTarget{
+					? prog.addLit(prog, "NEW_FROM_USTRING")
+				} else {
+					? prog.addLit(prog, "NEW_FROM_STRING")
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			return false
+		}
+		if c == 4{
+			if Hob.eqLit(prog, m0, m1, "ASSIGN") || Hob.eqLit(prog, m0, m1, "ATOMIC_ASSIGN"){
+				let s1 = mut ? _self.sizeOf(_self, prog, a1, z1)
+				let s2 = mut ? _self.sizeOf(_self, prog, a2, z2)
+				let s3 = mut ? _self.sizeOf(_self, prog, a3, z3)
+				prog.begin(prog)
+				? prog.addRange(prog, m0, m1)
+				? prog.addS64(prog, wrap:<s64>(s1))
+				? prog.addS64(prog, wrap:<s64>(s2))
+				? prog.addS64(prog, wrap:<s64>(s3))
+				let li = mut (k - fnStart)
+				let la = mut _self.litAt.get(_self.litAt, li)
+				let ar = mut _self.arrAt.get(_self.arrAt, li)
+				if la > 0{
+					_self.pt(_self, prog, a1, z1)
+					let sl = mut _self.six.find(_self.six, prog, _self.pBaS, _self.pBaE)
+					if sl >= 0{
+						? _self.layoutTokens(_self, prog, wrap:<u64>(sl), la - 1, k)
+					}
+				} else if ar > 0{
+					_self.pt(_self, prog, a1, z1)
+					let bs = mut _self.pBaS
+					let be = mut _self.pBaE
+					let open = mut AddressLoweringPass.arrOpen(prog, bs, be)
+					if open >= 0{
+						let op = mut wrap:<u64>(open)
+						let arrN = mut AddressLoweringPass.arrLen(prog, op, be)
+						let ok = mut ? _self.splitUnits(_self, prog, ar - 1, k)
+						if ok &&then arrN > 0 &&then _self.un.n == wrap:<u64>(arrN){
+							let computed = mut false
+							let wholeCopy = mut false
+							let nu = mut _self.un.n
+							for q in 0..nu{
+								let pl = mut _self.un.get(_self.un, q)
+								if prog.opEq(prog, pl, "PUSH") == false{
+									computed = true
+								}
+								if _self.lastTok(_self, prog, pl){
+									if Hob.eq(prog, _self.rS, _self.rE, a1, z1){
+										wholeCopy = true
+									}
+								}
+							}
+							if computed &&then wholeCopy == false{
+								let esz = mut ? _self.sizeOf(_self, prog, bs, op)
+								? AddressLoweringPass.emitArr(prog, esz, wrap:<u64>(arrN))
+							}
+						}
+					}
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "DOT") || Hob.eqLit(prog, m0, m1, "DOT_LHS"){
+				let size = mut ? _self.sizeOf(_self, prog, a2, z2)
+				prog.begin(prog)
+				? prog.addRange(prog, m0, m1)
+				? prog.addS64(prog, wrap:<s64>(size))
+				if Hob.eqLit(prog, m0, m1, "DOT") &&then size <= 8{
+					_self.pt(_self, prog, a2, z2)
+					if _self.pSt == 0 &&then AddressLoweringPass.arrOpen(prog, _self.pBaS, _self.pBaE) >= 0{
+						? prog.addLit(prog, "ra")
+					}
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "LOOKUP") || Hob.eqLit(prog, m0, m1, "LOOKUP_LHS"){
+				let isLhs = mut Hob.eqLit(prog, m0, m1, "LOOKUP_LHS")
+				_self.pt(_self, prog, a1, z1)
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				let kindL = mut 0
+				if Hob.eqLit(prog, bs, be, "string"){
+					kindL = 1
+				} else if AddressLoweringPass.arrOpen(prog, bs, be) >= 0{
+					kindL = 1
+				} else if _self.udynElem(_self, prog, bs, be){
+					kindL = 1
+				} else if _self.dynElem(_self, prog, bs, be){
+					kindL = 2
+				}
+				if kindL == 0{
+					return false
+				}
+				let size = mut ? _self.sizeOf(_self, prog, a3, z3)
+				prog.begin(prog)
+				if kindL == 1{
+					? prog.addLit(prog, "LOOKUP_ARRAY")
+				} else {
+					? prog.addLit(prog, "LOOKUP_DYN")
+				}
+				if isLhs{
+					? prog.glueLit(prog, "_LHS")
+				}
+				? prog.addS64(prog, wrap:<s64>(size))
+				if isLhs == false &&then kindL == 1{
+					_self.pt(_self, prog, a1, z1)
+					let tst = mut _self.pSt
+					let tbs = mut _self.pBaS
+					let tbe = mut _self.pBaE
+					if tst == 0 &&then AddressLoweringPass.arrOpen(prog, tbs, tbe) >= 0{
+						let tsz = mut ? _self.sizeOf(_self, prog, a1, z1)
+						if tsz == 8{
+							? prog.addLit(prog, "t8")
+						}
+					}
+					_self.pt(_self, prog, a3, z3)
+					let rst = mut _self.pSt
+					let rbs = mut _self.pBaS
+					let rbe = mut _self.pBaE
+					if rst == 0 &&then AddressLoweringPass.arrOpen(prog, rbs, rbe) >= 0 &&then size < 8{
+						? prog.addLit(prog, "ra")
+					}
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			let isCmp = mut false
+			let isEq = mut false
+			if Hob.eqLit(prog, m0, m1, "EQ") || Hob.eqLit(prog, m0, m1, "NEQ"){
+				isCmp = true
+				isEq = true
+			} else if Hob.eqLit(prog, m0, m1, "GT") || Hob.eqLit(prog, m0, m1, "LT") || Hob.eqLit(prog, m0, m1, "GT_EQ") || Hob.eqLit(prog, m0, m1, "LT_EQ"){
+				isCmp = true
+			}
+			let isArith = mut false
+			let isDivMod = mut false
+			if Hob.eqLit(prog, m0, m1, "ADD") || Hob.eqLit(prog, m0, m1, "SUB") || Hob.eqLit(prog, m0, m1, "MUL"){
+				isArith = true
+			} else if Hob.eqLit(prog, m0, m1, "DIV") || Hob.eqLit(prog, m0, m1, "MOD"){
+				isArith = true
+				isDivMod = true
+			}
+			if isCmp || isArith{
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				let fl = mut _self.isFloatType(_self, prog, a1, z1)
+				let suffix = mut 1
+				if fl{
+					suffix = 2
+				}
+				let sg = mut false
+				if fl == false &&then isEq == false{
+					if isArith == false || isDivMod{
+						sg = _self.isSignedType(_self, prog, a1, z1)
+					}
+				}
+				? AddressLoweringPass.emitTyped(prog, sg, m0, m1, suffix, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "AND") || Hob.eqLit(prog, m0, m1, "OR"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				? AddressLoweringPass.emitSized(prog, m0, m1, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "SHL") || Hob.eqLit(prog, m0, m1, "SHR") || Hob.eqLit(prog, m0, m1, "ROTL") || Hob.eqLit(prog, m0, m1, "ROTR") || Hob.eqLit(prog, m0, m1, "BITS_OR") || Hob.eqLit(prog, m0, m1, "BITS_AND") || Hob.eqLit(prog, m0, m1, "BITS_XOR"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				let sar = mut false
+				if Hob.eqLit(prog, m0, m1, "SHR"){
+					sar = _self.isSignedType(_self, prog, a1, z1)
+				}
+				prog.begin(prog)
+				if sar{
+					? prog.addLit(prog, "SAR")
+				} else {
+					? prog.addRange(prog, m0, m1)
+				}
+				? prog.addS64(prog, wrap:<s64>(size))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "ADDR_OF"){
+				if hasPrev &&then prog.count(prog, prevK) == 3{
+					if prog.opEq(prog, prevK, "PUSH") || prog.opEq(prog, prevK, "ATOMIC_PUSH"){
+						if _self.tokR(_self, prog, prevK, 1){
+							let pa = mut _self.rS
+							let pz = mut _self.rE
+							let found = mut ? _self.resolveAddr(_self, prog, pa, pz)
+							if found{
+								prog.begin(prog)
+								? prog.addLit(prog, "ADDR_OF")
+								? prog.addRange(prog, a1, z1)
+								? prog.addLit(prog, "$")
+								? prog.glueS64(prog, _self.raddr)
+								? prog.outBuilt(prog)
+								return true
+							}
+						}
+					}
+				}
+				return false
+			}
+			if Hob.eqLit(prog, m0, m1, "ATOMIC_SWAP"){
+				let size = mut ? _self.sizeOf(_self, prog, a3, z3)
+				? AddressLoweringPass.emitSized(prog, m0, m1, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "RESIZE"){
+				_self.pt(_self, prog, a3, z3)
+				let st = mut _self.pSt
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				let size = mut 8
+				if st == 0{
+					size = ? _self.sizeOf(_self, prog, bs, be)
+				}
+				? AddressLoweringPass.emitSized(prog, m0, m1, size)
+				return true
+			}
+			return false
+		}
+		if c == 2{
+			if Hob.eqLit(prog, m0, m1, "RET"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				prog.begin(prog)
+				if _self.isFloatType(_self, prog, a1, z1){
+					? prog.addLit(prog, "RET_FLOAT")
+				} else {
+					? prog.addLit(prog, "RET")
+				}
+				? prog.addS64(prog, wrap:<s64>(size))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "PUSH_RET"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				prog.begin(prog)
+				if _self.isFloatType(_self, prog, a1, z1){
+					? prog.addLit(prog, "PUSH_RET_FLOAT")
+				} else {
+					? prog.addLit(prog, "PUSH_RET_INT")
+				}
+				? prog.addS64(prog, wrap:<s64>(size))
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "NEW"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				_self.pt(_self, prog, a1, z1)
+				let st = mut _self.pSt
+				let bs = mut _self.pBaS
+				let be = mut _self.pBaE
+				prog.begin(prog)
+				? prog.addLit(prog, "NEW")
+				? prog.addS64(prog, wrap:<s64>(size))
+				let sl = mut -1
+				if st == 0{
+					sl = _self.six.find(_self.six, prog, bs, be)
+				}
+				if sl >= 0{
+					let slu = mut wrap:<u64>(sl)
+					let fe = mut _self.firstEntry(_self, prog, slu)
+					if fe >= 0{
+						let rs = mut _self.findNewRunStart(_self, prog, fnStart, k)
+						if rs >= 0{
+							? _self.layoutTokens(_self, prog, slu, wrap:<u64>(rs), k)
+						} else {
+							let n = mut prog.size(prog)
+							let q = mut (slu + 1)
+							for stp in 0..n{
+								if q >= n{
+									break
+								}
+								let kind = mut _self.ek(_self, prog, q)
+								if kind == 3{
+									break
+								}
+								if kind == 2{
+									let pv = mut prog.numTok(prog, q, 1)
+									if pv < 0{
+										pv = 0
+									}
+									? AddressLoweringPass.emitMP(prog, 1, wrap:<u64>(pv))
+								} else if kind == 1{
+									if _self.tokR(_self, prog, q, 2){
+										let mta = mut _self.rS
+										let mtz = mut _self.rE
+										let msz = mut ? _self.sizeOf(_self, prog, mta, mtz)
+										? AddressLoweringPass.emitMP(prog, 0, msz)
+									}
+								}
+								q += 1
+							}
+						}
+					}
+				}
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "DEREF"){
+				let size = mut ? _self.sizeOf(_self, prog, a1, z1)
+				? AddressLoweringPass.emitSized(prog, m0, m1, size)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "STACK_LOCK"){
+				if Hob.isDigits(prog, a1, z1){
+					return false
+				}
+				let size0 = mut ? _self.sizeOf(_self, prog, a1, z1)
+				let size = mut wrap:<s64>(size0)
+				let sl = mut _self.six.find(_self.six, prog, a1, z1)
+				if sl >= 0{
+					let fm = mut _self.firstMember(_self, prog, wrap:<u64>(sl))
+					if fm >= 0{
+						if _self.tokR(_self, prog, wrap:<u64>(fm), 1){
+							if Hob.eqLit(prog, _self.rS, _self.rE, "___type"){
+								size -= 8
+							}
+						}
+					}
+				}
+				size -= 8
+				prog.begin(prog)
+				? prog.addLit(prog, "STACK_LOCK")
+				? prog.addS64(prog, size)
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "RECURSIVE_CALL"){
+				prog.begin(prog)
+				? prog.addLit(prog, "CALL")
+				? prog.addRange(prog, a1, z1)
+				? prog.outBuilt(prog)
+				return true
+			}
+			if Hob.eqLit(prog, m0, m1, "GT_DESTRUCT"){
+				let found = mut ? _self.resolveAddr(_self, prog, a1, z1)
+				if found == false{
+					return false
+				}
+				prog.begin(prog)
+				? prog.addLit(prog, "GT_DESTRUCT")
+				? prog.addLit(prog, "$")
+				? prog.glueS64(prog, _self.raddr)
+				? prog.outBuilt(prog)
+				return true
+			}
+			return false
+		}
+		if c == 5{
+			if Hob.eqLit(prog, m0, m1, "MEMCOPY"){
+				prog.begin(prog)
+				? prog.addLit(prog, "MEMCOPY")
+				? prog.outBuilt(prog)
+				return true
+			}
+		}
+		return false
+	}
+
+	// ---------------------------------------------------------------- driver
+
+	/** Reads the struct and enum declarations of the program and the constant ranges the pass needs. */
+	@throws
+	func init(_self: ref some mut self, prog: ref some mut Prog, cfg: ref some imut Config) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		for i in 0..n{
+			if prog.opEq(prog, i, "STRUCT_START") &&then prog.count(prog, i) >= 2{
+				_self.six.put(_self.six, prog, i)
+			} else if prog.opEq(prog, i, "ENUM") &&then prog.count(prog, i) >= 2{
+				_self.eix.put(_self.eix, prog, i)
+			}
+		}
+		prog.begin(prog)
+		? prog.addLit(prog, "Class")
+		_self.clsS = prog.cur
+		_self.clsE = prog.used
+		prog.begin(prog)
+		? prog.addLit(prog, "imut_u64")
+		_self.u64S = prog.cur
+		_self.u64E = prog.used
+		prog.begin(prog)
+		? prog.addLit(prog, "indeterminate_u64")
+		_self.indS = prog.cur
+		_self.indE = prog.used
+		let di = mut cfg.defaultIndex(cfg)
+		if di >= 0{
+			_self.setConv(_self, cfg, wrap:<u64>(di))
+			_self.dInt = _self.cInt
+			_self.dFloat = _self.cFloat
+			_self.dShadow = _self.cShadow
+			_self.dShared = _self.cShared
+		}
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog, cfg: ref some imut Config) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		let ns = mut 0
+		let ne = mut 0
+		for i in 0..n{
+			if prog.opEq(prog, i, "STRUCT_START"){
+				ns += 1
+			} else if prog.opEq(prog, i, "ENUM"){
+				ne += 1
+			}
+		}
+		let st = mut ? new AddressLoweringPass(ns, ne)
+		? st.init(st, prog, cfg)
+		prog.outReset(prog)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START") == false{
+				let skip = mut false
+				if prog.opEq(prog, i, "STRUCT_DECORATE") || prog.opEq(prog, i, "STRUCT_START") || prog.opEq(prog, i, "STRUCT_MEMBER") || prog.opEq(prog, i, "STRUCT_END") || prog.opEq(prog, i, "ENUM"){
+					skip = true
+				}
+				if skip == false{
+					let c = mut prog.count(prog, i)
+					if c == 3 || c == 4{
+						if prog.opEq(prog, i, "ALLOC_STATIC") || prog.opEq(prog, i, "GLOBAL"){
+							st.ld(st, prog, i)
+							? st.staticDecl(st, prog)
+							skip = true
+						}
+					}
+				}
+				if skip == false{
+					? prog.outLine(prog, i)
+				}
+				i += 1
+				continue
+			}
+			let end = mut i
+			for q in 0..n{
+				if end < n &&then prog.opEq(prog, end, "FUNC_END") == false{
+					end += 1
+				} else {
+					break
+				}
+			}
+			if end > n - 1{
+				end = n - 1
+			}
+			let last = mut (end + 1)
+			let total = mut ? st.frame(st, prog, i, end)
+			st.resolveConv(st, prog, cfg, i, end)
+			? st.resolveArgSlots(st, prog, i, end)
+			let flen = mut (end - i + 1)
+			? st.litAt.zero(st.litAt, flen)
+			? st.arrAt.zero(st.arrAt, flen)
+			? st.findLits(st, prog, i, end)
+			? st.findArrs(st, prog, i, end)
+			let combined = mut false
+			let hasPrev = mut false
+			let prevK = mut 0
+			for k in i..last{
+				let c = mut prog.count(prog, k)
+				if c == 3 &&then prog.opEq(prog, k, "ALLOC"){
+					if combined == false{
+						combined = true
+						prog.begin(prog)
+						? prog.addLit(prog, "ALLOC")
+						? prog.addS64(prog, wrap:<s64>(total))
+						? prog.outBuilt(prog)
+					}
+					hasPrev = true
+					prevK = k
+					continue
+				}
+				if c == 3 || c == 4{
+					if prog.opEq(prog, k, "REGVAR"){
+						if st.tokR(st, prog, k, 1){
+							let idx = mut st.nm.get1(st.nm, prog, st.rS, st.rE)
+							if idx >= 0{
+								let ix = mut wrap:<u64>(idx)
+								let ts = mut st.lTs.get(st.lTs, ix)
+								let te = mut st.lTe.get(st.lTe, ix)
+								let sz = mut ? st.sizeOf(st, prog, ts, te)
+								let off = mut (0 - wrap:<s64>(st.lMag.get(st.lMag, ix)))
+								prog.begin(prog)
+								? prog.addLit(prog, "REGHINT")
+								? prog.addS64(prog, off)
+								? prog.addS64(prog, wrap:<s64>(sz))
+								? prog.addTok(prog, k, 2)
+								if c == 4{
+									? prog.addTok(prog, k, 3)
+								}
+								? prog.outBuilt(prog)
+							}
+						}
+						continue
+					}
+				}
+				if prog.opEq(prog, k, "RETURNS") || prog.opEq(prog, k, "FUNC_DECORATE") || prog.opEq(prog, k, "LOOP_DECORATE") || prog.opEq(prog, k, "FOR_DECORATE"){
+					continue
+				}
+				if c == 4 &&then hasPrev &&then prog.opEq(prog, k, "ADDR_OF"){
+					if st.lastTok(st, prog, prevK) &&then prog.count(prog, prevK) > 0{
+						st.pt(st, prog, st.rS, st.rE)
+						let stor = mut st.pSt
+						let drop = mut false
+						if stor == 1 &&then prog.eqLit(prog, k, 1, "REF"){
+							drop = true
+						} else if stor == 5 &&then prog.eqLit(prog, k, 1, "RAW"){
+							drop = true
+						}
+						if drop{
+							hasPrev = true
+							prevK = k
+							continue
+						}
+					}
+				}
+				let wrote = mut ? st.rw(st, prog, k, hasPrev, prevK, i)
+				if wrote == false{
+					? prog.outLine(prog, k)
+				}
+				hasPrev = true
+				prevK = k
+			}
+			i = last
+		}
+		prog.outCommit(prog)
+	}
+}

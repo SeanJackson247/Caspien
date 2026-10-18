@@ -1,0 +1,266 @@
+import "stdlib/string.caspien"
+import "Prog.caspien"
+
+/**
+ * Port of RangeCheckFusionPass: the 14-line constant-bounds `match i in/into arr` test (two temp slots copy the index and the range) becomes 9 lines, or 5 when the lower bound is 0.
+ * Two phases so the "temp slots mentioned nowhere else in the function" test sees the ORIGINAL text: phase 1 finds the matches (read only), phase 2 rewrites in place.
+ */
+@pub
+struct RangeCheckFusionPass{@pub{
+}}
+
+impl constructor for RangeCheckFusionPass() self{
+	return RangeCheckFusionPass{}
+}
+
+@pub
+impl RangeCheckFusionPass{
+	/** `PUSH 8 <x>` */
+	static func isPush8(prog: ref some imut Prog, i: mut u64) mut bool{
+		if prog.count(prog, i) == 3 &&then prog.opEq(prog, i, "PUSH") &&then prog.eqLit(prog, i, 1, "8"){
+			return true
+		}
+		return false
+	}
+
+	/** `<mn> <sz>` */
+	static func isOp(prog: ref some imut Prog, i: mut u64, mn: static imut string, sz: static imut string) mut bool{
+		if prog.count(prog, i) == 2 &&then prog.opEq(prog, i, mn) &&then prog.eqLit(prog, i, 1, sz){
+			return true
+		}
+		return false
+	}
+
+	/** Token `k` of line `i` as a `$<signed number>` slot: its offset, or the sentinel. */
+	static func slotOf(prog: ref some imut Prog, i: mut u64, k: mut u64) mut s64{
+		let p = mut prog.tokPos(prog, i, k)
+		if p < 0{
+			return -4611686018427387904
+		}
+		return Ln.slotValue(prog.buf, wrap:<u64>(p), prog.lineEnd(prog, i))
+	}
+
+	/** `PUSH 8 <decimal in 0..2^31-1>` -> the literal, else -1. */
+	static func lit(prog: ref some imut Prog, i: mut u64) mut s64{
+		if RangeCheckFusionPass.isPush8(prog, i) == false{
+			return -1
+		}
+		let v = mut prog.numTok(prog, i, 2)
+		if v > 2147483647{
+			return -1
+		}
+		return v
+	}
+
+	/** Token `k` of line `i` equals token `m` of line `j`. */
+	static func sameAs(prog: ref some imut Prog, i: mut u64, k: mut u64, j: mut u64, m: mut u64) mut bool{
+		return prog.tokEq(prog, i, k, j, m)
+	}
+
+	/** True when the 14 lines from `i` are the shape and the three temp slots are mentioned nowhere else in the function [fs, fe]. */
+	static func matches(prog: ref some imut Prog, i: mut u64, fs: mut u64, fe: mut u64) mut bool{
+		let sentinel = mut -4611686018427387904
+		if RangeCheckFusionPass.isPush8(prog, i) == false || RangeCheckFusionPass.slotOf(prog, i, 2) == sentinel{
+			return false
+		}
+		let a1 = mut (i + 1)
+		let a2 = mut (i + 2)
+		let a3 = mut (i + 3)
+		let a4 = mut (i + 4)
+		if RangeCheckFusionPass.lit(prog, a1) < 0 || RangeCheckFusionPass.lit(prog, a2) < 0{
+			return false
+		}
+		if prog.count(prog, a3) != 3 || prog.opEq(prog, a3, "POP") == false || prog.eqLit(prog, a3, 2, "16") == false{
+			return false
+		}
+		if prog.count(prog, a4) != 3 || prog.opEq(prog, a4, "POP") == false || prog.eqLit(prog, a4, 2, "8") == false{
+			return false
+		}
+		let ro = mut RangeCheckFusionPass.slotOf(prog, a3, 1)
+		let lo = mut RangeCheckFusionPass.slotOf(prog, a4, 1)
+		if ro == sentinel || lo == sentinel{
+			return false
+		}
+		let b0 = mut (i + 5)
+		let b1 = mut (i + 6)
+		let b2 = mut (i + 7)
+		let b3 = mut (i + 8)
+		let b4 = mut (i + 9)
+		let b5 = mut (i + 10)
+		let b6 = mut (i + 11)
+		let b7 = mut (i + 12)
+		let b8 = mut (i + 13)
+		if RangeCheckFusionPass.isPush8(prog, b0) == false || prog.tokEq(prog, b0, 2, a4, 1) == false{
+			return false
+		}
+		if RangeCheckFusionPass.isPush8(prog, b1) == false || prog.tokEq(prog, b1, 2, a3, 1) == false{
+			return false
+		}
+		if RangeCheckFusionPass.isOp(prog, b2, "GT_EQ_INT", "8") == false{
+			return false
+		}
+		if RangeCheckFusionPass.isPush8(prog, b3) == false || prog.tokEq(prog, b3, 2, a4, 1) == false{
+			return false
+		}
+		if RangeCheckFusionPass.isPush8(prog, b4) == false{
+			return false
+		}
+		let p4 = mut prog.tokPos(prog, b4, 2)
+		if p4 < 0 || Ln.tokIsSlot(prog.buf, wrap:<u64>(p4), prog.lineEnd(prog, b4), ro + 8) == false{
+			return false
+		}
+		if RangeCheckFusionPass.isOp(prog, b5, "LT_INT", "8") == false || RangeCheckFusionPass.isOp(prog, b6, "AND", "1") == false{
+			return false
+		}
+		if prog.count(prog, b7) != 1 || prog.opEq(prog, b7, "CMP") == false{
+			return false
+		}
+		if prog.count(prog, b8) != 2 || prog.opEq(prog, b8, "JMP") == false{
+			return false
+		}
+		// the three temp slots (text of r, of l, and "$" + (ro + 8)) must be mentioned nowhere else in the function
+		let n = mut prog.size(prog)
+		let pr = mut wrap:<u64>(prog.tokPos(prog, a3, 1))
+		let pl = mut wrap:<u64>(prog.tokPos(prog, a4, 1))
+		let er = mut prog.lineEnd(prog, a3)
+		let el = mut prog.lineEnd(prog, a4)
+		let last = mut fe
+		if last >= n{
+			last = n - 1
+		}
+		let j = mut fs
+		let span = mut (last + 1)
+		for q in 0..span{
+			if j > last{
+				break
+			}
+			if j >= i &&then j <= i + 13{
+				j += 1
+				continue
+			}
+			let s = mut prog.lineStart(prog, j)
+			let e = mut prog.lineEnd(prog, j)
+			let x = mut s
+			for t in 0..e{
+				if x >= e{
+					break
+				}
+				if prog.buf.charAt(prog.buf, x) == ' '{
+					x += 1
+					continue
+				}
+				if prog.buf.charAt(prog.buf, x) == '$'{
+					if Ln.sameTok(prog.buf, x, e, pr, er) || Ln.sameTok(prog.buf, x, e, pl, el) || Ln.tokIsSlot(prog.buf, x, e, ro + 8){
+						return false
+					}
+				}
+				x = Ln.tokEnd(prog.buf, x, e)
+			}
+			j += 1
+		}
+		return true
+	}
+
+	@pub
+	@throws
+	static func run(prog: ref some mut Prog) void{
+		?catch(e){ throw e }
+		let n = mut prog.size(prog)
+		// phase 1: find the matches
+		let marks = mut ? dyn:<u64>([])
+		let nm = mut 0
+		let fs = mut 0
+		let fe = mut (n - 1)
+		let i = mut 0
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			if prog.opEq(prog, i, "FUNC_START"){
+				fs = i
+				fe = i
+				let j = mut (i + 1)
+				for q in 0..n{
+					if j >= n{
+						break
+					}
+					if prog.opEq(prog, j, "FUNC_END"){
+						fe = j
+						break
+					}
+					j += 1
+				}
+				if fe == i{
+					fe = n - 1
+				}
+			}
+			if i + 13 < n &&then RangeCheckFusionPass.matches(prog, i, fs, fe){
+				marks = ? resize(marks, nm + 1, 0)
+				match nm into marks{
+					marks[nm] = i
+				}
+				nm += 1
+				i += 14
+			} else {
+				i += 1
+			}
+		}
+		if nm == 0{
+			return
+		}
+		// phase 2: rewrite in place (the write position never passes the read position)
+		let w = mut 0
+		let r = mut 0
+		let mi = mut 0
+		for step in 0..n{
+			if r >= n{
+				break
+			}
+			let at = mut n
+			if mi < nm{
+				match mi in marks{
+					at = marks[mi]
+				}
+			}
+			if r == at{
+				prog.stash(prog, 0, r)
+				prog.stash(prog, 1, r + 1)
+				prog.stash(prog, 2, r + 2)
+				prog.stash(prog, 3, r + 7)
+				prog.stash(prog, 4, r + 10)
+				prog.stash(prog, 5, r + 11)
+				prog.stash(prog, 6, r + 12)
+				prog.stash(prog, 7, r + 13)
+				let k0 = mut prog.numTok(prog, r + 1, 2)
+				if k0 != 0{
+					prog.unstash(prog, 0, w)
+					prog.unstash(prog, 1, w + 1)
+					prog.unstash(prog, 3, w + 2)
+					prog.unstash(prog, 0, w + 3)
+					prog.unstash(prog, 2, w + 4)
+					prog.unstash(prog, 4, w + 5)
+					prog.unstash(prog, 5, w + 6)
+					prog.unstash(prog, 6, w + 7)
+					prog.unstash(prog, 7, w + 8)
+					w += 9
+				} else {
+					prog.unstash(prog, 0, w)
+					prog.unstash(prog, 2, w + 1)
+					prog.unstash(prog, 4, w + 2)
+					prog.unstash(prog, 6, w + 3)
+					prog.unstash(prog, 7, w + 4)
+					w += 5
+				}
+				r += 14
+				mi += 1
+			} else {
+				if w != r{
+					prog.copyLine(prog, r, w)
+				}
+				w += 1
+				r += 1
+			}
+		}
+		prog.truncate(prog, w)
+	}
+}
