@@ -63,7 +63,12 @@ class Tree:
 
     def __init__(self, root=None):
         root = root or paths.REPO
-        self.dir = tempfile.mkdtemp(prefix="caspien_tree_")
+        self.top = tempfile.mkdtemp(prefix="caspien_tree_")
+        self.dir = os.path.join(self.top, "impl")
+        os.mkdir(self.dir)
+        ref = os.path.join(os.path.dirname(os.path.abspath(root)), "ReferenceImplementation")   # stages 1-2 of the Caspien compiler load from ../ReferenceImplementation
+        if os.path.isdir(ref):
+            os.symlink(ref, os.path.join(self.top, "ReferenceImplementation"))
         for d in ("ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen"):
             shutil.copytree(os.path.join(root, d), os.path.join(self.dir, d))
         for f in os.listdir(root):
@@ -92,4 +97,4 @@ class Tree:
         return {"cmd": ["java", "Compiler", "-i", source_rel, exe, "--no-cache"], "cwd": self.dir, "env": dict(os.environ, JAVA_TOOL_OPTIONS="", CASPIEN_STDLIB=os.path.normpath(os.path.join(paths.REPO, "..", "stdlib")))}
 
     def close(self):
-        shutil.rmtree(self.dir, ignore_errors=True)
+        shutil.rmtree(self.top, ignore_errors=True)
