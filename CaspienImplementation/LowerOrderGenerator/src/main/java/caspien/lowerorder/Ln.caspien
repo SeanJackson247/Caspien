@@ -120,19 +120,10 @@ impl Ln{
 	/** Compares the literal with the text from `p`: false at the first mismatch or when the line (end `e`) runs out first; when `whole`, the literal must also end at the end of a token. */
 	@pub
 	static func litAtPos(b: ref some imut String, p: mut u64, e: mut u64, lit: static imut string, whole: mut bool) mut bool{
-		let:<raw mut u8> lp = null
-		unsafe memcopy raw{
-			let tmp = mut raw lit
-			memcopy(raw lp, mut 8, raw tmp)
-		}
 		let pos = mut p
 		let bound = mut (e + 1)
 		for step in 0..bound{
-			let q = mut (lp + (pos - p))
-			let lc = mut '\0'
-			unsafe memcopy raw{
-				memcopy(raw lc, mut 1, q)
-			}
+			let lc = mut String.literalByteAt(lit, (pos - p))
 			if lc == '\0'{
 				if whole == false || pos == e{
 					return true

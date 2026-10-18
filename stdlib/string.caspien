@@ -880,6 +880,31 @@ impl String{
 		return bits_xor(h, bits_right(h, 32))
 	}
 
+	/**
+	 * Byte `i` of a string literal, or '\0' when `i` is at or past the literal's end. Safe to call with any `i`: the scan from the start stops at the terminating
+	 * NUL, so nothing beyond the literal is ever read (cost O(min(i, length))). The raw pointer read stays inside this function.
+	 */
+	@pub
+	static func literalByteAt(lit: static imut string, i: mut u64) mut char{
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		let b = mut '\0'
+		let n = mut (i + 1)
+		for k in 0..n{
+			let q = mut (lp + k)
+			unsafe memcopy raw{
+				memcopy(raw b, mut 1, q)
+			}
+			if b == '\0'{
+				break
+			}
+		}
+		return b
+	}
+
 	/** The byte value of a char (Java `(long) c` for chars below 256). */
 	@pub
 	static func charCode(c: mut char) mut u64{

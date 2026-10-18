@@ -51,30 +51,17 @@ impl Tpl{
 	func build(_self: ref some imut self, prog: ref some mut Prog, lit: static imut string) void{
 		?catch(e0){ throw e0 }
 		? prog.reserve(prog, 256)
-		let:<raw mut u8> lp = null
-		unsafe memcopy raw{
-			let tmp = mut raw lit
-			memcopy(raw lp, mut 8, raw tmp)
-		}
 		prog.cur = prog.used
 		let w = mut 0
 		let lim = mut 256
 		for step in 0..lim{
-			let q = mut (lp + w)
-			let lc = mut '\0'
-			unsafe memcopy raw{
-				memcopy(raw lc, mut 1, q)
-			}
+			let lc = mut String.literalByteAt(lit, w)
 			if lc == '\0'{
 				break
 			}
 			w += 1
 			if lc == '%'{
-				let q2 = mut (lp + w)
-				let dc = mut '\0'
-				unsafe memcopy raw{
-					memcopy(raw dc, mut 1, q2)
-				}
+				let dc = mut String.literalByteAt(lit, w)
 				w += 1
 				let k = mut (String.charCode(dc) - 48)
 				if dc >= 'a'{

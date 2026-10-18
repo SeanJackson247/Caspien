@@ -703,19 +703,10 @@ impl Prog{
 		?catch(e0){ throw e0 }
 		? _self.sep(_self)
 		? _self.reserve(_self, 256)
-		let:<raw mut u8> lp = null
-		unsafe memcopy raw{
-			let tmp = mut raw lit
-			memcopy(raw lp, mut 8, raw tmp)
-		}
 		let u = mut _self.used
 		let w = mut 0
 		for step in 0..256{
-			let q = mut (lp + w)
-			let lc = mut '\0'
-			unsafe memcopy raw{
-				memcopy(raw lc, mut 1, q)
-			}
+			let lc = mut String.literalByteAt(lit, w)
 			if lc == '\0'{
 				break
 			}
@@ -783,19 +774,10 @@ impl Prog{
 	func glueLit(_self: ref some mut self, lit: static imut string) void{
 		?catch(e0){ throw e0 }
 		? _self.reserve(_self, 256)
-		let:<raw mut u8> lp = null
-		unsafe memcopy raw{
-			let tmp = mut raw lit
-			memcopy(raw lp, mut 8, raw tmp)
-		}
 		let u = mut _self.used
 		let w = mut 0
 		for step in 0..256{
-			let q = mut (lp + w)
-			let lc = mut '\0'
-			unsafe memcopy raw{
-				memcopy(raw lc, mut 1, q)
-			}
+			let lc = mut String.literalByteAt(lit, w)
 			if lc == '\0'{
 				break
 			}
