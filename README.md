@@ -755,8 +755,10 @@ Caspien has five kinds of pointer, and the kind says who is responsible for the 
 | `raw` | a C-style pointer outside the model: nothing is checked and nothing is freed. Making and dereferencing one needs `unsafe` |
 
 Every pointer slot either has responsibility for its target or it does not; that is the whole model, and memory safety
-comes from each kind behaving as its kind says. There is no borrowing in the sense Rust uses the word, where something is
-lent and has to come back: ownership that is moved is simply gone from the caller, and nothing in the contract returns it.
+comes from each kind behaving as its kind says. Moving ownership is not lending: ownership that is moved is simply gone
+from the caller, and nothing in the contract returns it. Lending exists too, as a separate and narrower thing: a `ref some`
+may be stored in a struct member, and the compiler then checks that the borrowed object outlives the struct that holds it
+(see *Borrowing: `ref some` members and lifetime contracts* below).
 
 ```rust
 func steals(s2: owns mut String){ }       // s2 is now responsible for the String
@@ -764,9 +766,10 @@ func steals(s2: owns mut String){ }       // s2 is now responsible for the Strin
 steals(s)                                  // s no longer owns it: using `s` after this line is a compile error
 ```
 
-`steals` may return the same `String`, but nothing requires it to. There are also no lifetime annotations, because a `ref`
-has no lifetime in its type to annotate: it says only "I do not own this, check me before use", and the check is done at run
-time.
+`steals` may return the same `String`, but nothing requires it to. A plain `ref` has no lifetime in its type to annotate: it
+says only "I do not own this, check me before use", and the check is done at run time. The only lifetime syntax is the
+contract on a function that stores one `ref some` parameter into another (below); nothing is inferred across function
+boundaries and nothing is annotated inside a body.
 
 `new` allocates, and it can fail, so it goes through `?`. A pointer that might be absent is declared `owns
 some` (never null) or plain `owns` (possibly null), and a `some` pointer needs no check.
@@ -811,8 +814,59 @@ A `ref some` parameter (including `self`) is alive when the function is entered,
 local, and the same rules end that proof inside the function. An `unsafe` block ends proofs where the block ends, and
 `unsafe`, an unknown call target or an `extern` free end every proof; an assignment, `resize` or owning parameter ends
 only proofs of references whose target type that free can reach by ownership (freeing an `Other` cannot end a proof
-about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). A plain `ref` is a 64-bit id issued by the ghost table, not an address, so a freed object's ref stays dead even when `malloc` hands the same address to a new object; `ref some` and the binding inside `match Some` are the address. The standard
+about a `Node`). A nullable `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path); a `ref some` member needs no `match`, its proof is made when it is stored and ended by the same events. A plain `ref` is a 64-bit id issued by the ghost table, not an address, so a freed object's ref stays dead even when `malloc` hands the same address to a new object; `ref some` and the binding inside `match Some` are the address. The standard
 library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
+
+#### Borrowing: `ref some` members and lifetime contracts
+
+A `ref some` is a plain address: no ghost-table id, no run-time lookup. It may be a struct member, which makes linked and
+borrowing structures cheap (a nullable `ref` member costs an id and a table lookup per access). A struct with a `ref some`
+member, or with a member of such a struct type at any depth, is a *scoped type*: its values are only valid while everything
+they borrow is. The compiler enforces that without lifetime parameters on types.
+
+```rust
+struct A{@pub{ v: mut u64 }}
+struct B{@pub{ a: ref some mut A }}
+
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new A{v= 5}
+	let b = mut B{a= ref a}         // `a` is declared before `b`, so it outlives it: accepted
+	let r = mut b.a.v               // reading through the member needs no `match Some`
+}
+```
+
+The rules, all checked at compile time:
+
+- **Storing** a `ref some` into a scoped value (`b.a = ref a`, `B{a= ref a}`, or a call that does it) needs the borrowed object to
+  live at least as long as the holder. For locals that follows from scope nesting and declaration order: the borrowed object
+  must be declared in an outer scope, or earlier in the same scope. If the holder's type has a `@drop`, it must be strictly
+  earlier, because the drop runs while the target still has to be there.
+- **A function that stores one of its `ref some` parameters into another states the relation in its signature.** The longer-lived
+  side is on the left, and the caller proves the relation at each call from its own scopes:
+
+```rust
+@lock match(lifetime(a) >= lifetime(b))
+func wire(a: ref some mut A, b: ref some mut B) void{
+	b.a = a
+}
+```
+
+  `lifetime(x)` names the region the object `x` refers to lives in, and only a parameter or local may appear inside it. The
+  operators are `>=` (equal lifetimes are fine, such as two locals of one scope), `>` (the left is destroyed strictly after
+  the right) and `==`. Chains such as `lifetime(a) >= lifetime(b) >= lifetime(c)` mean pairwise comparisons, and `<=` is a
+  parse error because the longer-lived side is always written first. Every relation contains the text `lifetime(`, so it can
+  be found with a search. A store into a parameter without the contract is an error that prints the line to add.
+- **The ordinary liveness rules still apply.** Reading a scoped value or its member uses the proof of every `ref some` it holds, so a
+  call that may free the target's type between the store and the read ends it, exactly as for a plain `ref some` local.
+- **A scoped value cannot outlive what it borrows.** It cannot be returned, thrown, stored in a `let static`, moved into a
+  longer-lived owner, or sent across `par` or `await`. It also cannot be `clone`d, and cannot be a dynamic-array element
+  (as a member, parameter, return value or local).
+- **Targets have a stable address.** A `ref` needs an `owns`-typed operand, so the target is its own heap object, even through a
+  dynamic-array element (`ref v[i].n`); a `resize` or shrink is one of the events that ends proofs.
+
+Not covered: returning a value that borrows from a parameter, a whole-program lifetime, and lifetimes through generics. The
+design and the accept and reject tests (`tests/lifetime_*`) are in `ReferenceImplementation/ASTGenerator/docs/LifetimeContracts.md`.
 
 #### The ghost table
 
@@ -2121,9 +2175,9 @@ from the library's side.
 - **No struct by value as a plain parameter.** Collections of structs go through `auto` pointers (`pushBackPtr`,
   `setPtr`); a struct may be returned (the compiler builds it in the caller's slot), but only as a `let` initialiser,
   the right-hand side of an assignment to a plain variable, or `return f()`.
-- **No recursion** except an `@recursive` tail call, and **no recursive structs except through a plain nullable `ref`**
-  (a struct may hold `ref` links to its own type, never `ref some`, `owns`, `raw` or `auto`, so a node never owns another
-  node; every access goes through a `match Some` alive proof). The benchmarks have index-based and `ref`-linked versions.
+- **No recursion** except an `@recursive` tail call, and **no recursive structs except through a `ref` link**
+  (a struct may hold a nullable `ref` to its own type, or a `ref some` under a lifetime contract, never `owns`, `raw` or `auto`, so a
+  node never owns another node; a nullable `ref` is accessed through a `match Some` alive proof). The benchmarks have index-based and `ref`-linked versions.
 - **Ownership is single and checked.** Putting an `owns` value into a collection moves it; reading an owning struct
   out of an element by value is a compile error (use `clone`); `clone` of anything that reaches a `@drop` type is an
   error. Elements are freed when the collection is.
@@ -2699,7 +2753,7 @@ structs and arrays as C does. The exception is the `ref` variants (below): they 
   `malloc` reuses its address. The price, measured on the three programs that have `ref`-linked variants (graph, binarytrees, lru):
   4.4 to 10.2 s against 0.18 to 0.87 s for the index versions, i.e. 15x to 21x slower than C and 11x to 40x slower than the
   index twins, and 4.5x the memory. The stdlib `HashMap` built on `ref` nodes (`stdlib/ref/hash_map.caspien`) is 12x to 19x slower than C. Use
-  indices or `ref some`/`owns` where speed matters; the `ref` variants exist to keep the safe-pointer story honest, not to win
+  indices, `owns`, or `ref some` members (a plain address under a lifetime contract, no id) where speed matters; the `ref` variants exist to keep the safe-pointer story honest, not to win
   benchmarks. Two further optimisations are written down but not built (no id for types no `ref` is ever taken to; skipping a repeated
   `match Some`), and in the `unsafe` variants `assume match Some` already resolves the id once without a test.
 - The benchmark programs are not Caspien-specific. Twelve are taken from a public collection of
@@ -2778,6 +2832,7 @@ The same decorator appears in several places. Proof locks are described in 2.4 a
 | `@lock(match self.f : OPEN)`, `f` a `swap` atomic | struct | a spin lock: the other members need `match @lock x{ OPEN:{...} }` |
 | `@lock(match self.f : V)` | method | the caller must already be inside the matching `match` |
 | `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` (`into` for writes) |
+| `@lock match(lifetime(a) >= lifetime(b))` | function | a lifetime contract: the object `a` refers to outlives the one `b` refers to; the function may store `a` in `b` and every caller must prove it (2.3) |
 
 ### D. Reading the code
 
