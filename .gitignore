@@ -7,6 +7,8 @@ ASTGenerator/fs.config
 ASTGenerator/platform.config
 __pycache__/
 /.cache/
+# Stage caches written next to either compiler
+.cache/
 /benchmarks/.build_cache/
 .leaks.log
 # Same scratch paths inside the two implementation folders
