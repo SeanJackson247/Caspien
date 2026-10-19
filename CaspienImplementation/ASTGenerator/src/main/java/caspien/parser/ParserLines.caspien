@@ -1,0 +1,1679 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../token/TokenType.caspien"
+import "../token/Lexeme.caspien"
+import "../token/TokStore.caspien"
+import "../util/Txt.caspien"
+import "ParserBlocks.caspien"
+import "../rpnconverter/RpnConverter.caspien"
+import "../treebuilder/TreeBuilder.caspien"
+
+/**
+ * Stage 2a of the front end (port of the line passes of caspien.parser.ParserLines): lexemes -> tokens, nesting by delineators, template strings, line splitting,
+ * let merge, import collapse, whitespace removal, "then" merging, generic-instantiation collapse, CALL / LOOKUP insertion.
+ * All tokens and lists live in the TokStore and are addressed by u64 ids (docs/ASTGeneratorPort.md). The Java walkers are explicit task stacks; here each pass keeps
+ * a worklist of list ids. Every pass edits a list in place (the Java `flat.remove(i)` / `flat.add(i, x)`), so a list shared by two tokens stays shared.
+ */
+@pub
+struct ParserLines{@pub{
+}}
+
+@pub
+impl ParserLines{
+	// ---- small predicates ------------------------------------------------------------------------------------------------
+
+	static func isKind(ts: ref imut TokStore, t: mut u64, kind: mut u64) mut bool{
+		return TokStore.kind(ts, t) == kind
+	}
+
+	static func isOp(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == TT_OPERATOR && TokStore.textEq(ts, t, lit)
+	}
+
+	static func isDel(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == TT_DELINEATOR && TokStore.textEq(ts, t, lit)
+	}
+
+	static func isKw(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == TT_KEYWORD && TokStore.textEq(ts, t, lit)
+	}
+
+	static func isVarRef(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == TT_VARREF && TokStore.textEq(ts, t, lit)
+	}
+
+	/** The childs list of token `t`, created on first need. */
+	@throws
+	static func ensureChilds(ts: ref mut TokStore, t: mut u64) mut u64{
+		?catch(e){ throw e }
+		let l = mut TokStore.childs(ts, t)
+		if l == TOK_NONE{
+			l = ? TokStore.newList(ts)
+			TokStore.setChilds(ts, t, l)
+		}
+		return l
+	}
+
+	/** Index of the first token of list `l` that is not WHITESPACE, or -1. */
+	static func firstNonWhitespaceIndex(ts: ref imut TokStore, l: mut u64) mut s64{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.kind(ts, TokStore.listGet(ts, l, i)) != TT_WHITESPACE{
+				return wrap:<s64>(i)
+			}
+		}
+		return -1
+	}
+
+	static func skipWs(ts: ref imut TokStore, l: mut u64, i: mut u64) mut u64{
+		let n = mut TokStore.listSize(ts, l)
+		let k = mut i
+		for lp1 in 0..1000000000{
+			if k >= n{
+				break
+			}
+			if TokStore.kind(ts, TokStore.listGet(ts, l, k)) != TT_WHITESPACE{
+				break
+			}
+			k = k + 1
+		}
+		return k
+	}
+
+	static func isOpenChar(c: mut char) mut bool{
+		return c == '(' || c == '[' || c == '{'
+	}
+
+	static func isCloseChar(c: mut char) mut bool{
+		return c == ')' || c == ']' || c == '}'
+	}
+
+	static func matchingOpen(c: mut char) mut char{
+		if c == ')'{
+			return '('
+		}
+		if c == ']'{
+			return '['
+		}
+		return '{'
+	}
+
+	// ---- 0. lexemes -> tokens ----------------------------------------------------------------------------------------------
+	// Lexemes are read with getSome (a plain proven address): a nullable `get` registers a ghost-table id per call, which made a 57k-lexeme file quadratic.
+
+	static func lexKind(lx: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		match Some(lx){
+			let e = ? lx.getSome(lx, i)
+			return e.kind
+		}
+		return 0
+	}
+
+	static func lexLine(lx: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		match Some(lx){
+			let e = ? lx.getSome(lx, i)
+			return e.line
+		}
+		return 0
+	}
+
+	static func lexRadix(lx: ref imut ObjectList<Lexeme>, i: mut u64) mut bool{
+		?catch(e){ return false }
+		match Some(lx){
+			let e = ? lx.getSome(lx, i)
+			return e.radixLiteral
+		}
+		return false
+	}
+
+	/** Appends the lexeme's text to the string arena; returns its string id. */
+	@throws
+	static func lexAddText(ts: ref mut TokStore, lx: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		let start = mut TokStore.strBegin(ts)
+		match Some(ts){
+			match Some(lx){
+				let e = ? lx.getSome(lx, i)
+				? ts.sbuf.append(ts.sbuf, e.text)
+			}
+		}
+		let id = mut ? TokStore.strEnd(ts, start)
+		return id
+	}
+
+	/** The literal value as a string id, or TOK_NONE when the lexeme has none. */
+	@throws
+	static func lexAddLit(ts: ref mut TokStore, lx: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		let start = mut TokStore.strBegin(ts)
+		let has = mut false
+		match Some(ts){
+			match Some(lx){
+				let e = ? lx.getSome(lx, i)
+				match Some(e.literalValue){
+					? ts.sbuf.append(ts.sbuf, e.literalValue)
+					has = true
+				}
+			}
+		}
+		if has{
+			let id = mut ? TokStore.strEnd(ts, start)
+			return id
+		}
+		return TOK_NONE
+	}
+
+	@throws
+	static func lexAddForced(ts: ref mut TokStore, lx: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		?catch(e){ throw e }
+		let start = mut TokStore.strBegin(ts)
+		let has = mut false
+		match Some(ts){
+			match Some(lx){
+				let e = ? lx.getSome(lx, i)
+				match Some(e.forcedLiteralType){
+					? ts.sbuf.append(ts.sbuf, e.forcedLiteralType)
+					has = true
+				}
+			}
+		}
+		if has{
+			let id = mut ? TokStore.strEnd(ts, start)
+			return id
+		}
+		return TOK_NONE
+	}
+
+	@throws
+	static func lexAddPin(ts: ref mut TokStore, lx: ref imut ObjectList<Lexeme>, i: mut u64, q: mut u64) mut u64{
+		?catch(e){ throw e }
+		let start = mut TokStore.strBegin(ts)
+		match Some(ts){
+			match Some(lx){
+				let e = ? lx.getSome(lx, i)
+				match Some(e.pinned){
+					let p = ? e.pinned.getSome(e.pinned, q)
+					? ts.sbuf.append(ts.sbuf, p.text)
+				}
+			}
+		}
+		let id = mut ? TokStore.strEnd(ts, start)
+		return id
+	}
+
+	static func lexPinnedCount(lx: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		match Some(lx){
+			let e = ? lx.getSome(lx, i)
+			match Some(e.pinned){ return e.pinned.size(e.pinned) }
+		}
+		return 0
+	}
+
+	static func pinKind(lx: ref imut ObjectList<Lexeme>, i: mut u64, q: mut u64) mut u64{
+		?catch(e){ return 0 }
+		match Some(lx){
+			let e = ? lx.getSome(lx, i)
+			match Some(e.pinned){
+				let p = ? e.pinned.getSome(e.pinned, q)
+				return p.kind
+			}
+		}
+		return 0
+	}
+
+	static func pinLine(lx: ref imut ObjectList<Lexeme>, i: mut u64, q: mut u64) mut u64{
+		?catch(e){ return 0 }
+		match Some(lx){
+			let e = ? lx.getSome(lx, i)
+			match Some(e.pinned){
+				let p = ? e.pinned.getSome(e.pinned, q)
+				return p.line
+			}
+		}
+		return 0
+	}
+
+	/** One token per lexeme, in order; pinned comments become tokens of their own kind. Returns the id of the flat token list. */
+	@pub
+	@throws
+	static func toTokens(ts: ref mut TokStore, lexemes: ref imut ObjectList<Lexeme>, fileId: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(lexemes){ n = lexemes.size(lexemes) }
+		let out = mut ? TokStore.newList(ts)
+		for i in 0..n{
+			let kind = mut ParserLines.lexKind(lexemes, i)
+			let line = mut ParserLines.lexLine(lexemes, i)
+			let radix = mut ParserLines.lexRadix(lexemes, i)
+			let textId = mut ? ParserLines.lexAddText(ts, lexemes, i)
+			let litId = mut ? ParserLines.lexAddLit(ts, lexemes, i)
+			let forcedId = mut ? ParserLines.lexAddForced(ts, lexemes, i)
+			let tid = mut ? TokStore.newToken(ts, kind, textId, line, fileId)
+			TokStore.setLiteralValue(ts, tid, litId)
+			TokStore.setForcedLiteralType(ts, tid, forcedId)
+			if radix{
+				TokStore.setRadix(ts, tid, 1)
+			}
+			? TokStore.listAdd(ts, out, tid)
+			let nPinned = mut ParserLines.lexPinnedCount(lexemes, i)
+			if nPinned > 0{
+				let pl = mut ? TokStore.newList(ts)
+				for q in 0..nPinned{
+					let pk = mut ParserLines.pinKind(lexemes, i, q)
+					let pline = mut ParserLines.pinLine(lexemes, i, q)
+					let ptid = mut ? ParserLines.lexAddPin(ts, lexemes, i, q)
+					let ptok = mut ? TokStore.newToken(ts, pk, ptid, pline, fileId)
+					? TokStore.listAdd(ts, pl, ptok)
+				}
+				TokStore.setPinned(ts, tid, pl)
+			}
+		}
+		return out
+	}
+
+	// ---- 1. nesting --------------------------------------------------------------------------------------------------------
+
+	/** Groups tokens between delineator pairs into the opener's childs; the closer is dropped. Returns the root list id. */
+	@pub
+	@throws
+	static func nest(ts: ref mut TokStore, flat: mut u64) mut u64{
+		?catch(e){ throw e }
+		let root = mut ? TokStore.newList(ts)
+		let targets = mut ? Vec.make()
+		let opens = mut ? Vec.make()
+		? targets.push(targets, root)
+		let n = mut TokStore.listSize(ts, flat)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, flat, i)
+			let kind = mut TokStore.kind(ts, t)
+			let c = mut TokStore.textCh(ts, t, 0)
+			let top = mut targets.get(targets, targets.size(targets) - 1)
+			if kind == TT_DELINEATOR && ParserLines.isOpenChar(c){
+				? TokStore.listAdd(ts, top, t)
+				let kids = mut ? ParserLines.ensureChilds(ts, t)
+				? targets.push(targets, kids)
+				? opens.push(opens, t)
+			} else if kind == TT_DELINEATOR && ParserLines.isCloseChar(c){
+				if opens.size(opens) == 0{
+					throw "[parse error] unmatched closing delineator"
+				}
+				let open = mut opens.pop(opens)
+				let dead = mut targets.pop(targets)
+				if TokStore.textCh(ts, open, 0) != ParserLines.matchingOpen(c){
+					throw "[parse error] mismatched delineator"
+				}
+			} else {
+				? TokStore.listAdd(ts, top, t)
+			}
+		}
+		if opens.size(opens) > 0{
+			throw "[parse error] unmatched opening delineator"
+		}
+		return root
+	}
+
+	// ---- 1.5 template strings ----------------------------------------------------------------------------------------------
+
+	/** Removes the entries of list `l` whose kind is `k1` or `k2`, in place, keeping the order. */
+	static func removeKinds(ts: ref mut TokStore, l: mut u64, k1: mut u64, k2: mut u64) void{
+		let n = mut TokStore.listSize(ts, l)
+		let w = mut 0
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, l, i)
+			let k = mut TokStore.kind(ts, t)
+			if k != k1 && k != k2{
+				TokStore.listSet(ts, l, w, t)
+				w = w + 1
+			}
+		}
+		for q in w..n{
+			let dead = mut TokStore.listPop(ts, l)
+		}
+	}
+
+	/** Strips WHITESPACE and TERMINATOR from a list and, recursively, from the bodies of its "(" and "[" tokens. */
+	@throws
+	static func removeWhitespaceFromExprGroup(ts: ref mut TokStore, start: mut u64) void{
+		?catch(e){ throw e }
+		let work = mut ? Vec.make()
+		? work.push(work, start)
+		for lp1 in 0..1000000000{
+			if work.size(work) == 0{
+				break
+			}
+			let l = mut work.pop(work)
+			ParserLines.removeKinds(ts, l, TT_WHITESPACE, TT_TERMINATOR)
+			let n = mut TokStore.listSize(ts, l)
+			for i in 0..n{
+				let t = mut TokStore.listGet(ts, l, i)
+				if ParserLines.isDel(ts, t, "(") || ParserLines.isDel(ts, t, "["){
+					? work.push(work, TokStore.childs(ts, t))
+				}
+			}
+		}
+	}
+
+	/** Replaces every TEMPLATE_STRING_START .. TEMPLATE_STRING_END span, anywhere in the tree, by one TEMPLATE_STRING token whose childs are the parts and "(...)" groups. */
+	@pub
+	@throws
+	static func gatherTemplateStringsDeep(ts: ref mut TokStore, root: mut u64) void{
+		?catch(e){ throw e }
+		let work = mut ? Vec.make()
+		let braces = mut ? Vec.make()
+		? work.push(work, root)
+		for lp1 in 0..1000000000{
+			if work.size(work) == 0{
+				break
+			}
+			let l = mut work.pop(work)
+			let result = mut ? TokStore.newList(ts)
+			let n = mut TokStore.listSize(ts, l)
+			let i = mut 0
+			for lp2 in 0..1000000000{
+				if i >= n{
+					break
+				}
+				let tok = mut TokStore.listGet(ts, l, i)
+				if ParserLines.isOp(ts, tok, "TEMPLATE_STRING_START"){
+					let segments = mut ? TokStore.newList(ts)
+					let j = mut (i + 1)
+					for lp3 in 0..1000000000{
+						if j >= n{
+							throw "[parse error] internal error: unterminated template literal reached end of input"
+						}
+						let seg = mut TokStore.listGet(ts, l, j)
+						if ParserLines.isOp(ts, seg, "TEMPLATE_STRING_END"){
+							break
+						}
+						if ParserLines.isOp(ts, seg, "TEMPLATE_STRING_PART"){
+							? TokStore.listAdd(ts, segments, seg)
+							j = j + 1
+						} else if ParserLines.isOp(ts, seg, "TEMPLATE_EXPR_START"){
+							j = j + 1
+							let brace = mut TokStore.listGet(ts, l, j)
+							? work.push(work, TokStore.childs(ts, brace))
+							? braces.push(braces, brace)
+							? TokStore.listAdd(ts, segments, brace)
+							j = j + 1
+						} else {
+							throw "[parse error] internal error: unexpected token inside a template literal"
+						}
+					}
+					let tpl = mut ? TokStore.newToken(ts, TT_TEMPLATE_STRING, STR_TEMPLATE, TokStore.line(ts, tok), TokStore.fileId(ts, tok))
+					TokStore.setChilds(ts, tpl, segments)
+					? TokStore.listAdd(ts, result, tpl)
+					i = j + 1
+				} else {
+					? TokStore.listAdd(ts, result, tok)
+					i = i + 1
+					let kids = mut TokStore.childs(ts, tok)
+					if kids != TOK_NONE{
+						? work.push(work, kids)
+					}
+				}
+			}
+			TokStore.listClear(ts, l)
+			? TokStore.listAddAll(ts, l, result)
+		}
+		let nb = mut braces.size(braces)
+		for bi in 0..nb{
+			let brace = mut braces.get(braces, nb - 1 - bi)
+			? ParserLines.removeWhitespaceFromExprGroup(ts, TokStore.childs(ts, brace))
+		}
+	}
+
+	// ---- 2. line splitting -------------------------------------------------------------------------------------------------
+
+	static func isBlockHeaderKeyword(ts: ref mut TokStore, t: mut u64) mut bool{
+		if TokStore.kind(ts, t) != TT_KEYWORD{
+			return false
+		}
+		return TokStore.textEq(ts, t, "if") || TokStore.textEq(ts, t, "elseif") || TokStore.textEq(ts, t, "else") || TokStore.textEq(ts, t, "loop") || TokStore.textEq(ts, t, "func") || TokStore.textEq(ts, t, "struct") || TokStore.textEq(ts, t, "enum") || TokStore.textEq(ts, t, "interface") || TokStore.textEq(ts, t, "impl") || TokStore.textEq(ts, t, "for") || TokStore.textEq(ts, t, "library")
+	}
+
+	/** The first non-whitespace token of `current` is a block-header keyword. */
+	static func startsWithBlockHeaderKeyword(ts: ref mut TokStore, current: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, current)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, current, i)
+			if TokStore.kind(ts, t) == TT_WHITESPACE{
+				continue
+			}
+			return ParserLines.isBlockHeaderKeyword(ts, t)
+		}
+		return false
+	}
+
+	static func hasNonWhitespace(ts: ref mut TokStore, l: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.kind(ts, TokStore.listGet(ts, l, i)) != TT_WHITESPACE{
+				return true
+			}
+		}
+		return false
+	}
+
+	/** A LINE token holding `content` as its childs. */
+	@throws
+	static func makeLine(ts: ref mut TokStore, content: mut u64, line: mut u64) mut u64{
+		?catch(e){ throw e }
+		let first = mut TokStore.listGet(ts, content, 0)
+		let lt = mut ? TokStore.newToken(ts, TT_LINE, STR_LINE, line, TokStore.fileId(ts, first))
+		TokStore.setChilds(ts, lt, content)
+		return lt
+	}
+
+	/** Splits a flat token list into LINE tokens at TERMINATORs (and after a block-header "{"). Returns a new list of LINE tokens. */
+	@throws
+	static func buildLines(ts: ref mut TokStore, flat: mut u64) mut u64{
+		?catch(e){ throw e }
+		let lines = mut ? TokStore.newList(ts)
+		let current = mut ? TokStore.newList(ts)
+		let currentLine = mut 1
+		let haveStart = mut false
+		let n = mut TokStore.listSize(ts, flat)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, flat, i)
+			if TokStore.kind(ts, t) == TT_TERMINATOR{
+				if ParserLines.hasNonWhitespace(ts, current){
+					let lt = mut ? ParserLines.makeLine(ts, current, currentLine)
+					? TokStore.listAdd(ts, lines, lt)
+				}
+				current = ? TokStore.newList(ts)
+				haveStart = false
+				continue
+			}
+			if haveStart == false{
+				currentLine = TokStore.line(ts, t)
+				haveStart = true
+			}
+			? TokStore.listAdd(ts, current, t)
+			if ParserLines.isDel(ts, t, "{") && ParserLines.startsWithBlockHeaderKeyword(ts, current){
+				let lt2 = mut ? ParserLines.makeLine(ts, current, currentLine)
+				? TokStore.listAdd(ts, lines, lt2)
+				current = ? TokStore.newList(ts)
+				haveStart = false
+			}
+		}
+		if ParserLines.hasNonWhitespace(ts, current){
+			let lt3 = mut ? ParserLines.makeLine(ts, current, currentLine)
+			? TokStore.listAdd(ts, lines, lt3)
+		}
+		return lines
+	}
+
+	/** Lines of the whole nested tree: the top level, then every "{" body, and the "(" / "[" bodies stay flat. Returns the top-level LINE list. */
+	@pub
+	@throws
+	static func splitIntoLines(ts: ref mut TokStore, flat: mut u64) mut u64{
+		?catch(e){ throw e }
+		let lines = mut ? ParserLines.buildLines(ts, flat)
+		let work = mut ? Vec.make()
+		let nl = mut TokStore.listSize(ts, lines)
+		for i in 0..nl{
+			? work.push(work, TokStore.childs(ts, TokStore.listGet(ts, lines, i)))
+		}
+		for lp1 in 0..1000000000{
+			if work.size(work) == 0{
+				break
+			}
+			let l = mut work.pop(work)
+			let n = mut TokStore.listSize(ts, l)
+			for i2 in 0..n{
+				let tok = mut TokStore.listGet(ts, l, i2)
+				if TokStore.kind(ts, tok) != TT_DELINEATOR{
+					continue
+				}
+				if TokStore.textEq(ts, tok, "{"){
+					let nested = mut ? ParserLines.buildLines(ts, TokStore.childs(ts, tok))
+					TokStore.setChilds(ts, tok, nested)
+					let m = mut TokStore.listSize(ts, nested)
+					for q in 0..m{
+						? work.push(work, TokStore.childs(ts, TokStore.listGet(ts, nested, q)))
+					}
+				} else {
+					? work.push(work, TokStore.childs(ts, tok))
+				}
+			}
+		}
+		return lines
+	}
+
+	// ---- 3. let merge / 4. import collapse -----------------------------------------------------------------------------------
+
+	/** `let x = ...`: "let" absorbs the variable name token (and `static`, `const`, a `:<Type>` bound) into its own fields. */
+	@throws
+	static func mergeLetInLine(ts: ref mut TokStore, line: mut u64) void{
+		?catch(e){ throw e }
+		let tokens = mut TokStore.childs(ts, line)
+		let letIdx = mut ParserLines.firstNonWhitespaceIndex(ts, tokens)
+		if letIdx < 0{
+			return
+		}
+		let li = mut wrap:<u64>(letIdx)
+		let letTok = mut TokStore.listGet(ts, tokens, li)
+		if ParserLines.isKw(ts, letTok, "let") == false{
+			return
+		}
+		let n = mut TokStore.listSize(ts, tokens)
+		let j = mut ParserLines.skipWs(ts, tokens, li + 1)
+		let isStatic = mut false
+		if j < n{
+			let tj = mut TokStore.listGet(ts, tokens, j)
+			if TokStore.kind(ts, tj) == TT_MODIFIER && TokStore.textEq(ts, tj, "static"){
+				isStatic = true
+				j = ParserLines.skipWs(ts, tokens, j + 1)
+			}
+		}
+		let isConst = mut false
+		if j < n{
+			if ParserLines.isKw(ts, TokStore.listGet(ts, tokens, j), "const"){
+				isConst = true
+				j = ParserLines.skipWs(ts, tokens, j + 1)
+			}
+		}
+		let hasBound = mut false
+		let boundStart = mut 0
+		let boundEnd = mut 0
+		if j < n{
+			if ParserLines.isOp(ts, TokStore.listGet(ts, tokens, j), ":<"){
+				let depth = mut 1
+				let k = mut (j + 1)
+				for lp1 in 0..1000000000{
+					if k >= n{
+						break
+					}
+					let t = mut TokStore.listGet(ts, tokens, k)
+					if ParserLines.isOp(ts, t, "<") || ParserLines.isOp(ts, t, ":<"){
+						depth = depth + 1
+					} else if ParserLines.isOp(ts, t, ">"){
+						depth = depth - 1
+						if depth == 0{
+							break
+						}
+					}
+					k = k + 1
+				}
+				if k >= n{
+					throw "[parse error] unterminated type bound, expected a matching '>'"
+				}
+				hasBound = true
+				boundStart = j
+				boundEnd = k
+				j = ParserLines.skipWs(ts, tokens, k + 1)
+			}
+		}
+		if j >= n{
+			throw "[parse error] 'let' with no following variable name"
+		}
+		let nameTok = mut TokStore.listGet(ts, tokens, j)
+		let kids = mut ? ParserLines.ensureChilds(ts, letTok)
+		? TokStore.listAdd(ts, kids, nameTok)
+		if isStatic{
+			TokStore.setIsStatic(ts, letTok, 1)
+		}
+		if isConst{
+			TokStore.setIsConst(ts, letTok, 1)
+		}
+		if hasBound{
+			let clean = mut ? TokStore.newList(ts)
+			let qs = mut (boundStart + 1)
+			for q in qs..boundEnd{
+				let bt = mut TokStore.listGet(ts, tokens, q)
+				if TokStore.kind(ts, bt) != TT_WHITESPACE{
+					? TokStore.listAdd(ts, clean, bt)
+				}
+			}
+			TokStore.setTypeBound(ts, letTok, clean)
+		}
+		let k2 = mut j
+		for lp2 in 0..1000000000{
+			if k2 < li + 1{
+				break
+			}
+			TokStore.listRemoveAt(ts, tokens, k2)
+			if k2 == 0{
+				break
+			}
+			k2 = k2 - 1
+		}
+	}
+
+	/** `import "path"`: the whole line collapses to the import token (path as its child, comments kept). */
+	@throws
+	static func collapseImportInLine(ts: ref mut TokStore, line: mut u64) void{
+		?catch(e){ throw e }
+		let tokens = mut TokStore.childs(ts, line)
+		let ii = mut ParserLines.firstNonWhitespaceIndex(ts, tokens)
+		if ii < 0{
+			return
+		}
+		let importTok = mut TokStore.listGet(ts, tokens, wrap:<u64>(ii))
+		if ParserLines.isKw(ts, importTok, "import") == false{
+			return
+		}
+		let pathTok = mut TOK_NONE
+		let n = mut TokStore.listSize(ts, tokens)
+		let pl = mut TokStore.pinned(ts, importTok)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, i)
+			if TokStore.kind(ts, t) == TT_STRING{
+				pathTok = t
+			}
+			if t != importTok{
+				let tp = mut TokStore.pinned(ts, t)
+				if tp != TOK_NONE && TokStore.listSize(ts, tp) > 0{
+					if pl == TOK_NONE{
+						pl = ? TokStore.newList(ts)
+						TokStore.setPinned(ts, importTok, pl)
+					}
+					? TokStore.listAddAll(ts, pl, tp)
+				}
+			}
+		}
+		if pathTok == TOK_NONE{
+			throw "[parse error] 'import' with no string path"
+		}
+		let kids = mut ? ParserLines.ensureChilds(ts, importTok)
+		? TokStore.listAdd(ts, kids, pathTok)
+		let fresh = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, fresh, importTok)
+		TokStore.setChilds(ts, line, fresh)
+	}
+
+	/** Runs the let merge (pass 0) or the import collapse (pass 1) on every line anywhere in the tree. */
+	@pub
+	@throws
+	static func forEachLineDeep(ts: ref mut TokStore, lines: mut u64, pass: mut u64) void{
+		?catch(e){ throw e }
+		let wl = mut ? Vec.make()
+		let wm = mut ? Vec.make()
+		? wl.push(wl, lines)
+		? wm.push(wm, 0)
+		for lp1 in 0..1000000000{
+			if wl.size(wl) == 0{
+				break
+			}
+			let l = mut wl.pop(wl)
+			let mode = mut wm.pop(wm)
+			let n = mut TokStore.listSize(ts, l)
+			if mode == 0{
+				for i in 0..n{
+					let line = mut TokStore.listGet(ts, l, i)
+					if pass == 0{
+						? ParserLines.mergeLetInLine(ts, line)
+					} else {
+						? ParserLines.collapseImportInLine(ts, line)
+					}
+					? wl.push(wl, TokStore.childs(ts, line))
+					? wm.push(wm, 1)
+				}
+			} else {
+				for i2 in 0..n{
+					let tok = mut TokStore.listGet(ts, l, i2)
+					if TokStore.kind(ts, tok) != TT_DELINEATOR{
+						continue
+					}
+					? wl.push(wl, TokStore.childs(ts, tok))
+					if TokStore.textEq(ts, tok, "{"){
+						? wm.push(wm, 0)
+					} else {
+						? wm.push(wm, 1)
+					}
+				}
+			}
+		}
+	}
+
+	// ---- 5. whitespace removal / 5.1 "then" merging ----------------------------------------------------------------------------
+
+	/** Whitespace out of every line's tokens (and "(" / "[" bodies, where TERMINATORs go too). */
+	@pub
+	@throws
+	static func removeWhitespaceInLines(ts: ref mut TokStore, lines: mut u64) void{
+		?catch(e){ throw e }
+		let wl = mut ? Vec.make()
+		let wm = mut ? Vec.make()
+		? wl.push(wl, lines)
+		? wm.push(wm, 0)
+		for lp1 in 0..1000000000{
+			if wl.size(wl) == 0{
+				break
+			}
+			let l = mut wl.pop(wl)
+			let mode = mut wm.pop(wm)
+			if mode == 0{
+				let n = mut TokStore.listSize(ts, l)
+				for i in 0..n{
+					? wl.push(wl, TokStore.childs(ts, TokStore.listGet(ts, l, i)))
+					? wm.push(wm, 1)
+				}
+			} else {
+				if mode == 2{
+					ParserLines.removeKinds(ts, l, TT_TERMINATOR, TT_TERMINATOR)
+				}
+				ParserLines.removeKinds(ts, l, TT_WHITESPACE, TT_WHITESPACE)
+				let n2 = mut TokStore.listSize(ts, l)
+				for i2 in 0..n2{
+					let t = mut TokStore.listGet(ts, l, i2)
+					if TokStore.kind(ts, t) != TT_DELINEATOR{
+						continue
+					}
+					? wl.push(wl, TokStore.childs(ts, t))
+					if TokStore.textEq(ts, t, "{"){
+						? wm.push(wm, 0)
+					} else {
+						? wm.push(wm, 2)
+					}
+				}
+			}
+		}
+	}
+
+	/** "&&" "then" and "||" "then" become the single operators "&&then" / "||then". */
+	@pub
+	@throws
+	static func mergeThenOperators(ts: ref mut TokStore, lines: mut u64) void{
+		?catch(e){ throw e }
+		let wl = mut ? Vec.make()
+		let wm = mut ? Vec.make()
+		? wl.push(wl, lines)
+		? wm.push(wm, 0)
+		for lp1 in 0..1000000000{
+			if wl.size(wl) == 0{
+				break
+			}
+			let l = mut wl.pop(wl)
+			let mode = mut wm.pop(wm)
+			if mode == 0{
+				let n = mut TokStore.listSize(ts, l)
+				for i in 0..n{
+					? wl.push(wl, TokStore.childs(ts, TokStore.listGet(ts, l, i)))
+					? wm.push(wm, 1)
+				}
+			} else {
+				let i2 = mut 0
+				for lp2 in 0..1000000000{
+					let n2 = mut TokStore.listSize(ts, l)
+					if i2 + 1 >= n2{
+						break
+					}
+					let t = mut TokStore.listGet(ts, l, i2)
+					let next = mut TokStore.listGet(ts, l, i2 + 1)
+					if TokStore.kind(ts, t) == TT_OPERATOR && ParserLines.isVarRef(ts, next, "then"){
+						if TokStore.textEq(ts, t, "&&"){
+							? TokStore.replaceTextLit(ts, t, "&&then")
+							TokStore.listRemoveAt(ts, l, i2 + 1)
+						} else if TokStore.textEq(ts, t, "||"){
+							? TokStore.replaceTextLit(ts, t, "||then")
+							TokStore.listRemoveAt(ts, l, i2 + 1)
+						}
+					}
+					i2 = i2 + 1
+				}
+				let n3 = mut TokStore.listSize(ts, l)
+				for i3 in 0..n3{
+					let t3 = mut TokStore.listGet(ts, l, i3)
+					if TokStore.kind(ts, t3) != TT_DELINEATOR{
+						continue
+					}
+					? wl.push(wl, TokStore.childs(ts, t3))
+					if TokStore.textEq(ts, t3, "{"){
+						? wm.push(wm, 0)
+					} else {
+						? wm.push(wm, 1)
+					}
+				}
+			}
+		}
+	}
+
+	// ---- 6. CALL / LOOKUP insertion --------------------------------------------------------------------------------------------
+
+	/** First token starts a declared-type context (struct/enum/interface/type/extern/export/ASM line). */
+	static func isTypeContextStart(ts: ref mut TokStore, first: mut u64) mut bool{
+		if TokStore.kind(ts, first) != TT_KEYWORD{
+			return false
+		}
+		return TokStore.textEq(ts, first, "struct") || TokStore.textEq(ts, first, "enum") || TokStore.textEq(ts, first, "interface") || TokStore.textEq(ts, first, "type") || TokStore.textEq(ts, first, "extern") || TokStore.textEq(ts, first, "export") || TokStore.textEq(ts, first, "ASM")
+	}
+
+	static func isFuncImplLibrary(ts: ref mut TokStore, first: mut u64) mut bool{
+		if TokStore.kind(ts, first) != TT_KEYWORD{
+			return false
+		}
+		return TokStore.textEq(ts, first, "func") || TokStore.textEq(ts, first, "impl") || TokStore.textEq(ts, first, "library")
+	}
+
+	/** Inserts the CALL / LOOKUP marker operators into every expression of the tree (never into declared-type contexts). */
+	@pub
+	@throws
+	static func insertCallLookupInLines(ts: ref mut TokStore, lines: mut u64) void{
+		?catch(e){ throw e }
+		let wl = mut ? Vec.make()
+		let wm = mut ? Vec.make()
+		? wl.push(wl, lines)
+		? wm.push(wm, 0)
+		for lp1 in 0..1000000000{
+			if wl.size(wl) == 0{
+				break
+			}
+			let flat = mut wl.pop(wl)
+			let mode = mut wm.pop(wm)
+			if mode == 0{
+				let n = mut TokStore.listSize(ts, flat)
+				for i in 0..n{
+					? wl.push(wl, TokStore.childs(ts, TokStore.listGet(ts, flat, i)))
+					? wm.push(wm, 1)
+				}
+				continue
+			}
+			let size = mut TokStore.listSize(ts, flat)
+			if size == 0{
+				continue
+			}
+			let first = mut TokStore.listGet(ts, flat, 0)
+			if ParserLines.isTypeContextStart(ts, first){
+				continue
+			}
+			let last = mut TokStore.listGet(ts, flat, size - 1)
+			if ParserLines.isFuncImplLibrary(ts, first){
+				if ParserLines.isDel(ts, last, "{"){
+					? wl.push(wl, TokStore.childs(ts, last))
+					? wm.push(wm, 0)
+				}
+				continue
+			}
+			if TokStore.kind(ts, first) == TT_MODIFIER && TokStore.textEq(ts, first, "static") && size > 1 && ParserLines.isKw(ts, TokStore.listGet(ts, flat, 1), "func"){
+				if ParserLines.isDel(ts, last, "{"){
+					? wl.push(wl, TokStore.childs(ts, last))
+					? wm.push(wm, 0)
+				}
+				continue
+			}
+			let i = mut 0
+			for lp2 in 0..1000000000{
+				let cnt = mut TokStore.listSize(ts, flat)
+				if i >= cnt{
+					break
+				}
+				let t = mut TokStore.listGet(ts, flat, i)
+				let kind = mut TokStore.kind(ts, t)
+				if i == 1 && ParserLines.isKw(ts, first, "const") && kind == TT_VARREF{
+					i = i + 1
+					continue
+				}
+				let isSleep = mut (kind == TT_KEYWORD && TokStore.textEq(ts, t, "sleep"))
+				if isSleep && i + 1 < cnt && ParserLines.isDel(ts, TokStore.listGet(ts, flat, i + 1), "("){
+					let ct = mut ? TokStore.newToken(ts, TT_OPERATOR, STR_CALL, TokStore.line(ts, t), TokStore.fileId(ts, t))
+					? TokStore.listInsert(ts, flat, i + 1, ct)
+					i = i + 2
+					continue
+				}
+				let isTarget = mut (kind == TT_VARREF || kind == TT_STRING || ParserLines.isDel(ts, t, "["))
+				if isTarget && i + 1 < cnt{
+					let next = mut TokStore.listGet(ts, flat, i + 1)
+					if kind == TT_VARREF && ParserLines.isDel(ts, next, "("){
+						let ct2 = mut ? TokStore.newToken(ts, TT_OPERATOR, STR_CALL, TokStore.line(ts, t), TokStore.fileId(ts, t))
+						? TokStore.listInsert(ts, flat, i + 1, ct2)
+						i = i + 1
+					} else if ParserLines.isDel(ts, next, "["){
+						let lt = mut ? TokStore.newToken(ts, TT_OPERATOR, STR_LOOKUP, TokStore.line(ts, t), TokStore.fileId(ts, t))
+						? TokStore.listInsert(ts, flat, i + 1, lt)
+						i = i + 1
+					}
+				}
+				i = i + 1
+			}
+			let cnt2 = mut TokStore.listSize(ts, flat)
+			for q in 0..cnt2{
+				let t2 = mut TokStore.listGet(ts, flat, q)
+				if TokStore.kind(ts, t2) == TT_TEMPLATE_STRING{
+					let segs = mut TokStore.childs(ts, t2)
+					let ns = mut TokStore.listSize(ts, segs)
+					for si in 0..ns{
+						let seg = mut TokStore.listGet(ts, segs, si)
+						if ParserLines.isDel(ts, seg, "("){
+							? wl.push(wl, TokStore.childs(ts, seg))
+							? wm.push(wm, 1)
+						}
+					}
+					continue
+				}
+				if TokStore.kind(ts, t2) != TT_DELINEATOR{
+					continue
+				}
+				? wl.push(wl, TokStore.childs(ts, t2))
+				if TokStore.textEq(ts, t2, "{"){
+					? wm.push(wm, 0)
+				} else {
+					? wm.push(wm, 1)
+				}
+			}
+		}
+	}
+
+	// ---- 5.5 generic-instantiation collapsing (":<...>") -----------------------------------------------------------------------
+
+	/** Splits on top-level "," only (":<" / ">" depth tracked). Returns a list whose entries are list ids (the groups). */
+	@throws
+	static func splitTopLevelCommaGroups(ts: ref mut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let groups = mut ? TokStore.newList(ts)
+		let current = mut ? TokStore.newList(ts)
+		let depth = mut 0
+		let n = mut TokStore.listSize(ts, tokens)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, i)
+			if ParserLines.isOp(ts, t, ":<"){
+				depth = depth + 1
+			} else if ParserLines.isOp(ts, t, ">"){
+				depth = depth - 1
+			}
+			if depth == 0 && ParserLines.isOp(ts, t, ","){
+				? TokStore.listAdd(ts, groups, current)
+				current = ? TokStore.newList(ts)
+				continue
+			}
+			? TokStore.listAdd(ts, current, t)
+		}
+		if TokStore.listSize(ts, current) > 0{
+			? TokStore.listAdd(ts, groups, current)
+		}
+		if TokStore.listSize(ts, groups) == 0{
+			throw "[parse error] generic instantiation requires at least one type argument"
+		}
+		return groups
+	}
+
+	/** Collapses "VARREF :< ... >" spans into one VARREF token carrying genericArgs, in every expression of the tree. */
+	@pub
+	@throws
+	static func collapseGenericInstantiationsInLines(ts: ref mut TokStore, lines: mut u64) void{
+		?catch(e){ throw e }
+		// frames: kind 0 LINES, 1 FLAT, 2 FINISH
+		let fk = mut ? Vec.make()
+		let fl = mut ? Vec.make()
+		let fi = mut ? Vec.make()
+		let fphase = mut ? Vec.make()
+		let fclose = mut ? Vec.make()
+		let fgroups = mut ? Vec.make()
+		let ftok = mut ? Vec.make()
+		? fk.push(fk, 0)
+		? fl.push(fl, lines)
+		? fi.push(fi, 0)
+		? fphase.push(fphase, 0)
+		? fclose.push(fclose, 0)
+		? fgroups.push(fgroups, 0)
+		? ftok.push(ftok, 0)
+		for lp1 in 0..1000000000{
+			if fk.size(fk) == 0{
+				break
+			}
+			let kind = mut fk.pop(fk)
+			let flat = mut fl.pop(fl)
+			let ci = mut fi.pop(fi)
+			let phase = mut fphase.pop(fphase)
+			let closeIdx = mut fclose.pop(fclose)
+			let groups = mut fgroups.pop(fgroups)
+			let baseTok = mut ftok.pop(ftok)
+			if kind == 0{
+				let n = mut TokStore.listSize(ts, flat)
+				for q in 0..n{
+					let idx = mut (n - 1 - q)
+					? fk.push(fk, 1)
+					? fl.push(fl, TokStore.childs(ts, TokStore.listGet(ts, flat, idx)))
+					? fi.push(fi, 0)
+					? fphase.push(fphase, 0)
+					? fclose.push(fclose, 0)
+					? fgroups.push(fgroups, 0)
+					? ftok.push(ftok, 0)
+				}
+				continue
+			}
+			if kind == 2{
+				// finish: the span flat[ci..closeIdx] becomes one VARREF with the groups
+				let collapsed = mut ? TokStore.newToken(ts, TT_VARREF, TokStore.text(ts, baseTok), TokStore.line(ts, baseTok), TokStore.fileId(ts, baseTok))
+				TokStore.setGenericArgs(ts, collapsed, groups)
+				let removeCount = mut (closeIdx - ci + 1)
+				for rq in 0..removeCount{
+					TokStore.listRemoveAt(ts, flat, ci)
+				}
+				? TokStore.listInsert(ts, flat, ci, collapsed)
+				continue
+			}
+			// kind 1: one flat token list
+			if phase == 0{
+				let size = mut TokStore.listSize(ts, flat)
+				if size == 0{
+					continue
+				}
+				let first = mut TokStore.listGet(ts, flat, 0)
+				if ParserLines.isTypeContextStart(ts, first){
+					continue
+				}
+				if ParserLines.isFuncImplLibrary(ts, first){
+					let last = mut TokStore.listGet(ts, flat, size - 1)
+					if ParserLines.isDel(ts, last, "{"){
+						? fk.push(fk, 0)
+						? fl.push(fl, TokStore.childs(ts, last))
+						? fi.push(fi, 0)
+						? fphase.push(fphase, 0)
+						? fclose.push(fclose, 0)
+						? fgroups.push(fgroups, 0)
+						? ftok.push(ftok, 0)
+					}
+					continue
+				}
+			}
+			let i = mut ci
+			let found = mut false
+			for lp2 in 0..1000000000{
+				let size2 = mut TokStore.listSize(ts, flat)
+				if i >= size2{
+					break
+				}
+				let t = mut TokStore.listGet(ts, flat, i)
+				if TokStore.kind(ts, t) == TT_VARREF && i + 1 < size2 && ParserLines.isOp(ts, TokStore.listGet(ts, flat, i + 1), ":<"){
+					// find the matching ">"
+					let depth = mut 1
+					let j = mut (i + 2)
+					let close = mut TOK_NONE
+					for lp3 in 0..1000000000{
+						if j >= size2{
+							break
+						}
+						let tj = mut TokStore.listGet(ts, flat, j)
+						if ParserLines.isOp(ts, tj, ":<"){
+							depth = depth + 1
+						} else if ParserLines.isOp(ts, tj, ">"){
+							depth = depth - 1
+							if depth == 0{
+								close = j
+								break
+							}
+						}
+						j = j + 1
+					}
+					if close == TOK_NONE{
+						throw "[parse error] unterminated generic instantiation, expected a matching '>'"
+					}
+					let argTokens = mut ? TokStore.listSlice(ts, flat, i + 2, close)
+					let argGroups = mut ? ParserLines.splitTopLevelCommaGroups(ts, argTokens)
+					// run order: groups (first to last), finish, then this frame again from i + 1
+					? fk.push(fk, 1)
+					? fl.push(fl, flat)
+					? fi.push(fi, i + 1)
+					? fphase.push(fphase, 1)
+					? fclose.push(fclose, 0)
+					? fgroups.push(fgroups, 0)
+					? ftok.push(ftok, 0)
+					? fk.push(fk, 2)
+					? fl.push(fl, flat)
+					? fi.push(fi, i)
+					? fphase.push(fphase, 0)
+					? fclose.push(fclose, close)
+					? fgroups.push(fgroups, argGroups)
+					? ftok.push(ftok, t)
+					let ng = mut TokStore.listSize(ts, argGroups)
+					for gq in 0..ng{
+						let gidx = mut (ng - 1 - gq)
+						? fk.push(fk, 1)
+						? fl.push(fl, TokStore.listGet(ts, argGroups, gidx))
+						? fi.push(fi, 0)
+						? fphase.push(fphase, 0)
+						? fclose.push(fclose, 0)
+						? fgroups.push(fgroups, 0)
+						? ftok.push(ftok, 0)
+					}
+					found = true
+					break
+				}
+				i = i + 1
+			}
+			if found{
+				continue
+			}
+			// no (more) spans: descend into the delineator bodies, in order
+			let size3 = mut TokStore.listSize(ts, flat)
+			for dq in 0..size3{
+				let didx = mut (size3 - 1 - dq)
+				let td = mut TokStore.listGet(ts, flat, didx)
+				if TokStore.kind(ts, td) != TT_DELINEATOR{
+					continue
+				}
+				if TokStore.textEq(ts, td, "{"){
+					? fk.push(fk, 0)
+				} else {
+					? fk.push(fk, 1)
+				}
+				? fl.push(fl, TokStore.childs(ts, td))
+				? fi.push(fi, 0)
+				? fphase.push(fphase, 0)
+				? fclose.push(fclose, 0)
+				? fgroups.push(fgroups, 0)
+				? ftok.push(ftok, 0)
+			}
+		}
+	}
+
+	// ---- decorator lines ("@name" / "@name(args)") --------------------------------------------------------------------------------
+
+	static func isDecoratorWord(ts: ref mut TokStore, t: mut u64) mut bool{
+		let k = mut TokStore.kind(ts, t)
+		return k == TT_VARREF || k == TT_KEYWORD
+	}
+
+	/** True when the line is exactly "@pub" followed by a trailing "{" (not "@pub(...)"). */
+	static func isPubBlockShape(ts: ref mut TokStore, tokens: mut u64, idx: mut u64) mut bool{
+		let nameIdx = mut ParserLines.skipWs(ts, tokens, idx + 1)
+		let n = mut TokStore.listSize(ts, tokens)
+		if nameIdx >= n{
+			return false
+		}
+		if TokStore.textEq(ts, TokStore.listGet(ts, tokens, nameIdx), "pub") == false{
+			return false
+		}
+		let braceIdx = mut ParserLines.skipWs(ts, tokens, nameIdx + 1)
+		if braceIdx >= n{
+			return false
+		}
+		return ParserLines.isDel(ts, TokStore.listGet(ts, tokens, braceIdx), "{") && braceIdx == n - 1
+	}
+
+	/** "lifetime(a) >= lifetime(b) [> lifetime(c) ...]": the longer-lived side is on the left; operators are only >=, > and ==. */
+	@throws
+	static func parseLifetimeContract(ts: ref mut TokStore, t: mut u64, start: mut u64, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let terms = mut ? TokStore.newList(ts)
+		let ops = mut ? TokStore.newList(ts)
+		let i = mut start
+		for lp1 in 0..1000000000{
+			let n = mut TokStore.listSize(ts, t)
+			if i >= n{
+				throw "[parse error] a lifetime contract is written '@lock match(lifetime(a) >= lifetime(b))': expected 'lifetime(<parameter>)'"
+			}
+			if ParserLines.isVarRef(ts, TokStore.listGet(ts, t, i), "lifetime") == false{
+				throw "[parse error] a lifetime contract is written '@lock match(lifetime(a) >= lifetime(b))': expected 'lifetime(<parameter>)'"
+			}
+			let open = mut ParserLines.skipWs(ts, t, i + 1)
+			if open >= n{
+				throw "[parse error] 'lifetime' expects '(<parameter>)'"
+			}
+			let openTok = mut TokStore.listGet(ts, t, open)
+			if ParserLines.isDel(ts, openTok, "(") == false{
+				throw "[parse error] 'lifetime' expects '(<parameter>)'"
+			}
+			let inner = mut TokStore.childs(ts, openTok)
+			let ii = mut ParserLines.skipWs(ts, inner, 0)
+			let ni = mut TokStore.listSize(ts, inner)
+			if ii >= ni{
+				throw "[parse error] 'lifetime(...)' takes exactly one parameter or local name, no expressions"
+			}
+			let innerTok = mut TokStore.listGet(ts, inner, ii)
+			if TokStore.kind(ts, innerTok) != TT_VARREF || ParserLines.skipWs(ts, inner, ii + 1) < ni{
+				throw "[parse error] 'lifetime(...)' takes exactly one parameter or local name, no expressions"
+			}
+			? TokStore.listAdd(ts, terms, TokStore.text(ts, innerTok))
+			i = ParserLines.skipWs(ts, t, open + 1)
+			if i >= n{
+				break
+			}
+			let opTok = mut TokStore.listGet(ts, t, i)
+			let isGood = mut (TokStore.kind(ts, opTok) == TT_OPERATOR && (TokStore.textEq(ts, opTok, ">=") || TokStore.textEq(ts, opTok, ">") || TokStore.textEq(ts, opTok, "==")))
+			if isGood == false{
+				if TokStore.textEq(ts, opTok, "<=") || TokStore.textEq(ts, opTok, "<"){
+					throw "[parse error] a lifetime contract always puts the longer-lived side on the left: write 'lifetime(a) >= lifetime(b)'"
+				}
+				throw "[parse error] a lifetime contract compares with '>=', '>' or '=='"
+			}
+			? TokStore.listAdd(ts, ops, TokStore.text(ts, opTok))
+			i = ParserLines.skipWs(ts, t, i + 1)
+		}
+		if TokStore.listSize(ts, terms) < 2{
+			throw "[parse error] a lifetime contract needs at least two 'lifetime(...)' terms"
+		}
+		let nameId = mut ? TokStore.addLit(ts, "lifetime")
+		let d = mut ? TokStore.newDecorator(ts, nameId, TokStore.line(ts, lineTok), TokStore.fileId(ts, lineTok))
+		let emptyArgs = mut ? TokStore.newList(ts)
+		let emptyFlags = mut ? TokStore.newList(ts)
+		TokStore.setDArgs(ts, d, emptyArgs)
+		TokStore.setDArgIsString(ts, d, emptyFlags)
+		TokStore.setDLifetimeTerms(ts, d, terms)
+		TokStore.setDLifetimeOps(ts, d, ops)
+		return d
+	}
+
+	/** Starts a "lock" decorator row with empty args. */
+	@throws
+	static func newLockDecorator(ts: ref mut TokStore, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let nameId = mut ? TokStore.addLit(ts, "lock")
+		let d = mut ? TokStore.newDecorator(ts, nameId, TokStore.line(ts, lineTok), TokStore.fileId(ts, lineTok))
+		let emptyArgs = mut ? TokStore.newList(ts)
+		let emptyFlags = mut ? TokStore.newList(ts)
+		TokStore.setDArgs(ts, d, emptyArgs)
+		TokStore.setDArgIsString(ts, d, emptyFlags)
+		return d
+	}
+
+	/** "@lock(match self.FIELD : A|B)". `i` is at "self". */
+	@throws
+	static func parseLockEnumQualifier(ts: ref mut TokStore, t: mut u64, start: mut u64, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let i = mut ParserLines.skipWs(ts, t, start + 1)
+		let n = mut TokStore.listSize(ts, t)
+		if i >= n || ParserLines.isOp(ts, TokStore.listGet(ts, t, i), ".") == false{
+			throw "[parse error] '@lock(match self...)' expects '.' after 'self'"
+		}
+		i = ParserLines.skipWs(ts, t, i + 1)
+		if i >= n || TokStore.kind(ts, TokStore.listGet(ts, t, i)) != TT_VARREF{
+			throw "[parse error] '@lock(match self....)' expects a field name after 'self.'"
+		}
+		let fieldId = mut TokStore.text(ts, TokStore.listGet(ts, t, i))
+		i = ParserLines.skipWs(ts, t, i + 1)
+		if i >= n || ParserLines.isOp(ts, TokStore.listGet(ts, t, i), ":") == false{
+			throw "[parse error] '@lock(match self.FIELD...)' expects ':' after the field name"
+		}
+		i = ParserLines.skipWs(ts, t, i + 1)
+		let variants = mut ? TokStore.newList(ts)
+		for lp1 in 0..1000000000{
+			if i >= n || TokStore.kind(ts, TokStore.listGet(ts, t, i)) != TT_VARREF{
+				throw "[parse error] '@lock(match self.FIELD : ...)' expects a variant name"
+			}
+			? TokStore.listAdd(ts, variants, TokStore.text(ts, TokStore.listGet(ts, t, i)))
+			i = ParserLines.skipWs(ts, t, i + 1)
+			if i < n && ParserLines.isOp(ts, TokStore.listGet(ts, t, i), "|"){
+				i = ParserLines.skipWs(ts, t, i + 1)
+				continue
+			}
+			break
+		}
+		if i < n{
+			throw "[parse error] unexpected token in '@lock(match ...)'"
+		}
+		let d = mut ? ParserLines.newLockDecorator(ts, lineTok)
+		TokStore.setDLockField(ts, d, fieldId)
+		TokStore.setDLockVariants(ts, d, variants)
+		return d
+	}
+
+	/** "in"-style clauses: PARAM (in|within|into) self.FIELD, chained with 'and'; operators kept per clause. */
+	@throws
+	static func parseLockInQualifier(ts: ref mut TokStore, t: mut u64, start: mut u64, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let params = mut ? TokStore.newList(ts)
+		let fields = mut ? TokStore.newList(ts)
+		let operators = mut ? TokStore.newList(ts)
+		let someWrapped = mut ? TokStore.newList(ts)
+		let i = mut start
+		let n = mut TokStore.listSize(ts, t)
+		for lp1 in 0..1000000000{
+			if i >= n || TokStore.kind(ts, TokStore.listGet(ts, t, i)) != TT_VARREF{
+				throw "[parse error] '@lock(match ...)' expects a parameter name"
+			}
+			let wrapped = mut 0
+			let paramName = mut TokStore.text(ts, TokStore.listGet(ts, t, i))
+			if ParserLines.isVarRef(ts, TokStore.listGet(ts, t, i), "Some"){
+				let probe = mut ParserLines.skipWs(ts, t, i + 1)
+				if probe < n && ParserLines.isDel(ts, TokStore.listGet(ts, t, probe), "("){
+					wrapped = 1
+					let inner = mut TokStore.childs(ts, TokStore.listGet(ts, t, probe))
+					let ii = mut ParserLines.skipWs(ts, inner, 0)
+					let ni = mut TokStore.listSize(ts, inner)
+					if ii >= ni || TokStore.kind(ts, TokStore.listGet(ts, inner, ii)) != TT_VARREF{
+						throw "[parse error] '@lock(match Some(...)...)' expects a bare parameter name inside 'Some(...)'"
+					}
+					paramName = TokStore.text(ts, TokStore.listGet(ts, inner, ii))
+					ii = ParserLines.skipWs(ts, inner, ii + 1)
+					if ii < ni{
+						throw "[parse error] '@lock(match Some(NAME ...)...)' expects only a bare parameter name inside 'Some(...)'"
+					}
+					i = ParserLines.skipWs(ts, t, probe + 1)
+				} else {
+					i = ParserLines.skipWs(ts, t, i + 1)
+				}
+			} else {
+				i = ParserLines.skipWs(ts, t, i + 1)
+			}
+			if i >= n{
+				throw "[parse error] '@lock(match NAME ...)' expects 'in', 'within', or 'into' after the name"
+			}
+			let opTok = mut TokStore.listGet(ts, t, i)
+			if TokStore.kind(ts, opTok) != TT_OPERATOR || (TokStore.textEq(ts, opTok, "in") == false && TokStore.textEq(ts, opTok, "within") == false && TokStore.textEq(ts, opTok, "into") == false){
+				throw "[parse error] '@lock(match NAME ...)' expects 'in', 'within', or 'into' after the name"
+			}
+			let operatorText = mut TokStore.text(ts, opTok)
+			i = ParserLines.skipWs(ts, t, i + 1)
+			if i >= n{
+				throw "[parse error] '@lock(match NAME in ...)' expects 'self' after the operator"
+			}
+			let selfTok = mut TokStore.listGet(ts, t, i)
+			if (TokStore.kind(ts, selfTok) != TT_VARREF && TokStore.kind(ts, selfTok) != TT_KEYWORD) || TokStore.textEq(ts, selfTok, "self") == false{
+				throw "[parse error] '@lock(match NAME in ...)' expects 'self' after the operator"
+			}
+			i = ParserLines.skipWs(ts, t, i + 1)
+			if i >= n || ParserLines.isOp(ts, TokStore.listGet(ts, t, i), ".") == false{
+				throw "[parse error] '@lock(match NAME in self...)' expects '.' after 'self'"
+			}
+			i = ParserLines.skipWs(ts, t, i + 1)
+			if i >= n || TokStore.kind(ts, TokStore.listGet(ts, t, i)) != TT_VARREF{
+				throw "[parse error] '@lock(match NAME in self....)' expects a field name after 'self.'"
+			}
+			? TokStore.listAdd(ts, params, paramName)
+			? TokStore.listAdd(ts, fields, TokStore.text(ts, TokStore.listGet(ts, t, i)))
+			? TokStore.listAdd(ts, operators, operatorText)
+			? TokStore.listAdd(ts, someWrapped, wrapped)
+			i = ParserLines.skipWs(ts, t, i + 1)
+			if i < n && ParserLines.isOp(ts, TokStore.listGet(ts, t, i), "and"){
+				i = ParserLines.skipWs(ts, t, i + 1)
+				continue
+			}
+			break
+		}
+		if i < n{
+			throw "[parse error] unexpected token in '@lock(match ...)'"
+		}
+		let d = mut ? ParserLines.newLockDecorator(ts, lineTok)
+		TokStore.setDLockInParams(ts, d, params)
+		TokStore.setDLockInFields(ts, d, fields)
+		TokStore.setDLockInSomeWrapped(ts, d, someWrapped)
+		TokStore.setDLockInOperators(ts, d, operators)
+		return d
+	}
+
+	/** "@lock(match ...)" qualifier; `i` is at "match". */
+	@throws
+	static func parseLockMatchQualifier(ts: ref mut TokStore, t: mut u64, matchIdx: mut u64, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let i = mut ParserLines.skipWs(ts, t, matchIdx + 1)
+		let n = mut TokStore.listSize(ts, t)
+		if i < n && ParserLines.isVarRef(ts, TokStore.listGet(ts, t, i), "lifetime"){
+			let d0 = mut ? ParserLines.parseLifetimeContract(ts, t, i, lineTok)
+			return d0
+		}
+		if i >= n{
+			throw "[parse error] '@lock(match ...)' expects 'self' or a parameter name after 'match'"
+		}
+		let ti = mut TokStore.listGet(ts, t, i)
+		if TokStore.kind(ts, ti) != TT_VARREF && TokStore.kind(ts, ti) != TT_KEYWORD{
+			throw "[parse error] '@lock(match ...)' expects 'self' or a parameter name after 'match'"
+		}
+		if TokStore.textEq(ts, ti, "self"){
+			let d1 = mut ? ParserLines.parseLockEnumQualifier(ts, t, i, lineTok)
+			return d1
+		}
+		let d2 = mut ? ParserLines.parseLockInQualifier(ts, t, i, lineTok)
+		return d2
+	}
+
+	/** `tokens[idx]` is the "@" token; parses "name" or "name(arg,arg,...)" starting right after it. Returns the decorator id. */
+	@throws
+	static func parseDecoratorLine(ts: ref mut TokStore, tokens: mut u64, idx: mut u64, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		let nameIdx = mut ParserLines.skipWs(ts, tokens, idx + 1)
+		if nameIdx >= n || ParserLines.isDecoratorWord(ts, TokStore.listGet(ts, tokens, nameIdx)) == false{
+			throw "[parse error] expected a name after '@'"
+		}
+		let nameTok = mut TokStore.listGet(ts, tokens, nameIdx)
+		let next = mut ParserLines.skipWs(ts, tokens, nameIdx + 1)
+		let isLock = mut TokStore.textEq(ts, nameTok, "lock")
+		if isLock && next + 1 < n{
+			let nt = mut TokStore.listGet(ts, tokens, next)
+			if ParserLines.isKw(ts, nt, "match"){
+				// "@lock match(lifetime(a) >= lifetime(b))": a lifetime contract
+				let open = mut ParserLines.skipWs(ts, tokens, next + 1)
+				if open < n && ParserLines.isDel(ts, TokStore.listGet(ts, tokens, open), "("){
+					let inner = mut TokStore.childs(ts, TokStore.listGet(ts, tokens, open))
+					let d = mut ? ParserLines.parseLifetimeContract(ts, inner, ParserLines.skipWs(ts, inner, 0), lineTok)
+					let after = mut ParserLines.skipWs(ts, tokens, open + 1)
+					if after < n{
+						throw "[parse error] unexpected token after the lifetime contract"
+					}
+					return d
+				}
+			}
+		}
+		let args = mut ? TokStore.newList(ts)
+		let argIsString = mut ? TokStore.newList(ts)
+		if next < n && ParserLines.isDel(ts, TokStore.listGet(ts, tokens, next), "("){
+			let parenTok = mut TokStore.listGet(ts, tokens, next)
+			let parenChilds = mut TokStore.childs(ts, parenTok)
+			let firstReal = mut ParserLines.skipWs(ts, parenChilds, 0)
+			let np = mut TokStore.listSize(ts, parenChilds)
+			if isLock && firstReal < np && ParserLines.isKw(ts, TokStore.listGet(ts, parenChilds, firstReal), "match"){
+				let d3 = mut ? ParserLines.parseLockMatchQualifier(ts, parenChilds, firstReal, lineTok)
+				let after2 = mut ParserLines.skipWs(ts, tokens, next + 1)
+				if after2 < n{
+					throw "[parse error] unexpected token after '@lock(match ...)'"
+				}
+				return d3
+			}
+			for q in 0..np{
+				let argTok = mut TokStore.listGet(ts, parenChilds, q)
+				let ak = mut TokStore.kind(ts, argTok)
+				if ak == TT_WHITESPACE || ParserLines.isOp(ts, argTok, ","){
+					continue
+				}
+				if ak == TT_STRING{
+					? TokStore.listAdd(ts, args, TokStore.literalValue(ts, argTok))
+					? TokStore.listAdd(ts, argIsString, 1)
+				} else if ParserLines.isDecoratorWord(ts, argTok) || ak == TT_INTEGER{
+					? TokStore.listAdd(ts, args, TokStore.text(ts, argTok))
+					? TokStore.listAdd(ts, argIsString, 0)
+				} else {
+					throw "[parse error] decorator arguments must be a string literal, a bare identifier or a whole number"
+				}
+			}
+			next = ParserLines.skipWs(ts, tokens, next + 1)
+		}
+		if next < n{
+			throw "[parse error] unexpected token after the decorator"
+		}
+		let dd = mut ? TokStore.newDecorator(ts, TokStore.text(ts, nameTok), TokStore.line(ts, lineTok), TokStore.fileId(ts, lineTok))
+		TokStore.setDArgs(ts, dd, args)
+		TokStore.setDArgIsString(ts, dd, argIsString)
+		return dd
+	}
+
+	/** Strips the "@name" decorator lines of every statement list in the tree, attaching them (as a decorator list) to the next statement's first token; unwraps "@pub{...}" blocks. */
+	@pub
+	@throws
+	static func stripDecoratorsDeep(ts: ref mut TokStore, root: mut u64) void{
+		?catch(e){ throw e }
+		// frames: kind 0 DEC (resumable), 1 DEC_SCAN
+		let fk = mut ? Vec.make()
+		let fl = mut ? Vec.make()
+		let fi = mut ? Vec.make()
+		let fpending = mut ? Vec.make()
+		let fresult = mut ? Vec.make()
+		let finner = mut ? Vec.make()
+		? fk.push(fk, 0)
+		? fl.push(fl, root)
+		? fi.push(fi, 0)
+		? fpending.push(fpending, TOK_NONE)
+		? fresult.push(fresult, TOK_NONE)
+		? finner.push(finner, TOK_NONE)
+		for lp1 in 0..1000000000{
+			if fk.size(fk) == 0{
+				break
+			}
+			let kind = mut fk.pop(fk)
+			let lines = mut fl.pop(fl)
+			let ci = mut fi.pop(fi)
+			let pending = mut fpending.pop(fpending)
+			let result = mut fresult.pop(fresult)
+			let inner = mut finner.pop(finner)
+			if kind == 1{
+				let n = mut TokStore.listSize(ts, lines)
+				for q in 0..n{
+					let idx = mut (n - 1 - q)
+					let tok = mut TokStore.listGet(ts, lines, idx)
+					if TokStore.kind(ts, tok) != TT_DELINEATOR{
+						continue
+					}
+					if TokStore.textEq(ts, tok, "{"){
+						? fk.push(fk, 0)
+						? fresult.push(fresult, TOK_NONE)
+					} else {
+						? fk.push(fk, 1)
+						? fresult.push(fresult, TOK_NONE)
+					}
+					? fl.push(fl, TokStore.childs(ts, tok))
+					? fi.push(fi, 0)
+					? fpending.push(fpending, TOK_NONE)
+					? finner.push(finner, TOK_NONE)
+				}
+				continue
+			}
+			// DEC
+			if result == TOK_NONE{
+				result = ? TokStore.newList(ts)
+				pending = ? TokStore.newList(ts)
+			}
+			if inner != TOK_NONE{
+				// the "@pub{...}" block's lines have been processed: unwrap them, marking each member
+				let ni = mut TokStore.listSize(ts, inner)
+				for iq in 0..ni{
+					let innerLine = mut TokStore.listGet(ts, inner, iq)
+					let innerIdx = mut ParserLines.firstNonWhitespaceIndex(ts, TokStore.childs(ts, innerLine))
+					if innerIdx >= 0{
+						let first = mut TokStore.listGet(ts, TokStore.childs(ts, innerLine), wrap:<u64>(innerIdx))
+						TokStore.setIsPubBlockMember(ts, first, 1)
+						if TokStore.listSize(ts, pending) > 0{
+							TokStore.setDecorators(ts, first, pending)
+							pending = ? TokStore.newList(ts)
+						}
+					}
+					? TokStore.listAdd(ts, result, innerLine)
+				}
+				inner = TOK_NONE
+			}
+			let i = mut ci
+			let suspended = mut false
+			for lp2 in 0..1000000000{
+				let size = mut TokStore.listSize(ts, lines)
+				if i >= size{
+					break
+				}
+				let lineTok = mut TokStore.listGet(ts, lines, i)
+				i = i + 1
+				let tokens = mut TokStore.childs(ts, lineTok)
+				let idx = mut ParserLines.firstNonWhitespaceIndex(ts, tokens)
+				if idx >= 0 && ParserLines.isOp(ts, TokStore.listGet(ts, tokens, wrap:<u64>(idx)), "@"){
+					let ux = mut wrap:<u64>(idx)
+					if ParserLines.isPubBlockShape(ts, tokens, ux){
+						let nameIdx = mut ParserLines.skipWs(ts, tokens, ux + 1)
+						let braceIdx = mut ParserLines.skipWs(ts, tokens, nameIdx + 1)
+						let braceTok = mut TokStore.listGet(ts, tokens, braceIdx)
+						inner = ? TokStore.listCopy(ts, TokStore.childs(ts, braceTok))
+						// run DEC(inner) first, then this frame again
+						? fk.push(fk, 0)
+						? fl.push(fl, lines)
+						? fi.push(fi, i)
+						? fpending.push(fpending, pending)
+						? fresult.push(fresult, result)
+						? finner.push(finner, inner)
+						? fk.push(fk, 0)
+						? fl.push(fl, inner)
+						? fi.push(fi, 0)
+						? fpending.push(fpending, TOK_NONE)
+						? fresult.push(fresult, TOK_NONE)
+						? finner.push(finner, TOK_NONE)
+						suspended = true
+						break
+					}
+					let dec = mut ? ParserLines.parseDecoratorLine(ts, tokens, ux, lineTok)
+					? TokStore.listAdd(ts, pending, dec)
+					continue
+				}
+				if idx >= 0 && TokStore.listSize(ts, pending) > 0{
+					TokStore.setDecorators(ts, TokStore.listGet(ts, tokens, wrap:<u64>(idx)), pending)
+					pending = ? TokStore.newList(ts)
+				}
+				? TokStore.listAdd(ts, result, lineTok)
+				// scan this line's bodies first, then continue
+				? fk.push(fk, 0)
+				? fl.push(fl, lines)
+				? fi.push(fi, i)
+				? fpending.push(fpending, pending)
+				? fresult.push(fresult, result)
+				? finner.push(finner, TOK_NONE)
+				? fk.push(fk, 1)
+				? fl.push(fl, tokens)
+				? fi.push(fi, 0)
+				? fpending.push(fpending, TOK_NONE)
+				? fresult.push(fresult, TOK_NONE)
+				? finner.push(finner, TOK_NONE)
+				suspended = true
+				break
+			}
+			if suspended{
+				continue
+			}
+			if TokStore.listSize(ts, pending) > 0{
+				throw "[parse error] a decorator decorates nothing -- no statement follows it in this block"
+			}
+			TokStore.listClear(ts, lines)
+			? TokStore.listAddAll(ts, lines, result)
+		}
+	}
+
+	/** Test hook: runs the passes up to the named stage on the nested root list. Stages: nest | split | lines. */
+	@pub
+	@throws
+	static func runStage(ts: ref mut TokStore, stage: ref imut String, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		if Txt.eqLit(stage, "nest"){
+			return root
+		}
+		? ParserLines.gatherTemplateStringsDeep(ts, root)
+		let lines = mut ? ParserLines.splitIntoLines(ts, root)
+		if Txt.eqLit(stage, "split"){
+			return lines
+		}
+		? ParserLines.forEachLineDeep(ts, lines, 0)
+		? ParserLines.forEachLineDeep(ts, lines, 1)
+		if Txt.eqLit(stage, "imports"){
+			return lines
+		}
+		if Txt.eqLit(stage, "decor") || Txt.eqLit(stage, "lines") || Txt.eqLit(stage, "full") || Txt.eqLit(stage, "rpn") || Txt.eqLit(stage, "tree"){
+			? ParserLines.stripDecoratorsDeep(ts, lines)
+		}
+		if Txt.eqLit(stage, "decor"){
+			return lines
+		}
+		? ParserLines.removeWhitespaceInLines(ts, lines)
+		? ParserLines.mergeThenOperators(ts, lines)
+		if Txt.eqLit(stage, "then0"){
+			return lines
+		}
+		? ParserLines.collapseGenericInstantiationsInLines(ts, lines)
+		if Txt.eqLit(stage, "generic0"){
+			return lines
+		}
+		? ParserLines.insertCallLookupInLines(ts, lines)
+		if Txt.eqLit(stage, "lines0") || Txt.eqLit(stage, "lines"){
+			return lines
+		}
+		let gathered = mut ? ParserBlocks.gatherKeywordBlocks(ts, lines, 1)
+		if Txt.eqLit(stage, "full"){
+			return gathered
+		}
+		? RpnConverter.convertLines(ts, gathered)
+		if Txt.eqLit(stage, "rpn"){
+			return gathered
+		}
+		? TreeBuilder.buildLines(ts, gathered)
+		if Txt.eqLit(stage, "tree"){
+			return gathered
+		}
+		throw "[parse error] unknown stage"
+	}
+}

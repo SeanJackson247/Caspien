@@ -47,4 +47,10 @@ Order = pipeline order; every stage is verified against the Java front end befor
 
 ## Status
 * Stage 1 lexer (`lexer/Lexer.caspien`, `LexerWords`, `token/*`, `config/DocComments`, `util/Txt`): done. `lexer/LexDumpMain.caspien` output is byte-identical to the Java `LexDump` on all 428 files of `tests/`, `docs/examples/` and `stdlib/`.
-* Next: parser.
+* Stage 2 parser (`parser/ParserLines.caspien` = line passes, decorators; `parser/ParserBlocks.caspien` = keyword-block gathering with a frame Vec of PB_STRIDE slots per `GatherFrame`; `parser/ParseDumpMain.caspien` = dump tool): done. `ParseDumpMain full` is byte-identical to the Java `ParseDump` on all 428 files (stages nest, split, imports, decor, then0, generic0, lines0, lines, full each checked). Error messages are shortened (literals only); the throwing cases are the Java ones.
+* Stages 3-7 done and byte-identical on 428 files (dump stages `rpn`, `tree`, `resolved`, `dup`, `generics`): RPN converter, tree builder, ImportResolver (+ SourceParser), DupExpander, GenericsExpander (+ TokClone, StrMap, `pendingBounds` column). Next: the type checker.
+
+## Lessons (performance and proofs)
+* A nullable `ref` of many distinct objects makes the ghost table's `__gtSlotAt` quadratic: no per-token objects. Tokens, lists and strings are struct-of-arrays columns of u64 in one `TokStore` (char arena `sbuf`), read with `getSome`.
+* Stores are passed as nullable `ref mut TokStore` and each accessor proves the reference itself (`match Some(ts)`), because any String creation or column growth ends a `ref some` parameter's alive proof.
+* `let x = mut (a op b)` needs the parentheses; range bounds must be bare variables; `raw` is a keyword; a char is turned into a number with `String.charCode`.

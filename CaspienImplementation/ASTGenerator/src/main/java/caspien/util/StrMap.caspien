@@ -1,0 +1,133 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+
+/**
+ * A string-keyed map of u64 values living entirely in the token store's list pool (keys are string ids). The map is the id of a list holding three list ids:
+ * [keys, vals, buckets]; `buckets` has one entry per bucket, each TOK_NONE or a list of entry indices. Grows by rehashing when it holds more than four entries per bucket.
+ */
+@pub
+struct StrMap{@pub{
+}}
+
+@pub
+impl StrMap{
+	@pub
+	@throws
+	static func make(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let m = mut ? TokStore.newList(ts)
+		let keys = mut ? TokStore.newList(ts)
+		let vals = mut ? TokStore.newList(ts)
+		let buckets = mut ? TokStore.newList(ts)
+		for i in 0..64{
+			? TokStore.listAdd(ts, buckets, TOK_NONE)
+		}
+		? TokStore.listAdd(ts, m, keys)
+		? TokStore.listAdd(ts, m, vals)
+		? TokStore.listAdd(ts, m, buckets)
+		return m
+	}
+
+	static func hash(ts: ref imut TokStore, sid: mut u64) mut u64{
+		let h = mut 5381
+		let n = mut TokStore.strLen(ts, sid)
+		for i in 0..n{
+			h = (h * 33 + String.charCode(TokStore.strCh(ts, sid, i))) % 2147483647
+		}
+		return h
+	}
+
+	/** The entry index of `key`, or TOK_NONE. */
+	static func find(ts: ref imut TokStore, m: mut u64, key: mut u64) mut u64{
+		let keys = mut TokStore.listGet(ts, m, 0)
+		let buckets = mut TokStore.listGet(ts, m, 2)
+		let nb = mut TokStore.listSize(ts, buckets)
+		if nb == 0{
+			return TOK_NONE
+		}
+		let h = mut StrMap.hash(ts, key)
+		let b = mut TOK_NONE
+		match nb != 0{ b = TokStore.listGet(ts, buckets, h % nb) }
+		if b == TOK_NONE{
+			return TOK_NONE
+		}
+		let cnt = mut TokStore.listSize(ts, b)
+		for i in 0..cnt{
+			let e = mut TokStore.listGet(ts, b, i)
+			if TokStore.strsEq(ts, TokStore.listGet(ts, keys, e), key){
+				return e
+			}
+		}
+		return TOK_NONE
+	}
+
+	/** The value stored under `key`, or TOK_NONE. */
+	@pub
+	static func get(ts: ref imut TokStore, m: mut u64, key: mut u64) mut u64{
+		let e = mut StrMap.find(ts, m, key)
+		if e == TOK_NONE{
+			return TOK_NONE
+		}
+		return TokStore.listGet(ts, TokStore.listGet(ts, m, 1), e)
+	}
+
+	@pub
+	static func has(ts: ref imut TokStore, m: mut u64, key: mut u64) mut bool{
+		return StrMap.find(ts, m, key) != TOK_NONE
+	}
+
+	@throws
+	static func addToBucket(ts: ref mut TokStore, buckets: mut u64, nb: mut u64, h: mut u64, entry: mut u64) void{
+		?catch(e){ throw e }
+		let slot = mut 0
+		match nb != 0{ slot = h % nb }
+		let b = mut TokStore.listGet(ts, buckets, slot)
+		if b == TOK_NONE{
+			b = ? TokStore.newList(ts)
+			TokStore.listSet(ts, buckets, slot, b)
+		}
+		? TokStore.listAdd(ts, b, entry)
+	}
+
+	@throws
+	static func grow(ts: ref mut TokStore, m: mut u64) void{
+		?catch(e){ throw e }
+		let keys = mut TokStore.listGet(ts, m, 0)
+		let oldB = mut TokStore.listGet(ts, m, 2)
+		let nb = mut (TokStore.listSize(ts, oldB) * 4)
+		let nbuckets = mut ? TokStore.newList(ts)
+		for i in 0..nb{
+			? TokStore.listAdd(ts, nbuckets, TOK_NONE)
+		}
+		let n = mut TokStore.listSize(ts, keys)
+		for e in 0..n{
+			let h = mut StrMap.hash(ts, TokStore.listGet(ts, keys, e))
+			? StrMap.addToBucket(ts, nbuckets, nb, h, e)
+		}
+		TokStore.listSet(ts, m, 2, nbuckets)
+	}
+
+	/** Stores `val` under `key` (replacing an existing entry). */
+	@pub
+	@throws
+	static func put(ts: ref mut TokStore, m: mut u64, key: mut u64, val: mut u64) void{
+		?catch(e){ throw e }
+		let e = mut StrMap.find(ts, m, key)
+		let vals = mut TokStore.listGet(ts, m, 1)
+		if e != TOK_NONE{
+			TokStore.listSet(ts, vals, e, val)
+			return
+		}
+		let keys = mut TokStore.listGet(ts, m, 0)
+		let idx = mut TokStore.listSize(ts, keys)
+		? TokStore.listAdd(ts, keys, key)
+		? TokStore.listAdd(ts, vals, val)
+		let buckets = mut TokStore.listGet(ts, m, 2)
+		let nb = mut TokStore.listSize(ts, buckets)
+		let h = mut StrMap.hash(ts, key)
+		? StrMap.addToBucket(ts, buckets, nb, h, idx)
+		if idx + 1 > nb * 4{
+			? StrMap.grow(ts, m)
+		}
+	}
+}

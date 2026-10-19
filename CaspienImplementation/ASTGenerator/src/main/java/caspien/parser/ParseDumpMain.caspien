@@ -1,0 +1,514 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/make_safe_args.caspien"
+import "stdlib/string.caspien"
+import "stdlib/fs.caspien"
+import "stdlib/print_string.caspien"
+import "../../../../../../Orchestrator/Io.caspien"
+import "../lexer/Lexer.caspien"
+import "../token/TokStore.caspien"
+import "ParserLines.caspien"
+import "../importresolver/ImportResolver.caspien"
+import "../dupexpander/DupExpander.caspien"
+import "../genericsexpander/GenericsExpander.caspien"
+
+/**
+ * Test tool: `parse_dump <nest|split|lines|full> <file.caspien>` prints the token tree in the format of the Java `ParseDump` (tools/ParseDump.java):
+ * one line per token, `label: TYPE|text|line|literalValue|forcedType|flags...`, children indented under their parent in the order
+ * left, right, next, sub, childs, typeBound, genericArgs groups.
+ */
+@pub
+struct PDump{@pub{
+}}
+
+@pub
+impl PDump{
+	static func putLit(out: ref mut String, lit: static imut string) void{
+		?catch(e){ return }
+		match Some(out){ ? out.append(out, lit) }
+	}
+
+	static func putCh(out: ref mut String, c: mut char) void{
+		?catch(e){ return }
+		match Some(out){ ? out.appendChar(out, c) }
+	}
+
+	static func putU64(out: ref mut String, v: mut u64) void{
+		?catch(e){ return }
+		match Some(out){ ? out.appendU64(out, v) }
+	}
+
+	static func putStr(out: ref mut String, s: ref imut String) void{
+		?catch(e){ return }
+		match Some(out){
+			match Some(s){ ? out.append(out, s) }
+		}
+	}
+
+	static func hexDigit(v: mut u64) mut char{
+		if v < 10{
+			return LexWords.charOf(48 + v)
+		}
+		return LexWords.charOf(97 + v - 10)
+	}
+
+	/** Java LexDump.esc: `~` for null, backslash escapes, \xHH (at least 2 hex digits) for control and non-ASCII code points. */
+	static func esc(out: ref mut String, s: ref imut String) void{
+		?catch(e){ return }
+		let n = mut 0
+		match Some(s){ n = s.length(s) }
+		let i = mut 0
+		for lp1 in 0..1000000000{
+			if i >= n{
+				break
+			}
+			let b = mut 0
+			match Some(s){ b = String.charCode(s.charAt(s, i)) }
+			let cp = mut b
+			let adv = mut 1
+			if b >= 224 && i + 2 < n{
+				let b1 = mut 0
+				let b2 = mut 0
+				match Some(s){
+					b1 = String.charCode(s.charAt(s, i + 1))
+					b2 = String.charCode(s.charAt(s, i + 2))
+				}
+				cp = (b % 16) * 4096 + (b1 % 64) * 64 + b2 % 64
+				adv = 3
+			} else if b >= 192 && i + 1 < n{
+				let c1 = mut 0
+				match Some(s){ c1 = String.charCode(s.charAt(s, i + 1)) }
+				cp = (b % 32) * 64 + c1 % 64
+				adv = 2
+			}
+			if cp == 92{
+				PDump.putLit(out, "\\\\")
+			} else if cp == 10{
+				PDump.putLit(out, "\\n")
+			} else if cp == 13{
+				PDump.putLit(out, "\\r")
+			} else if cp == 9{
+				PDump.putLit(out, "\\t")
+			} else if cp < 32 || cp > 126{
+				PDump.putLit(out, "\\x")
+				if cp > 65535{
+					PDump.putCh(out, PDump.hexDigit((cp / 1048576) % 16))
+					PDump.putCh(out, PDump.hexDigit((cp / 65536) % 16))
+				}
+				if cp > 255{
+					PDump.putCh(out, PDump.hexDigit((cp / 4096) % 16))
+					PDump.putCh(out, PDump.hexDigit((cp / 256) % 16))
+				}
+				PDump.putCh(out, PDump.hexDigit((cp / 16) % 16))
+				PDump.putCh(out, PDump.hexDigit(cp % 16))
+			} else {
+				PDump.putCh(out, LexWords.charOf(cp))
+			}
+			i = i + adv
+		}
+	}
+
+
+	/** Java ParseDump.esc of string `sid` (`~` when unset), decoding UTF-8 to code points like Java chars. */
+	static func addStrOf(out: ref mut String, ts: ref imut TokStore, sid: mut u64) void{
+		if sid == TOK_NONE{
+			PDump.putCh(out, '~')
+			return
+		}
+		let n = mut TokStore.strLen(ts, sid)
+		let i = mut 0
+		for lp1 in 0..1000000000{
+			if i >= n{
+				break
+			}
+			let b = mut String.charCode(TokStore.strCh(ts, sid, i))
+			let cp = mut b
+			let adv = mut 1
+			if b >= 224 && i + 2 < n{
+				let b1 = mut String.charCode(TokStore.strCh(ts, sid, i + 1))
+				let b2 = mut String.charCode(TokStore.strCh(ts, sid, i + 2))
+				cp = (b % 16) * 4096 + (b1 % 64) * 64 + b2 % 64
+				adv = 3
+			} else if b >= 192 && i + 1 < n{
+				let c1 = mut String.charCode(TokStore.strCh(ts, sid, i + 1))
+				cp = (b % 32) * 64 + c1 % 64
+				adv = 2
+			}
+			if cp == 92{
+				PDump.putLit(out, "\\\\")
+			} else if cp == 10{
+				PDump.putLit(out, "\\n")
+			} else if cp == 13{
+				PDump.putLit(out, "\\r")
+			} else if cp == 9{
+				PDump.putLit(out, "\\t")
+			} else if cp < 32 || cp > 126{
+				PDump.putLit(out, "\\x")
+				if cp > 65535{
+					PDump.putCh(out, PDump.hexDigit((cp / 1048576) % 16))
+					PDump.putCh(out, PDump.hexDigit((cp / 65536) % 16))
+				}
+				if cp > 255{
+					PDump.putCh(out, PDump.hexDigit((cp / 4096) % 16))
+					PDump.putCh(out, PDump.hexDigit((cp / 256) % 16))
+				}
+				PDump.putCh(out, PDump.hexDigit((cp / 16) % 16))
+				PDump.putCh(out, PDump.hexDigit(cp % 16))
+			} else {
+				PDump.putCh(out, LexWords.charOf(cp))
+			}
+			i = i + adv
+		}
+	}
+
+	/** One token line (without indent and label). */
+		static func tokenLine(out: ref mut String, ts: ref imut TokStore, t: mut u64, extra: mut u64) void{
+		PDump.putLit(out, tokenTypeName(TokStore.kind(ts, t)))
+		PDump.putCh(out, '|')
+		PDump.addStrOf(out, ts, TokStore.text(ts, t))
+		PDump.putCh(out, '|')
+		PDump.putU64(out, TokStore.line(ts, t))
+		PDump.putCh(out, '|')
+		PDump.addStrOf(out, ts, TokStore.literalValue(ts, t))
+		PDump.putCh(out, '|')
+		PDump.addStrOf(out, ts, TokStore.forcedLiteralType(ts, t))
+		if TokStore.unary(ts, t) != 0{ PDump.putLit(out, "|unary") }
+		if TokStore.isStatic(ts, t) != 0{ PDump.putLit(out, "|static") }
+		if TokStore.isConst(ts, t) != 0{ PDump.putLit(out, "|const") }
+		if TokStore.isStaticMethod(ts, t) != 0{ PDump.putLit(out, "|staticMethod") }
+		if TokStore.isCaseMatch(ts, t) != 0{ PDump.putLit(out, "|caseMatch") }
+		if TokStore.isForMatch(ts, t) != 0{ PDump.putLit(out, "|forMatch") }
+		if TokStore.isTryBlock(ts, t) != 0{ PDump.putLit(out, "|tryBlock") }
+		if TokStore.hasBlock(ts, t) != 0{ PDump.putLit(out, "|hasBlock") }
+		if TokStore.isConstructorDecl(ts, t) != 0{
+			PDump.putLit(out, "|ctor=")
+			PDump.addStrOf(out, ts, TokStore.constructorConcreteName(ts, t))
+		}
+		if TokStore.isPubBlockMember(ts, t) != 0{ PDump.putLit(out, "|pubMember") }
+		if TokStore.catchParamName(ts, t) != TOK_NONE{
+			PDump.putLit(out, "|catch=")
+			PDump.addStrOf(out, ts, TokStore.catchParamName(ts, t))
+		}
+		PDump.strList(out, ts, "|tp=", TokStore.typeParams(ts, t))
+		PDump.strList(out, ts, "|tpb=", TokStore.typeParamBounds(ts, t))
+		PDump.strList(out, ts, "|ext=", TokStore.extendsNames(ts, t))
+		PDump.strList(out, ts, "|impl=", TokStore.implementsNames(ts, t))
+		PDump.strList(out, ts, "|tags=", TokStore.unsafeTags(ts, t))
+		PDump.strList(out, ts, "|assume=", TokStore.assumeVariants(ts, t))
+		if TokStore.hasEnumValue(ts, t) != 0{
+			PDump.putLit(out, "|enumVal=")
+			PDump.putU64(out, TokStore.enumValue(ts, t))
+		}
+		if TokStore.hasRangeStart(ts, t) != 0{
+			PDump.putLit(out, "|rs=")
+			PDump.putU64(out, TokStore.rangeStart(ts, t))
+		}
+		if TokStore.hasRangeEnd(ts, t) != 0{
+			PDump.putLit(out, "|re=")
+			PDump.putU64(out, TokStore.rangeEnd(ts, t))
+		}
+		if TokStore.asmBlockText(ts, t) != TOK_NONE{
+			PDump.putLit(out, "|asm=")
+			PDump.addStrOf(out, ts, TokStore.asmBlockText(ts, t))
+		}
+		if extra != 0{
+			PDump.putLit(out, "|file=")
+			PDump.addStrOf(out, ts, TokStore.fileId(ts, t))
+			if TokStore.fromGenericInstance(ts, t) != 0{
+				PDump.putLit(out, "|fgi")
+			}
+			let pb = mut TokStore.pendingBounds(ts, t)
+			if pb != TOK_NONE{
+				PDump.putLit(out, "|pbc=[")
+				let npb = mut TokStore.listSize(ts, pb)
+				let bi = mut 0
+				for lp9 in 0..1000000000{
+					if bi >= npb{
+						break
+					}
+					if bi > 0{
+						PDump.putCh(out, ',')
+					}
+					PDump.addStrOf(out, ts, TokStore.listGet(ts, pb, bi))
+					PDump.putCh(out, ':')
+					PDump.addStrOf(out, ts, TokStore.listGet(ts, pb, bi + 1))
+					PDump.putCh(out, ':')
+					PDump.addStrOf(out, ts, TokStore.listGet(ts, pb, bi + 2))
+					bi = bi + 3
+				}
+				PDump.putCh(out, ']')
+			}
+		}
+		let dl = mut TokStore.decorators(ts, t)
+		let nd = mut TokStore.listSize(ts, dl)
+		for di in 0..nd{
+			PDump.putLit(out, "|")
+			PDump.decorator(out, ts, TokStore.listGet(ts, dl, di))
+		}
+		let pl = mut TokStore.pinned(ts, t)
+		let np = mut TokStore.listSize(ts, pl)
+		for pi in 0..np{
+			let p = mut TokStore.listGet(ts, pl, pi)
+			PDump.putLit(out, "|pin ")
+			PDump.putLit(out, tokenTypeName(TokStore.kind(ts, p)))
+			PDump.putCh(out, ':')
+			PDump.putU64(out, TokStore.line(ts, p))
+			PDump.putCh(out, ':')
+			PDump.addStrOf(out, ts, TokStore.text(ts, p))
+		}
+	}
+
+	/** `prefix[a,b,c]` for a string-id list (nothing for an unset list, `~` entries for unset strings). */
+		static func strList(out: ref mut String, ts: ref imut TokStore, prefix: static imut string, l: mut u64) void{
+		if l == TOK_NONE{
+			return
+		}
+		PDump.putLit(out, prefix)
+		PDump.strListBody(out, ts, l)
+	}
+
+		static func strListBody(out: ref mut String, ts: ref imut TokStore, l: mut u64) void{
+		if l == TOK_NONE{
+			PDump.putCh(out, '~')
+			return
+		}
+		PDump.putCh(out, '[')
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if i > 0{
+				PDump.putCh(out, ',')
+			}
+			PDump.addStrOf(out, ts, TokStore.listGet(ts, l, i))
+		}
+		PDump.putCh(out, ']')
+	}
+
+		static func boolListBody(out: ref mut String, ts: ref imut TokStore, l: mut u64) void{
+		if l == TOK_NONE{
+			PDump.putCh(out, '~')
+			return
+		}
+		PDump.putCh(out, '[')
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if i > 0{
+				PDump.putCh(out, ',')
+			}
+			if TokStore.listGet(ts, l, i) != 0{
+				PDump.putLit(out, "true")
+			} else {
+				PDump.putLit(out, "false")
+			}
+		}
+		PDump.putCh(out, ']')
+	}
+
+		static func decorator(out: ref mut String, ts: ref imut TokStore, d: mut u64) void{
+		PDump.putCh(out, '@')
+		PDump.addStrOf(out, ts, TokStore.dName(ts, d))
+		PDump.putLit(out, " args=")
+		PDump.strListBody(out, ts, TokStore.dArgs(ts, d))
+		PDump.putLit(out, " str=")
+		PDump.boolListBody(out, ts, TokStore.dArgIsString(ts, d))
+		PDump.putLit(out, " line=")
+		PDump.putU64(out, TokStore.dLine(ts, d))
+		PDump.putLit(out, " lockField=")
+		PDump.addStrOf(out, ts, TokStore.dLockField(ts, d))
+		PDump.putLit(out, " lockVariants=")
+		PDump.strListBody(out, ts, TokStore.dLockVariants(ts, d))
+		PDump.putLit(out, " inParams=")
+		PDump.strListBody(out, ts, TokStore.dLockInParams(ts, d))
+		PDump.putLit(out, " inFields=")
+		PDump.strListBody(out, ts, TokStore.dLockInFields(ts, d))
+		PDump.putLit(out, " inOps=")
+		PDump.strListBody(out, ts, TokStore.dLockInOperators(ts, d))
+		PDump.putLit(out, " inSome=")
+		PDump.boolListBody(out, ts, TokStore.dLockInSomeWrapped(ts, d))
+		PDump.putLit(out, " ltTerms=")
+		PDump.strListBody(out, ts, TokStore.dLifetimeTerms(ts, d))
+		PDump.putLit(out, " ltOps=")
+		PDump.strListBody(out, ts, TokStore.dLifetimeOps(ts, d))
+	}
+
+	/** Label text for a label code: 1 root 2 left 3 right 4 next 5 sub 6 child 7 bound, 100+g = garg<g>. */
+		static func label(out: ref mut String, code: mut u64) void{
+		if code == 1{ PDump.putLit(out, "root") }
+		else if code == 2{ PDump.putLit(out, "left") }
+		else if code == 3{ PDump.putLit(out, "right") }
+		else if code == 4{ PDump.putLit(out, "next") }
+		else if code == 5{ PDump.putLit(out, "sub") }
+		else if code == 6{ PDump.putLit(out, "child") }
+		else if code == 7{ PDump.putLit(out, "bound") }
+		else {
+			PDump.putLit(out, "garg")
+			PDump.putU64(out, code - 100)
+		}
+	}
+
+	/** Prints the trees rooted at the tokens of list `roots` (Java ParseDump.dump). */
+	@throws
+	static func dumpTree(out: ref mut String, ts: ref imut TokStore, roots: mut u64, extra: mut u64) void{
+		?catch(e){ throw e }
+		let stT = mut ? Vec.make()
+		let stD = mut ? Vec.make()
+		let stL = mut ? Vec.make()
+		let kT = mut ? Vec.make()
+		let kL = mut ? Vec.make()
+		let nr = mut TokStore.listSize(ts, roots)
+		for ri in 0..nr{
+			let k = mut (nr - 1 - ri)
+			? stT.push(stT, TokStore.listGet(ts, roots, k))
+			? stD.push(stD, 0)
+			? stL.push(stL, 1)
+		}
+		for lp1 in 0..1000000000{
+			if stT.size(stT) == 0{
+				break
+			}
+			let t = mut stT.pop(stT)
+			let depth = mut stD.pop(stD)
+			let lab = mut stL.pop(stL)
+			for q in 0..depth{
+				PDump.putLit(out, "  ")
+			}
+			PDump.label(out, lab)
+			PDump.putLit(out, ": ")
+			PDump.tokenLine(out, ts, t, extra)
+			PDump.putCh(out, '\n')
+			kT.clear(kT)
+			kL.clear(kL)
+			let l = mut TokStore.left(ts, t)
+			if l != TOK_NONE{
+				? kT.push(kT, l)
+				? kL.push(kL, 2)
+			}
+			let r = mut TokStore.right(ts, t)
+			if r != TOK_NONE{
+				? kT.push(kT, r)
+				? kL.push(kL, 3)
+			}
+			let nx = mut TokStore.next(ts, t)
+			if nx != TOK_NONE{
+				? kT.push(kT, nx)
+				? kL.push(kL, 4)
+			}
+			? PDump.collect(ts, TokStore.sub(ts, t), 5, kT, kL)
+			? PDump.collect(ts, TokStore.childs(ts, t), 6, kT, kL)
+			? PDump.collect(ts, TokStore.typeBound(ts, t), 7, kT, kL)
+			let ga = mut TokStore.genericArgs(ts, t)
+			let ng = mut TokStore.listSize(ts, ga)
+			for g in 0..ng{
+				? PDump.collect(ts, TokStore.listGet(ts, ga, g), 100 + g, kT, kL)
+			}
+			let nk = mut kT.size(kT)
+			for qi in 0..nk{
+				let idx = mut (nk - 1 - qi)
+				? stT.push(stT, kT.get(kT, idx))
+				? stD.push(stD, depth + 1)
+				? stL.push(stL, kL.get(kL, idx))
+			}
+		}
+	}
+
+	@throws
+	static func collect(ts: ref imut TokStore, l: mut u64, code: mut u64, kT: ref some mut Vec, kL: ref some mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			? kT.push(kT, TokStore.listGet(ts, l, i))
+			? kL.push(kL, code)
+		}
+	}
+
+	@pub
+	@throws
+	static func run(stage: ref imut String, path: ref imut String, stdlib: ref imut String) mut u64{
+		?catch(e){ throw e }
+		let pathCopy = mut ? new String()
+		match Some(path){ pathCopy = ? Txt.copy(path) }
+		let:<owns mut String> base = mut null
+		match Some(path){ base = Io.pathName(path) }
+		let src = mut ? new String()
+		match Some(path){ src = ? Io.readFile(path) }
+		let roots = mut ? String.from("*")
+		let cur = mut ? new LexCursor()
+		let result = mut ? new LexResult()
+		match Some(base){
+			result = ? Lexer.tokenize(src, base, roots, pathCopy, cur)
+		}
+		let ts = mut ? TokStore.make()
+		let fileId = mut ? TokStore.internFile(ts, path)
+		let flat = mut ? ParserLines.toTokens(ts, result.tokens, fileId)
+		let res = mut ? ParserLines.nest(ts, flat)
+		if Txt.eqLit(stage, "resolved") || Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics"){
+			let treeStage = mut ? String.from("tree")
+			res = ? ParserLines.runStage(ts, treeStage, res)
+			let cwdList = mut ? new ObjectList:<String>()
+			let pwdCmd = mut ? String.from("pwd")
+			let pc = mut Io.collect(pwdCmd, cwdList)
+			let cwdStr = mut cwdList.get(cwdList, 0)
+			let cwdSid = mut ? TokStore.addStr(ts, cwdStr)
+			let stdSid = mut ? TokStore.addStr(ts, stdlib)
+			let platSid = mut ? TokStore.addLit(ts, "linux")
+			let resolver = mut ? new ImportResolver(ts, stdSid, platSid, cwdSid)
+			res = ? ImportResolver.resolve(resolver, ts, res, fileId)
+			if Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics"){
+				? DupExpander.expand(ts, res)
+			}
+			if Txt.eqLit(stage, "generics"){
+				res = ? GenericsExpander.expand(ts, res)
+			}
+		} else {
+			res = ? ParserLines.runStage(ts, stage, res)
+		}
+		let extraFlag = mut 0
+		if Txt.eqLit(stage, "generics"){
+			extraFlag = 1
+		}
+		let out = mut ? new String()
+		? PDump.dumpTree(out, ts, res, extraFlag)
+		Io.oprint(out)
+		return 0
+	}
+}
+
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	?catch(e){
+		Io.eprintLit("error\n")
+		Io.oprintLit("ERROR\n")
+		unsafe extern{ exit(0) }
+		return
+	}
+	let n = mut len(args)
+	let stage = mut ? new String()
+	let path = mut ? new String()
+	if n > 2{
+		match 1 in args{
+			let one = mut args[1]
+			let m = mut len(one)
+			for k in 0..m{
+				match k in one{ ? stage.appendChar(stage, one[k]) }
+			}
+		}
+		match 2 in args{
+			let two = mut args[2]
+			let m2 = mut len(two)
+			for k2 in 0..m2{
+				match k2 in two{ ? path.appendChar(path, two[k2]) }
+			}
+		}
+	}
+	let stdlib = mut ? String.from("/home/claude/caspien/stdlib")
+	if n > 3{
+		match 3 in args{
+			stdlib = ? new String()
+			let three = mut args[3]
+			let m3 = mut len(three)
+			for k3 in 0..m3{
+				match k3 in three{ ? stdlib.appendChar(stdlib, three[k3]) }
+			}
+		}
+	}
+	let code = mut ? PDump.run(stage, path, stdlib)
+	unsafe extern{ exit(wrap:<u32>(code)) }
+}

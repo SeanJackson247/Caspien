@@ -1,0 +1,32 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../lexer/Lexer.caspien"
+import "../token/TokStore.caspien"
+import "ParserLines.caspien"
+
+/**
+ * Port of caspien.parser.SourceParser: source text to a tree-built list of root LINE tokens (lex, parse, RPN, tree), appended to the shared token store.
+ */
+@pub
+struct SourceParser{@pub{
+}}
+
+@pub
+impl SourceParser{
+	/** Lexes and parses `src`; `pathSid` is the file recorded in tokens, `displaySid` the name `__FILENAME` expands to. Returns the root line list id. */
+	@pub
+	@throws
+	static func parseSource(ts: ref mut TokStore, src: owns some mut String, pathSid: mut u64, displaySid: mut u64) mut u64{
+		?catch(e){ throw e }
+		let file = mut ? TokStore.strCopy(ts, pathSid)
+		let display = mut ? TokStore.strCopy(ts, displaySid)
+		let roots = mut ? String.from("*")
+		let cur = mut ? new LexCursor()
+		let result = mut ? Lexer.tokenize(src, display, roots, file, cur)
+		let flat = mut ? ParserLines.toTokens(ts, result.tokens, pathSid)
+		let nested = mut ? ParserLines.nest(ts, flat)
+		let stage = mut ? String.from("tree")
+		let lines = mut ? ParserLines.runStage(ts, stage, nested)
+		return lines
+	}
+}

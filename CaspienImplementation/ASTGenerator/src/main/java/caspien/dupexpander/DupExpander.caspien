@@ -1,0 +1,377 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+
+/**
+ * Stage 6 (port of caspien.dupexpander.DupExpander): expands `dup` array-literal elements in place over the whole import-resolved tree.
+ * Same explicit task-stack scheme as the other stages (task pool of DX_STRIDE slots). Counts are evaluated in sign-magnitude form (u64 magnitude + sign flag)
+ * with Java's truncating `/` and `%`. Error messages are shortened.
+ */
+const DX_STRIDE 4
+const DX_KIND 0
+const DX_NODE 1
+const DX_ELEMS 2
+const DX_SAWDUP 3
+
+const DK_WALK 1
+const DK_CHILDREN 2
+const DK_ELEMENT 3
+const DK_PLAIN 4
+const DK_FINISH 5
+
+@pub
+struct DupExpander{@pub{
+}}
+
+@pub
+impl DupExpander{
+	static func tg(tv: ref imut Vec, t: mut u64, k: mut u64) mut u64{
+		match Some(tv){ return tv.get(tv, t * 4 + k) }
+		return TOK_NONE
+	}
+
+	@throws
+	static func emit(tv: ref mut Vec, outV: ref mut Vec, kind: mut u64, node: mut u64, elems: mut u64, saw: mut u64) void{
+		?catch(e){ throw e }
+		let id = mut 0
+		match Some(tv){ id = tv.size(tv) / 4 }
+		match Some(tv){ ? tv.push(tv, kind) }
+		match Some(tv){ ? tv.push(tv, node) }
+		match Some(tv){ ? tv.push(tv, elems) }
+		match Some(tv){ ? tv.push(tv, saw) }
+		match Some(outV){ ? outV.push(outV, id) }
+	}
+
+	/** Queues a walk of `node` unless it is unset. */
+	@throws
+	static func emitWalk(tv: ref mut Vec, outV: ref mut Vec, node: mut u64) void{
+		?catch(e){ throw e }
+		if node != TOK_NONE{
+			? DupExpander.emit(tv, outV, DK_WALK, node, TOK_NONE, 0)
+		}
+	}
+
+	// ---- constant count evaluation (sign-magnitude) -----------------------------------------------------------------------
+
+	static func isOp(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == TT_OPERATOR && TokStore.textEq(ts, t, lit)
+	}
+
+	/** Evaluates a constant dup count; returns its magnitude and sets `negOut[0]` to 1 when the value is negative. */
+	@throws
+	static func evalCount(ts: ref imut TokStore, root: mut u64, negOut: ref mut Vec) mut u64{
+		?catch(e){ throw e }
+		let tk = mut ? Vec.make()    // stride 3: isEval, node, opcode
+		let vm = mut ? Vec.make()
+		let vn = mut ? Vec.make()
+		// opcodes: 1 neg, 2 +, 3 -, 4 *, 5 /, 6 %, 7 zero?
+		? tk.push(tk, 1)
+		? tk.push(tk, root)
+		? tk.push(tk, 0)
+		for lp1 in 0..1000000000{
+			let sz = mut tk.size(tk)
+			if sz == 0{
+				break
+			}
+			let op = mut tk.pop(tk)
+			let node = mut tk.pop(tk)
+			let isEval = mut tk.pop(tk)
+			if isEval == 0{
+				if op == 1{
+					let m = mut vm.pop(vm)
+					let ng = mut vn.pop(vn)
+					? vm.push(vm, m)
+					if ng == 0 && m != 0{
+						? vn.push(vn, 1)
+					} else {
+						? vn.push(vn, 0)
+					}
+				} else if op == 7{
+					let top = mut vm.get(vm, vm.size(vm) - 1)
+					if top == 0{
+						throw "[type error] division by zero in 'dup' count"
+					}
+				} else {
+					let rm = mut vm.pop(vm)
+					let rn = mut vn.pop(vn)
+					let lm = mut vm.pop(vm)
+					let ln = mut vn.pop(vn)
+					if op == 5 || op == 6{
+						// for / and %: the stack holds the left operand on top (it was evaluated last), the right below it
+						let swapM = mut rm
+						let swapN = mut rn
+						rm = lm
+						rn = ln
+						lm = swapM
+						ln = swapN
+					}
+					let outM = mut 0
+					let outN = mut 0
+					if op == 2 || op == 3{
+						// addition / subtraction: a - b is a + (-b)
+						let bn = mut rn
+						if op == 3 && rm != 0{
+							if rn == 0{
+								bn = 1
+							} else {
+								bn = 0
+							}
+						}
+						if ln == bn{
+							outM = lm + rm
+							outN = ln
+						} else if lm >= rm{
+							outM = lm - rm
+							outN = ln
+						} else {
+							outM = rm - lm
+							outN = bn
+						}
+						if outM == 0{
+							outN = 0
+						}
+					} else if op == 4{
+						outM = lm * rm
+						if ln != rn && outM != 0{
+							outN = 1
+						}
+					} else if op == 5{
+						match rm != 0{ outM = lm / rm }
+						if ln != rn && outM != 0{
+							outN = 1
+						}
+					} else {
+						match rm != 0{ outM = lm % rm }
+						if ln != 0 && outM != 0{
+							outN = 1
+						}
+					}
+					? vm.push(vm, outM)
+					? vn.push(vn, outN)
+				}
+				continue
+			}
+			let kind = mut TokStore.kind(ts, node)
+			if kind == TT_INTEGER{
+				let len = mut TokStore.textLen(ts, node)
+				let acc = mut 0
+				for di in 0..len{
+					acc = acc * 10 + (String.charCode(TokStore.textCh(ts, node, di)) - 48)
+				}
+				? vm.push(vm, acc)
+				? vn.push(vn, 0)
+				continue
+			}
+			if kind == TT_DELINEATOR && TokStore.textEq(ts, node, "(") && TokStore.listSize(ts, TokStore.childs(ts, node)) > 0{
+				? tk.push(tk, 1)
+				? tk.push(tk, TokStore.listGet(ts, TokStore.childs(ts, node), 0))
+				? tk.push(tk, 0)
+				continue
+			}
+			if kind == TT_OPERATOR{
+				let un = mut TokStore.unary(ts, node)
+				if un != 0 && TokStore.textEq(ts, node, "-"){
+					? tk.push(tk, 0)
+					? tk.push(tk, node)
+					? tk.push(tk, 1)
+					? tk.push(tk, 1)
+					? tk.push(tk, TokStore.left(ts, node))
+					? tk.push(tk, 0)
+					continue
+				}
+				if un == 0{
+					if DupExpander.isOp(ts, node, "+") || DupExpander.isOp(ts, node, "-") || DupExpander.isOp(ts, node, "*"){
+						let code = mut 4
+						if TokStore.textEq(ts, node, "+"){
+							code = 2
+						}
+						if TokStore.textEq(ts, node, "-"){
+							code = 3
+						}
+						? tk.push(tk, 0)
+						? tk.push(tk, node)
+						? tk.push(tk, code)
+						? tk.push(tk, 1)
+						? tk.push(tk, TokStore.right(ts, node))
+						? tk.push(tk, 0)
+						? tk.push(tk, 1)
+						? tk.push(tk, TokStore.left(ts, node))
+						? tk.push(tk, 0)
+						continue
+					}
+					if DupExpander.isOp(ts, node, "/") || DupExpander.isOp(ts, node, "%"){
+						let code2 = mut 5
+						if TokStore.textEq(ts, node, "%"){
+							code2 = 6
+						}
+						? tk.push(tk, 0)
+						? tk.push(tk, node)
+						? tk.push(tk, code2)
+						? tk.push(tk, 1)
+						? tk.push(tk, TokStore.left(ts, node))
+						? tk.push(tk, 0)
+						? tk.push(tk, 0)
+						? tk.push(tk, node)
+						? tk.push(tk, 7)
+						? tk.push(tk, 1)
+						? tk.push(tk, TokStore.right(ts, node))
+						? tk.push(tk, 0)
+						continue
+					}
+				}
+			}
+			throw "[type error] 'dup' count must be a compile-time constant expression (integer literals and +,-,*,/,% only)"
+		}
+		let resM = mut vm.pop(vm)
+		let resN = mut vn.pop(vn)
+		match Some(negOut){ negOut.set(negOut, 0, resN) }
+		return resM
+	}
+
+	// ---- walking -------------------------------------------------------------------------------------------------------------
+
+	/** The operands of a ',' chain, left to right, appended to `outList`. */
+	@throws
+	static func collectCommaArgs(ts: ref mut TokStore, root: mut u64, outList: mut u64) void{
+		?catch(e){ throw e }
+		let work = mut ? Vec.make()
+		? work.push(work, root)
+		for lp1 in 0..1000000000{
+			if work.size(work) == 0{
+				break
+			}
+			let node = mut work.pop(work)
+			if TokStore.kind(ts, node) == TT_OPERATOR && TokStore.textEq(ts, node, ","){
+				? work.push(work, TokStore.right(ts, node))
+				? work.push(work, TokStore.left(ts, node))
+			} else {
+				? TokStore.listAdd(ts, outList, node)
+			}
+		}
+	}
+
+	@throws
+	static func rebuildCommaChain(ts: ref mut TokStore, elements: mut u64) mut u64{
+		?catch(e){ throw e }
+		let acc = mut TokStore.listGet(ts, elements, 0)
+		let n = mut TokStore.listSize(ts, elements)
+		let commaSid = mut ? TokStore.addLit(ts, ",")
+		for i in 1..n{
+			let el = mut TokStore.listGet(ts, elements, i)
+			let comma = mut ? TokStore.newToken(ts, TT_OPERATOR, commaSid, TokStore.line(ts, el), TokStore.fileId(ts, el))
+			TokStore.setLeft(ts, comma, acc)
+			TokStore.setRight(ts, comma, el)
+			acc = comma
+		}
+		return acc
+	}
+
+	/** Queues the elements of an array literal in order; each dup element's lhs is walked before its count is read. */
+	@throws
+	static func beginArrayLiteral(ts: ref mut TokStore, tv: ref mut Vec, arrayNode: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let rawElements = mut ? TokStore.newList(ts)
+		? DupExpander.collectCommaArgs(ts, TokStore.listGet(ts, TokStore.childs(ts, arrayNode), 0), rawElements)
+		let elements = mut ? TokStore.newList(ts)
+		let sawDup = mut 0
+		let n = mut TokStore.listSize(ts, rawElements)
+		for i in 0..n{
+			let rawEl = mut TokStore.listGet(ts, rawElements, i)
+			if TokStore.kind(ts, rawEl) == TT_OPERATOR && TokStore.textEq(ts, rawEl, "dup") && TokStore.unary(ts, rawEl) == 0{
+				sawDup = 1
+				? DupExpander.emitWalk(tv, outV, TokStore.left(ts, rawEl))
+				? DupExpander.emit(tv, outV, DK_ELEMENT, rawEl, elements, 0)
+			} else {
+				? DupExpander.emit(tv, outV, DK_PLAIN, rawEl, elements, 0)
+			}
+		}
+		? DupExpander.emit(tv, outV, DK_FINISH, arrayNode, elements, sawDup)
+	}
+
+	@throws
+	static func step(ts: ref mut TokStore, tv: ref mut Vec, t: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let kind = mut DupExpander.tg(tv, t, DX_KIND)
+		let node = mut DupExpander.tg(tv, t, DX_NODE)
+		let elems = mut DupExpander.tg(tv, t, DX_ELEMS)
+		if kind == DK_WALK{
+			if TokStore.kind(ts, node) == TT_DELINEATOR && TokStore.textEq(ts, node, "[") && TokStore.listSize(ts, TokStore.childs(ts, node)) > 0{
+				? DupExpander.beginArrayLiteral(ts, tv, node, outV)
+			}
+			? DupExpander.emit(tv, outV, DK_CHILDREN, node, TOK_NONE, 0)
+		} else if kind == DK_CHILDREN{
+			? DupExpander.emitWalk(tv, outV, TokStore.left(ts, node))
+			? DupExpander.emitWalk(tv, outV, TokStore.right(ts, node))
+			? DupExpander.emitWalk(tv, outV, TokStore.next(ts, node))
+			let cs = mut TokStore.childs(ts, node)
+			let nc = mut TokStore.listSize(ts, cs)
+			for ci in 0..nc{
+				? DupExpander.emitWalk(tv, outV, TokStore.listGet(ts, cs, ci))
+			}
+			let ss = mut TokStore.sub(ts, node)
+			let nsub = mut TokStore.listSize(ts, ss)
+			for si in 0..nsub{
+				? DupExpander.emitWalk(tv, outV, TokStore.listGet(ts, ss, si))
+			}
+		} else if kind == DK_ELEMENT{
+			let lhs = mut TokStore.left(ts, node)
+			let negBox = mut ? Vec.make()
+			? negBox.push(negBox, 0)
+			let count = mut ? DupExpander.evalCount(ts, TokStore.right(ts, node), negBox)
+			if negBox.get(negBox, 0) != 0{
+				throw "[type error] 'dup' count must be non-negative"
+			}
+			for ci2 in 0..count{
+				? TokStore.listAdd(ts, elems, lhs)
+			}
+		} else if kind == DK_PLAIN{
+			? TokStore.listAdd(ts, elems, node)
+		} else if kind == DK_FINISH{
+			if DupExpander.tg(tv, t, DX_SAWDUP) == 0{
+				return
+			}
+			if TokStore.listSize(ts, elems) == 0{
+				throw "[type error] array literal must have at least one element"
+			}
+			let chain = mut ? DupExpander.rebuildCommaChain(ts, elems)
+			let nl = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, nl, chain)
+			TokStore.setChilds(ts, node, nl)
+		} else {
+			throw "[type error] unknown dup task"
+		}
+	}
+
+	/** Entry point: mutates the tree in place, walking every root entry. */
+	@pub
+	@throws
+	static func expand(ts: ref mut TokStore, rootEntries: mut u64) void{
+		?catch(e){ throw e }
+		let tv = mut ? Vec.make()
+		let stack = mut ? Vec.make()
+		let outV = mut ? Vec.make()
+		let n = mut TokStore.listSize(ts, rootEntries)
+		for ei in 0..n{
+			tv.clear(tv)
+			stack.clear(stack)
+			outV.clear(outV)
+			? DupExpander.emit(tv, outV, DK_WALK, TokStore.listGet(ts, rootEntries, ei), TOK_NONE, 0)
+			? stack.push(stack, outV.get(outV, 0))
+			for lp1 in 0..1000000000{
+				if stack.size(stack) == 0{
+					break
+				}
+				let t = mut stack.pop(stack)
+				outV.clear(outV)
+				? DupExpander.step(ts, tv, t, outV)
+				let no = mut outV.size(outV)
+				for qi in 0..no{
+					let idx = mut (no - 1 - qi)
+					? stack.push(stack, outV.get(outV, idx))
+				}
+			}
+		}
+	}
+}

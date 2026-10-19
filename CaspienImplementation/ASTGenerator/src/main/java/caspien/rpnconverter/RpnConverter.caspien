@@ -1,0 +1,652 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+
+/**
+ * Stage 3 (port of caspien.rpnconverter.RpnConverter): converts every remaining infix expression token list into RPN (shunting-yard, C-style precedence).
+ * The Java task stack becomes a Vec of task ids over a task pool of RT_STRIDE slots (kind, tok, list, list2, lines). Error messages are shortened.
+ */
+const RT_STRIDE 5
+const RT_KIND 0
+const RT_TOK 1
+const RT_LIST 2
+const RT_LIST2 3
+const RT_LINES 4
+
+const RK_LINES 1
+const RK_STMT 2
+const RK_FINISH_STMT 3
+const RK_GATHERED 4
+const RK_NEXT 5
+const RK_NESTED 6
+const RK_RPN_CHILDS 7
+const RK_RPN_SUB 8
+const RK_STRUCT_BEGIN 9
+const RK_STRUCT_MEMBER 10
+const RK_STRUCT_END 11
+
+@pub
+struct RpnConverter{@pub{
+}}
+
+@pub
+impl RpnConverter{
+	// ---- task pool -------------------------------------------------------------------------------------------------------
+
+	static func tg(tv: ref imut Vec, t: mut u64, k: mut u64) mut u64{
+		match Some(tv){
+			return tv.get(tv, t * 5 + k)
+		}
+		return TOK_NONE
+	}
+
+	@throws
+	static func newTask(tv: ref mut Vec, kind: mut u64, tok: mut u64, list: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut 0
+		match Some(tv){
+			id = tv.size(tv) / 5
+		}
+		match Some(tv){ ? tv.push(tv, kind) }
+		match Some(tv){ ? tv.push(tv, tok) }
+		match Some(tv){ ? tv.push(tv, list) }
+		match Some(tv){ ? tv.push(tv, TOK_NONE) }
+		match Some(tv){ ? tv.push(tv, TOK_NONE) }
+		return id
+	}
+
+	/** Creates a task and appends its id to the step's output list. */
+	@throws
+	static func emit(tv: ref mut Vec, outV: ref mut Vec, kind: mut u64, tok: mut u64, list: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut ? RpnConverter.newTask(tv, kind, tok, list)
+		match Some(outV){ ? outV.push(outV, id) }
+		return id
+	}
+
+	static func isTk(ts: ref imut TokStore, t: mut u64, kind: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == kind && TokStore.textEq(ts, t, lit)
+	}
+
+	// ---- precedence ------------------------------------------------------------------------------------------------------
+
+	/** Operators usable in a binary position (includes the synthetic CALL / LOOKUP / INSTANTIATE). */
+	static func isBinaryText(ts: ref imut TokStore, t: mut u64) mut bool{
+		let n = mut TokStore.textLen(ts, t)
+		if n == 0 || n > 12{
+			return false
+		}
+		return TokStore.textEq(ts, t, "&&") || TokStore.textEq(ts, t, "||") || TokStore.textEq(ts, t, "&&then") || TokStore.textEq(ts, t, "||then") || TokStore.textEq(ts, t, "+=") || TokStore.textEq(ts, t, "-=") || TokStore.textEq(ts, t, "/=") || TokStore.textEq(ts, t, "%=") || TokStore.textEq(ts, t, "*=") || TokStore.textEq(ts, t, "<=") || TokStore.textEq(ts, t, ">=") || TokStore.textEq(ts, t, "==") || TokStore.textEq(ts, t, "!=") || TokStore.textEq(ts, t, "<") || TokStore.textEq(ts, t, ">") || TokStore.textEq(ts, t, "+") || TokStore.textEq(ts, t, "-") || TokStore.textEq(ts, t, "/") || TokStore.textEq(ts, t, "%") || TokStore.textEq(ts, t, "*") || TokStore.textEq(ts, t, "=") || TokStore.textEq(ts, t, ":") || TokStore.textEq(ts, t, ",") || TokStore.textEq(ts, t, "CALL") || TokStore.textEq(ts, t, "LOOKUP") || TokStore.textEq(ts, t, "as") || TokStore.textEq(ts, t, ".") || TokStore.textEq(ts, t, "INSTANTIATE") || TokStore.textEq(ts, t, "..") || TokStore.textEq(ts, t, "in") || TokStore.textEq(ts, t, "within") || TokStore.textEq(ts, t, "into") || TokStore.textEq(ts, t, "dup") || TokStore.textEq(ts, t, "instanceof") || TokStore.textEq(ts, t, "implements") || TokStore.textEq(ts, t, "and") || TokStore.textEq(ts, t, "is") || TokStore.textEq(ts, t, "fits") || TokStore.textEq(ts, t, "swap")
+	}
+
+	/** Assignment-like operators (right associative; at most one per expression level). */
+	static func isAssignText(ts: ref imut TokStore, t: mut u64) mut bool{
+		return TokStore.textEq(ts, t, "=") || TokStore.textEq(ts, t, "+=") || TokStore.textEq(ts, t, "-=") || TokStore.textEq(ts, t, "/=") || TokStore.textEq(ts, t, "%=") || TokStore.textEq(ts, t, "*=") || TokStore.textEq(ts, t, ":")
+	}
+
+	static func precedence(ts: ref imut TokStore, t: mut u64, unary: mut bool) mut u64{
+		if TokStore.textEq(ts, t, "CALL") || TokStore.textEq(ts, t, "LOOKUP") || TokStore.textEq(ts, t, ".") || TokStore.textEq(ts, t, "INSTANTIATE"){
+			return 100
+		}
+		if TokStore.textEq(ts, t, "as"){
+			return 95
+		}
+		if unary{
+			return 90
+		}
+		if TokStore.textEq(ts, t, "*") || TokStore.textEq(ts, t, "/") || TokStore.textEq(ts, t, "%"){
+			return 80
+		}
+		if TokStore.textEq(ts, t, "+") || TokStore.textEq(ts, t, "-"){
+			return 70
+		}
+		if TokStore.textEq(ts, t, "<") || TokStore.textEq(ts, t, ">") || TokStore.textEq(ts, t, "<=") || TokStore.textEq(ts, t, ">="){
+			return 60
+		}
+		if TokStore.textEq(ts, t, "==") || TokStore.textEq(ts, t, "!=") || TokStore.textEq(ts, t, "instanceof") || TokStore.textEq(ts, t, "implements") || TokStore.textEq(ts, t, "is") || TokStore.textEq(ts, t, "fits"){
+			return 50
+		}
+		if TokStore.textEq(ts, t, "&&") || TokStore.textEq(ts, t, "&&then") || TokStore.textEq(ts, t, "and"){
+			return 40
+		}
+		if TokStore.textEq(ts, t, "||") || TokStore.textEq(ts, t, "||then"){
+			return 30
+		}
+		if TokStore.textEq(ts, t, ".."){
+			return 25
+		}
+		if TokStore.textEq(ts, t, "in") || TokStore.textEq(ts, t, "within") || TokStore.textEq(ts, t, "into") || TokStore.textEq(ts, t, "swap"){
+			return 22
+		}
+		if RpnConverter.isAssignText(ts, t){
+			return 20
+		}
+		if TokStore.textEq(ts, t, "dup"){
+			return 15
+		}
+		if TokStore.textEq(ts, t, ","){
+			return 10
+		}
+		return 0
+	}
+
+	/** Keywords / modifiers that act as a prefix operator when an operand is expected. */
+	static func isPrefixWord(ts: ref imut TokStore, t: mut u64) mut bool{
+		let k = mut TokStore.kind(ts, t)
+		if k == TT_MODIFIER{
+			return TokStore.textEq(ts, t, "owns") || TokStore.textEq(ts, t, "ref") || TokStore.textEq(ts, t, "auto") || TokStore.textEq(ts, t, "raw") || TokStore.textEq(ts, t, "static") || TokStore.textEq(ts, t, "mut") || TokStore.textEq(ts, t, "imut")
+		}
+		if k == TT_KEYWORD{
+			return TokStore.textEq(ts, t, "new") || TokStore.textEq(ts, t, "await") || TokStore.textEq(ts, t, "par") || TokStore.textEq(ts, t, "unsafe") || TokStore.textEq(ts, t, "atomic")
+		}
+		return false
+	}
+
+	// ---- core shunting-yard ----------------------------------------------------------------------------------------------
+
+	/** Pops stack entries with precedence strictly above `prec` (or equal when `leftAssoc`) into the output. */
+	@throws
+	static func popWhile(ts: ref mut TokStore, output: mut u64, stTok: ref mut Vec, stUn: ref mut Vec, prec: mut u64, leftAssocEq: mut bool) void{
+		?catch(e){ throw e }
+		for lp1 in 0..1000000000{
+			let sz = mut 0
+			match Some(stTok){ sz = stTok.size(stTok) }
+			if sz == 0{
+				break
+			}
+			let top = mut 0
+			let topUn = mut 0
+			match Some(stTok){ top = stTok.get(stTok, sz - 1) }
+			match Some(stUn){ topUn = stUn.get(stUn, sz - 1) }
+			let topPrec = mut RpnConverter.precedence(ts, top, topUn != 0)
+			if topPrec > prec || (topPrec == prec && leftAssocEq){
+				match Some(stTok){ let d1 = stTok.pop(stTok) }
+				match Some(stUn){ let d2 = stUn.pop(stUn) }
+				TokStore.setUnary(ts, top, topUn)
+				? TokStore.listAdd(ts, output, top)
+			} else {
+				break
+			}
+		}
+	}
+
+	/** Converts one flat infix token list to RPN order; returns the new list. */
+	@throws
+	static func toRpn(ts: ref mut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let output = mut ? TokStore.newList(ts)
+		let stTok = mut ? Vec.make()
+		let stUn = mut ? Vec.make()
+		let expectOperand = mut true
+		let sawAny = mut false
+		let n = mut TokStore.listSize(ts, tokens)
+		for q in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, q)
+			sawAny = true
+			let k = mut TokStore.kind(ts, t)
+			if k == TT_OPERATOR && (TokStore.textEq(ts, t, "++") || TokStore.textEq(ts, t, "--")){
+				if expectOperand{
+					throw "[parse error] '++'/'--' with no preceding operand"
+				}
+				for lp1 in 0..1000000000{
+					let sz = mut stTok.size(stTok)
+					if sz == 0{
+						break
+					}
+					let top = mut stTok.get(stTok, sz - 1)
+					if TokStore.textEq(ts, top, "CALL") == false{
+						break
+					}
+					let topUn = mut stUn.get(stUn, sz - 1)
+					let d1 = mut stTok.pop(stTok)
+					let d2 = mut stUn.pop(stUn)
+					TokStore.setUnary(ts, top, topUn)
+					? TokStore.listAdd(ts, output, top)
+				}
+				? TokStore.listAdd(ts, output, t)
+				expectOperand = false
+				continue
+			}
+			if k == TT_OPERATOR{
+				let canBeUnary = mut (expectOperand && (TokStore.textEq(ts, t, "-") || TokStore.textEq(ts, t, "!")))
+				let canBeBinary = mut ((expectOperand == false) && RpnConverter.isBinaryText(ts, t))
+				if canBeUnary == false && canBeBinary == false{
+					if expectOperand{
+						throw "[parse error] unexpected operator (expected an operand or a unary '-'/'!')"
+					}
+					throw "[parse error] unexpected operator (expected a binary operator)"
+				}
+				let unary = mut canBeUnary
+				let prec = mut RpnConverter.precedence(ts, t, unary)
+				let rightAssoc = mut (unary || RpnConverter.isAssignText(ts, t))
+				? RpnConverter.popWhile(ts, output, stTok, stUn, prec, rightAssoc == false)
+				if RpnConverter.isAssignText(ts, t){
+					let ns = mut stTok.size(stTok)
+					for si in 0..ns{
+						if RpnConverter.isAssignText(ts, stTok.get(stTok, si)){
+							throw "[parse error] multiple assignment operators are not allowed in the same expression"
+						}
+					}
+				}
+				? stTok.push(stTok, t)
+				if unary{
+					? stUn.push(stUn, 1)
+				} else {
+					? stUn.push(stUn, 0)
+				}
+				expectOperand = true
+				continue
+			}
+			if expectOperand && RpnConverter.isPrefixWord(ts, t){
+				TokStore.setKind(ts, t, TT_OPERATOR)
+				? RpnConverter.popWhile(ts, output, stTok, stUn, 90, false)
+				? stTok.push(stTok, t)
+				? stUn.push(stUn, 1)
+				expectOperand = true
+				continue
+			}
+			// atomic operand: VARREF, INTEGER, FLOAT, STRING, CHAR, BOOL, NULL, a merged 'let' token, or an already-resolved delineator
+			if expectOperand == false{
+				throw "[parse error] unexpected token, expected an operator"
+			}
+			? TokStore.listAdd(ts, output, t)
+			expectOperand = false
+		}
+		if sawAny && expectOperand{
+			throw "[parse error] expression ends unexpectedly"
+		}
+		for lp2 in 0..1000000000{
+			let sz2 = mut stTok.size(stTok)
+			if sz2 == 0{
+				break
+			}
+			let top2 = mut stTok.pop(stTok)
+			let topUn2 = mut stUn.pop(stUn)
+			TokStore.setUnary(ts, top2, topUn2)
+			? TokStore.listAdd(ts, output, top2)
+		}
+		return output
+	}
+
+	// ---- bolting and struct literals -------------------------------------------------------------------------------------
+
+	/** Walks backward from `colonIdx` over a "VARREF ('.' VARREF)*" chain; returns the index the chain starts at. */
+	@throws
+	static func findBoltChainStart(ts: ref imut TokStore, tokens: mut u64, colonIdx: mut u64) mut u64{
+		?catch(e){ throw e }
+		if colonIdx == 0 || TokStore.kind(ts, TokStore.listGet(ts, tokens, colonIdx - 1)) != TT_VARREF{
+			throw "[parse error] the left of a bolt (':') must be a plain variable or a '.'-member-access chain, never the result of a function call or any other computed expression"
+		}
+		let i = mut (colonIdx - 1)
+		for lp1 in 0..1000000000{
+			if i >= 1 && RpnConverter.isTk(ts, TokStore.listGet(ts, tokens, i - 1), TT_OPERATOR, "."){
+				if i < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, i - 2)) != TT_VARREF{
+					throw "[parse error] the left of a bolt (':') must be a plain variable or a '.'-member-access chain, never the result of a function call or any other computed expression"
+				}
+				i = i - 2
+				continue
+			}
+			break
+		}
+		return i
+	}
+
+	/** Walks forward from `start` over "VARREF ('.' VARREF)*" to the '(' of the call; returns its index. */
+	@throws
+	static func findBoltCallIndex(ts: ref imut TokStore, tokens: mut u64, start: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		let i = mut start
+		if i >= n || TokStore.kind(ts, TokStore.listGet(ts, tokens, i)) != TT_VARREF{
+			throw "[parse error] the right of a bolt (':') must name a function to call, optionally through a '.'-member-access chain first"
+		}
+		i = i + 1
+		for lp1 in 0..1000000000{
+			if i + 1 < n && RpnConverter.isTk(ts, TokStore.listGet(ts, tokens, i), TT_OPERATOR, "CALL") && RpnConverter.isTk(ts, TokStore.listGet(ts, tokens, i + 1), TT_DELINEATOR, "("){
+				return i + 1
+			}
+			if i + 1 < n && RpnConverter.isTk(ts, TokStore.listGet(ts, tokens, i), TT_OPERATOR, ".") && TokStore.kind(ts, TokStore.listGet(ts, tokens, i + 1)) == TT_VARREF{
+				i = i + 2
+				continue
+			}
+			throw "[parse error] a bolt (':') must resolve to a direct function call"
+		}
+		return i
+	}
+
+	/** "x:method(args)" -> "x.method(x, args)": the ':' becomes '.', a clone of the left chain goes in front of the call's arguments. */
+	@throws
+	static func desugarSelfBolting(ts: ref mut TokStore, tokens: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, i)
+			if RpnConverter.isTk(ts, t, TT_OPERATOR, ":") == false{
+				continue
+			}
+			if i + 1 < n && RpnConverter.isTk(ts, TokStore.listGet(ts, tokens, i + 1), TT_OPERATOR, "<"){
+				continue
+			}
+			let lhsStart = mut ? RpnConverter.findBoltChainStart(ts, tokens, i)
+			let rhsCall = mut ? RpnConverter.findBoltCallIndex(ts, tokens, i + 1)
+			let callParen = mut TokStore.listGet(ts, tokens, rhsCall)
+			? TokStore.replaceTextLit(ts, t, ".")
+			let injected = mut ? TokStore.newList(ts)
+			for li in lhsStart..i{
+				let lt = mut TokStore.listGet(ts, tokens, li)
+				let cl = mut ? TokStore.newToken(ts, TokStore.kind(ts, lt), TokStore.text(ts, lt), TokStore.line(ts, lt), TokStore.fileId(ts, lt))
+				? TokStore.listAdd(ts, injected, cl)
+			}
+			let cc = mut TokStore.childs(ts, callParen)
+			if TokStore.listSize(ts, cc) > 0{
+				let commaSid = mut ? TokStore.addLit(ts, ",")
+				let comma = mut ? TokStore.newToken(ts, TT_OPERATOR, commaSid, TokStore.line(ts, t), TokStore.fileId(ts, t))
+				? TokStore.listAdd(ts, injected, comma)
+			}
+			let ni = mut TokStore.listSize(ts, injected)
+			for qi in 0..ni{
+				? TokStore.listInsert(ts, cc, qi, TokStore.listGet(ts, injected, qi))
+			}
+		}
+	}
+
+	/** Inserts an INSTANTIATE operator between a VARREF and a following '{'. */
+	@throws
+	static func insertStructInstantiate(ts: ref mut TokStore, tokens: mut u64) void{
+		?catch(e){ throw e }
+		let i = mut 0
+		for lp1 in 0..1000000000{
+			if i >= TokStore.listSize(ts, tokens){
+				break
+			}
+			let t = mut TokStore.listGet(ts, tokens, i)
+			if TokStore.kind(ts, t) == TT_VARREF && i + 1 < TokStore.listSize(ts, tokens){
+				let nx = mut TokStore.listGet(ts, tokens, i + 1)
+				if RpnConverter.isTk(ts, nx, TT_DELINEATOR, "{"){
+					let isid = mut ? TokStore.addLit(ts, "INSTANTIATE")
+					let inst = mut ? TokStore.newToken(ts, TT_OPERATOR, isid, TokStore.line(ts, t), TokStore.fileId(ts, t))
+					? TokStore.listInsert(ts, tokens, i + 1, inst)
+					i = i + 1
+				}
+			}
+			i = i + 1
+		}
+	}
+
+	/** Splits a flat list at top-level ',' operators into non-empty groups appended to `groups` (a list of lists). */
+	@throws
+	static func splitByComma(ts: ref mut TokStore, flat: mut u64, groups: mut u64) void{
+		?catch(e){ throw e }
+		let current = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, flat)
+		for q in 0..n{
+			let t = mut TokStore.listGet(ts, flat, q)
+			if RpnConverter.isTk(ts, t, TT_OPERATOR, ","){
+				if TokStore.listSize(ts, current) > 0{
+					? TokStore.listAdd(ts, groups, current)
+					current = ? TokStore.newList(ts)
+				}
+				continue
+			}
+			? TokStore.listAdd(ts, current, t)
+		}
+		if TokStore.listSize(ts, current) > 0{
+			? TokStore.listAdd(ts, groups, current)
+		}
+	}
+
+	@throws
+	static func beginStructLiteral(ts: ref mut TokStore, tv: ref mut Vec, braceTok: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let groups = mut ? TokStore.newList(ts)
+		let body = mut TokStore.childs(ts, braceTok)
+		let nl = mut TokStore.listSize(ts, body)
+		for q in 0..nl{
+			? RpnConverter.splitByComma(ts, TokStore.childs(ts, TokStore.listGet(ts, body, q)), groups)
+		}
+		let newLines = mut ? TokStore.newList(ts)
+		let ng = mut TokStore.listSize(ts, groups)
+		for gi in 0..ng{
+			let group = mut TokStore.listGet(ts, groups, gi)
+			let nameAndSep = mut ? TokStore.newList(ts)
+			let valueTokens = mut group
+			let gs = mut TokStore.listSize(ts, group)
+			if gs >= 2 && TokStore.kind(ts, TokStore.listGet(ts, group, 0)) == TT_VARREF && TokStore.kind(ts, TokStore.listGet(ts, group, 1)) == TT_OPERATOR && (TokStore.textEq(ts, TokStore.listGet(ts, group, 1), ":") || TokStore.textEq(ts, TokStore.listGet(ts, group, 1), "=")){
+				? TokStore.listAdd(ts, nameAndSep, TokStore.listGet(ts, group, 0))
+				? TokStore.listAdd(ts, nameAndSep, TokStore.listGet(ts, group, 1))
+				valueTokens = ? TokStore.listSlice(ts, group, 2, gs)
+			}
+			let nested = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, valueTokens)
+			let member = mut ? RpnConverter.emit(tv, outV, RK_STRUCT_MEMBER, braceTok, valueTokens)
+			match Some(tv){
+				tv.set(tv, member * 5 + RT_LIST2, nameAndSep)
+				tv.set(tv, member * 5 + RT_LINES, newLines)
+			}
+		}
+		let endT = mut ? RpnConverter.emit(tv, outV, RK_STRUCT_END, braceTok, newLines)
+	}
+
+	/** One struct-literal member whose value is resolved: assembles its RPN line (name, value RPN, separator). */
+	@throws
+	static func finishStructMember(ts: ref mut TokStore, tv: ref mut Vec, t: mut u64) void{
+		?catch(e){ throw e }
+		let braceTok = mut RpnConverter.tg(tv, t, RT_TOK)
+		let valueTokens = mut RpnConverter.tg(tv, t, RT_LIST)
+		let nameAndSep = mut RpnConverter.tg(tv, t, RT_LIST2)
+		let newLines = mut RpnConverter.tg(tv, t, RT_LINES)
+		let rpn = mut ? TokStore.newList(ts)
+		let hasName = mut (TokStore.listSize(ts, nameAndSep) > 0)
+		if hasName{
+			? TokStore.listAdd(ts, rpn, TokStore.listGet(ts, nameAndSep, 0))
+		}
+		let converted = mut ? RpnConverter.toRpn(ts, valueTokens)
+		? TokStore.listAddAll(ts, rpn, converted)
+		if hasName{
+			? TokStore.listAdd(ts, rpn, TokStore.listGet(ts, nameAndSep, 1))
+		}
+		let newLine = mut ? TokStore.newToken(ts, TT_LINE, STR_LINE, TokStore.line(ts, braceTok), TokStore.fileId(ts, braceTok))
+		TokStore.setChilds(ts, newLine, rpn)
+		? TokStore.listAdd(ts, newLines, newLine)
+	}
+
+	// ---- statements and gathered blocks ----------------------------------------------------------------------------------
+
+	/** Resolves nested groups of a flat expression list first: desugars bolts, inserts INSTANTIATE, then queues each nested group. */
+	@throws
+	static func resolveNestedGroups(ts: ref mut TokStore, tv: ref mut Vec, tokens: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		? RpnConverter.desugarSelfBolting(ts, tokens)
+		? RpnConverter.insertStructInstantiate(ts, tokens)
+		let n = mut TokStore.listSize(ts, tokens)
+		for q in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, q)
+			let k = mut TokStore.kind(ts, t)
+			if k == TT_DELINEATOR && (TokStore.textEq(ts, t, "(") || TokStore.textEq(ts, t, "[")){
+				let a1 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.childs(ts, t))
+				let a2 = mut ? RpnConverter.emit(tv, outV, RK_RPN_CHILDS, t, TOK_NONE)
+			} else if k == TT_DELINEATOR && TokStore.textEq(ts, t, "{"){
+				let a3 = mut ? RpnConverter.emit(tv, outV, RK_STRUCT_BEGIN, t, TOK_NONE)
+			} else if k == TT_TEMPLATE_STRING{
+				let segs = mut TokStore.childs(ts, t)
+				let ns = mut TokStore.listSize(ts, segs)
+				for si in 0..ns{
+					let seg = mut TokStore.listGet(ts, segs, si)
+					if RpnConverter.isTk(ts, seg, TT_DELINEATOR, "("){
+						let a4 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.childs(ts, seg))
+						let a5 = mut ? RpnConverter.emit(tv, outV, RK_RPN_CHILDS, seg, TOK_NONE)
+					}
+				}
+			} else if k == TT_KEYWORD && TokStore.textEq(ts, t, "try"){
+				let a6 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.sub(ts, t))
+				let a7 = mut ? RpnConverter.emit(tv, outV, RK_RPN_SUB, t, TOK_NONE)
+				let a8 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, t))
+			}
+		}
+	}
+
+	@throws
+	static func processStatement(ts: ref mut TokStore, tv: ref mut Vec, lineTok: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let tokens = mut TokStore.childs(ts, lineTok)
+		let n = mut TokStore.listSize(ts, tokens)
+		if n == 0{
+			return
+		}
+		let first = mut TokStore.listGet(ts, tokens, 0)
+		if n == 1 && TokStore.kind(ts, first) == TT_KEYWORD{
+			if TokStore.textEq(ts, first, "if") || TokStore.textEq(ts, first, "loop") || TokStore.textEq(ts, first, "func") || TokStore.textEq(ts, first, "struct") || TokStore.textEq(ts, first, "enum") || TokStore.textEq(ts, first, "interface") || TokStore.textEq(ts, first, "impl") || TokStore.textEq(ts, first, "impl_default_lock_match") || TokStore.textEq(ts, first, "library") || TokStore.textEq(ts, first, "for") || TokStore.textEq(ts, first, "type") || TokStore.textEq(ts, first, "match") || TokStore.textEq(ts, first, "unsafe") || TokStore.textEq(ts, first, "safe") || TokStore.textEq(ts, first, "extern") || TokStore.textEq(ts, first, "export") || TokStore.textEq(ts, first, "ASM") || TokStore.textEq(ts, first, "const") || TokStore.textEq(ts, first, "assume") || TokStore.textEq(ts, first, "lock") || TokStore.textEq(ts, first, "try"){
+				let g1 = mut ? RpnConverter.emit(tv, outV, RK_GATHERED, first, TOK_NONE)
+				return
+			}
+			if TokStore.textEq(ts, first, "import") || TokStore.textEq(ts, first, "break") || TokStore.textEq(ts, first, "continue") || TokStore.textEq(ts, first, "yield"){
+				return
+			}
+		}
+		if n == 2 && TokStore.kind(ts, first) == TT_KEYWORD && TokStore.textEq(ts, first, "yield"){
+			let second = mut TokStore.listGet(ts, tokens, 1)
+			if RpnConverter.isTk(ts, second, TT_DELINEATOR, "(") && TokStore.listSize(ts, TokStore.childs(ts, second)) == 0{
+				let only = mut ? TokStore.newList(ts)
+				? TokStore.listAdd(ts, only, first)
+				TokStore.setChilds(ts, lineTok, only)
+				return
+			}
+		}
+		let start = mut 0
+		let prefix = mut ? TokStore.newList(ts)
+		if TokStore.kind(ts, first) == TT_KEYWORD && (TokStore.textEq(ts, first, "return") || TokStore.textEq(ts, first, "throw")){
+			? TokStore.listAdd(ts, prefix, first)
+			start = 1
+		}
+		if start >= n{
+			return
+		}
+		let exprTokens = mut ? TokStore.listSlice(ts, tokens, start, n)
+		let nt = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, exprTokens)
+		let fin = mut ? RpnConverter.emit(tv, outV, RK_FINISH_STMT, lineTok, exprTokens)
+		match Some(tv){
+			tv.set(tv, fin * 5 + RT_LIST2, prefix)
+		}
+	}
+
+	/** Handles an already-gathered if/elseif/else/loop/func/struct/enum/for token. */
+	@throws
+	static func processGathered(ts: ref mut TokStore, tv: ref mut Vec, t: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let isCond = mut (TokStore.textEq(ts, t, "if") || TokStore.textEq(ts, t, "elseif") || TokStore.textEq(ts, t, "for") || TokStore.textEq(ts, t, "match") || TokStore.textEq(ts, t, "elsematch") || TokStore.textEq(ts, t, "lock"))
+		if isCond{
+			let a1 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.sub(ts, t))
+			let a2 = mut ? RpnConverter.emit(tv, outV, RK_RPN_SUB, t, TOK_NONE)
+			if TokStore.isCaseMatch(ts, t) != 0{
+				let cs = mut TokStore.childs(ts, t)
+				let nc = mut TokStore.listSize(ts, cs)
+				for ci in 0..nc{
+					let a3 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, TokStore.listGet(ts, cs, ci)))
+				}
+			} else {
+				let a4 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, t))
+			}
+		} else if TokStore.textEq(ts, t, "else"){
+			let a5 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, t))
+		} else if TokStore.textEq(ts, t, "assume"){
+			let a6 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.sub(ts, t))
+			let a7 = mut ? RpnConverter.emit(tv, outV, RK_RPN_SUB, t, TOK_NONE)
+			if TokStore.hasBlock(ts, t) != 0{
+				let a8 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, t))
+			}
+		} else if TokStore.textEq(ts, t, "loop") || TokStore.textEq(ts, t, "func") || TokStore.textEq(ts, t, "unsafe") || TokStore.textEq(ts, t, "safe"){
+			let a9 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, t))
+		} else if TokStore.textEq(ts, t, "try"){
+			if TokStore.isTryBlock(ts, t) == 0{
+				let b1 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.sub(ts, t))
+				let b2 = mut ? RpnConverter.emit(tv, outV, RK_RPN_SUB, t, TOK_NONE)
+			}
+			let b3 = mut ? RpnConverter.emit(tv, outV, RK_LINES, TOK_NONE, TokStore.childs(ts, t))
+		} else if TokStore.textEq(ts, t, "struct") || TokStore.textEq(ts, t, "enum") || TokStore.textEq(ts, t, "type") || TokStore.textEq(ts, t, "extern") || TokStore.textEq(ts, t, "export") || TokStore.textEq(ts, t, "ASM") || TokStore.textEq(ts, t, "impl_default_lock_match") || TokStore.textEq(ts, t, "interface"){
+			return
+		} else if TokStore.textEq(ts, t, "const"){
+			let c1 = mut ? RpnConverter.emit(tv, outV, RK_NESTED, TOK_NONE, TokStore.childs(ts, t))
+			let c2 = mut ? RpnConverter.emit(tv, outV, RK_RPN_CHILDS, t, TOK_NONE)
+			return
+		} else if TokStore.textEq(ts, t, "impl") || TokStore.textEq(ts, t, "library"){
+			let ms = mut TokStore.childs(ts, t)
+			let nm = mut TokStore.listSize(ts, ms)
+			for mi in 0..nm{
+				let d1 = mut ? RpnConverter.emit(tv, outV, RK_GATHERED, TokStore.listGet(ts, ms, mi), TOK_NONE)
+			}
+			return
+		} else {
+			throw "[parse error] internal error: unexpected gathered keyword"
+		}
+		let nx = mut ? RpnConverter.emit(tv, outV, RK_NEXT, t, TOK_NONE)
+	}
+
+	/** Runs one task; the tasks it queues go to `outV` in run order. */
+	@throws
+	static func step(ts: ref mut TokStore, tv: ref mut Vec, t: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let kind = mut RpnConverter.tg(tv, t, RT_KIND)
+		let tok = mut RpnConverter.tg(tv, t, RT_TOK)
+		let list = mut RpnConverter.tg(tv, t, RT_LIST)
+		if kind == RK_LINES{
+			let n = mut TokStore.listSize(ts, list)
+			for q in 0..n{
+				let s1 = mut ? RpnConverter.emit(tv, outV, RK_STMT, TokStore.listGet(ts, list, q), TOK_NONE)
+			}
+		} else if kind == RK_STMT{
+			? RpnConverter.processStatement(ts, tv, tok, outV)
+		} else if kind == RK_FINISH_STMT{
+			let rpn = mut ? RpnConverter.toRpn(ts, list)
+			let finalTokens = mut ? TokStore.listCopy(ts, RpnConverter.tg(tv, t, RT_LIST2))
+			? TokStore.listAddAll(ts, finalTokens, rpn)
+			TokStore.setChilds(ts, tok, finalTokens)
+		} else if kind == RK_GATHERED{
+			? RpnConverter.processGathered(ts, tv, tok, outV)
+		} else if kind == RK_NEXT{
+			let nx = mut TokStore.next(ts, tok)
+			if nx != TOK_NONE{
+				let g = mut ? RpnConverter.emit(tv, outV, RK_GATHERED, nx, TOK_NONE)
+			}
+		} else if kind == RK_NESTED{
+			? RpnConverter.resolveNestedGroups(ts, tv, list, outV)
+		} else if kind == RK_RPN_CHILDS{
+			let r1 = mut ? RpnConverter.toRpn(ts, TokStore.childs(ts, tok))
+			TokStore.setChilds(ts, tok, r1)
+		} else if kind == RK_RPN_SUB{
+			let r2 = mut ? RpnConverter.toRpn(ts, TokStore.sub(ts, tok))
+			TokStore.setSub(ts, tok, r2)
+		} else if kind == RK_STRUCT_BEGIN{
+			? RpnConverter.beginStructLiteral(ts, tv, tok, outV)
+		} else if kind == RK_STRUCT_MEMBER{
+			? RpnConverter.finishStructMember(ts, tv, t)
+		} else {
+			TokStore.setChilds(ts, tok, list)
+		}
+	}
+
+	/** Entry point: walks a list of LINE tokens (a whole file, or any block's body) and RPN-converts every expression found within it, recursively. */
+	@pub
+	@throws
+	static func convertLines(ts: ref mut TokStore, lines: mut u64) void{
+		?catch(e){ throw e }
+		let tv = mut ? Vec.make()
+		let stack = mut ? Vec.make()
+		let outV = mut ? Vec.make()
+		let root = mut ? RpnConverter.newTask(tv, RK_LINES, TOK_NONE, lines)
+		? stack.push(stack, root)
+		for lp1 in 0..1000000000{
+			if stack.size(stack) == 0{
+				break
+			}
+			let t = mut stack.pop(stack)
+			outV.clear(outV)
+			? RpnConverter.step(ts, tv, t, outV)
+			let no = mut outV.size(outV)
+			for qi in 0..no{
+				let idx = mut (no - 1 - qi)
+				? stack.push(stack, outV.get(outV, idx))
+			}
+		}
+	}
+}

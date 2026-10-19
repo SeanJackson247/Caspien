@@ -1,0 +1,431 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../../../../../../Orchestrator/Io.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+import "../parser/SourceParser.caspien"
+
+/**
+ * Stage 5 (port of caspien.importresolver.ImportResolver): replaces each top-level `import "path"` line with the parsed lines of the file it names, recursively.
+ * Paths are string ids in the token store. Files are spliced in once (diamond imports drop), circular imports fail, `dir/*` imports every .caspien file in dir
+ * in name order, `stdlib/...` resolves against the stdlib folder, `{target}` is replaced by the platform. Error messages are shortened (literals only).
+ * Every file read is recorded in `deps` (a list of path ids) for the orchestrator's build cache.
+ */
+const IF_STRIDE 6
+const IF_LINES 0
+const IF_IDX 1
+const IF_PATH 2
+const IF_JOBS 3
+const IF_JOBIDX 4
+const IF_RESULT 5
+
+@pub
+struct ImportResolver{@pub{
+	stdlib: mut u64
+	platform: mut u64
+	cwd: mut u64
+	resolved: mut u64
+	stack: mut u64
+	deps: mut u64
+}}
+
+@pub
+@throws
+impl constructor for ImportResolver(ts: ref mut TokStore, stdlib: mut u64, platform: mut u64, cwd: mut u64) self{
+	?catch(e){ throw e }
+	let r = mut ? TokStore.newList(ts)
+	let s = mut ? TokStore.newList(ts)
+	let d = mut ? TokStore.newList(ts)
+	return ImportResolver{stdlib= stdlib, platform= platform, cwd= cwd, resolved= r, stack= s, deps= d}
+}
+
+@pub
+impl ImportResolver{
+	// ---- path strings ------------------------------------------------------------------------------------------------------
+
+	/** `a` + "/" + `b` as a new string id. */
+	@throws
+	static func joinSid(ts: ref mut TokStore, a: mut u64, b: mut u64) mut u64{
+		?catch(e){ throw e }
+		let st = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, a)
+		? TokStore.strPush(ts, '/')
+		? TokStore.strAppendId(ts, b)
+		let id = mut ? TokStore.strEnd(ts, st)
+		return id
+	}
+
+	static func startsWithLit(ts: ref imut TokStore, sid: mut u64, lit: static imut string) mut bool{
+		let n = mut tokLitLength(lit)
+		if TokStore.strLen(ts, sid) < n{
+			return false
+		}
+		for i in 0..n{
+			if tokLitByte(lit, i) != TokStore.strCh(ts, sid, i){
+				return false
+			}
+		}
+		return true
+	}
+
+	static func endsWithLit(ts: ref imut TokStore, sid: mut u64, lit: static imut string) mut bool{
+		let n = mut tokLitLength(lit)
+		let len = mut TokStore.strLen(ts, sid)
+		if len < n{
+			return false
+		}
+		for i in 0..n{
+			if tokLitByte(lit, i) != TokStore.strCh(ts, sid, len - n + i){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** True when the bytes of `sid` starting at `at` are exactly `lit` (the caller keeps at + length within the string). */
+	static func matchesAt(ts: ref imut TokStore, sid: mut u64, at: mut u64, lit: static imut string) mut bool{
+		let n = mut tokLitLength(lit)
+		for k in 0..n{
+			if tokLitByte(lit, k) != TokStore.strCh(ts, sid, at + k){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Substring [a, b) of a string id as a new id. */
+	@throws
+	static func subSid(ts: ref mut TokStore, sid: mut u64, a: mut u64, b: mut u64) mut u64{
+		?catch(e){ throw e }
+		let st = mut TokStore.strBegin(ts)
+		for i in a..b{
+			? TokStore.strPush(ts, TokStore.strCh(ts, sid, i))
+		}
+		let id = mut ? TokStore.strEnd(ts, st)
+		return id
+	}
+
+	/** Absolute, normalised ('.' and '..' components folded) form of `sid` (relative paths are taken against the working directory). */
+	@throws
+	static func canonical(ts: ref mut TokStore, cwd: mut u64, sid: mut u64) mut u64{
+		?catch(e){ throw e }
+		let full = mut sid
+		if TokStore.strLen(ts, sid) == 0 || TokStore.strCh(ts, sid, 0) != '/'{
+			full = ? ImportResolver.joinSid(ts, cwd, sid)
+		}
+		let comps = mut ? Vec.make()
+		let n = mut TokStore.strLen(ts, full)
+		let segStart = mut 0
+		let nPlus = mut (n + 1)
+		for i in 0..nPlus{
+			let atEnd = mut (i == n)
+			if atEnd || TokStore.strCh(ts, full, i) == '/'{
+				if i > segStart{
+					let c = mut ? ImportResolver.subSid(ts, full, segStart, i)
+					if TokStore.strEq(ts, c, "."){
+						// dropped
+					} else if TokStore.strEq(ts, c, ".."){
+						if comps.size(comps) > 0{
+							let dropped = mut comps.pop(comps)
+						}
+					} else {
+						? comps.push(comps, c)
+					}
+				}
+				segStart = i + 1
+			}
+		}
+		let st = mut TokStore.strBegin(ts)
+		let nc = mut comps.size(comps)
+		if nc == 0{
+			? TokStore.strPush(ts, '/')
+		}
+		for k in 0..nc{
+			? TokStore.strPush(ts, '/')
+			? TokStore.strAppendId(ts, comps.get(comps, k))
+		}
+		let id = mut ? TokStore.strEnd(ts, st)
+		return id
+	}
+
+	/** The directory part of an absolute path ("/" for a top-level entry). */
+	@throws
+	static func parentOf(ts: ref mut TokStore, sid: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.strLen(ts, sid)
+		let at = mut 0
+		for i in 0..n{
+			if TokStore.strCh(ts, sid, i) == '/'{
+				at = i
+			}
+		}
+		if at == 0{
+			let root = mut ? TokStore.addLit(ts, "/")
+			return root
+		}
+		let p = mut ? ImportResolver.subSid(ts, sid, 0, at)
+		return p
+	}
+
+	/** Replaces every "{target}" in `sid` with the platform string. */
+	@throws
+	static func expandTarget(ts: ref mut TokStore, sid: mut u64, platform: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.strLen(ts, sid)
+		let st = mut TokStore.strBegin(ts)
+		let i = mut 0
+		for lp1 in 0..1000000000{
+			if i >= n{
+				break
+			}
+			let isTarget = mut false
+			if i + 8 <= n{
+				isTarget = ImportResolver.matchesAt(ts, sid, i, "{target}")
+			}
+			if isTarget{
+				? TokStore.strAppendId(ts, platform)
+				i = i + 8
+			} else {
+				? TokStore.strPush(ts, TokStore.strCh(ts, sid, i))
+				i = i + 1
+			}
+		}
+		let id = mut ? TokStore.strEnd(ts, st)
+		return id
+	}
+
+	/** An import path as a file: `stdlib/...` is the shared stdlib folder, anything else is relative to the importing file's folder. */
+	@throws
+	static func resolveImport(ts: ref mut TokStore, stdlib: mut u64, cwd: mut u64, importerDir: mut u64, importPath: mut u64) mut u64{
+		?catch(e){ throw e }
+		let joined = mut importPath
+		if ImportResolver.startsWithLit(ts, importPath, "stdlib/"){
+			let rest = mut ? ImportResolver.subSid(ts, importPath, 7, TokStore.strLen(ts, importPath))
+			joined = ? ImportResolver.joinSid(ts, stdlib, rest)
+		} else if TokStore.strLen(ts, importPath) > 0 && TokStore.strCh(ts, importPath, 0) == '/'{
+			joined = importPath
+		} else {
+			joined = ? ImportResolver.joinSid(ts, importerDir, importPath)
+		}
+		let c = mut ? ImportResolver.canonical(ts, cwd, joined)
+		return c
+	}
+
+	static func listHas(ts: ref imut TokStore, l: mut u64, sid: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, l, i), sid){
+				return true
+			}
+		}
+		return false
+	}
+
+	// ---- frames ------------------------------------------------------------------------------------------------------------
+
+	static func g(fv: ref imut Vec, f: mut u64, k: mut u64) mut u64{
+		match Some(fv){ return fv.get(fv, f * 6 + k) }
+		return 0
+	}
+
+	static func s(fv: ref mut Vec, f: mut u64, k: mut u64, v: mut u64) void{
+		match Some(fv){ fv.set(fv, f * 6 + k, v) }
+	}
+
+	@throws
+	static func enter(rs: ref imut ImportResolver, ts: ref mut TokStore, fv: ref mut Vec, lines: mut u64, path: mut u64) mut u64{
+		?catch(e){ throw e }
+		let cwd = mut 0
+		let stackL = mut 0
+		let resolvedL = mut 0
+		match Some(rs){
+			cwd = rs.cwd
+			stackL = rs.stack
+			resolvedL = rs.resolved
+		}
+		let canon = mut ? ImportResolver.canonical(ts, cwd, path)
+		? TokStore.listAdd(ts, stackL, canon)
+		? TokStore.listAdd(ts, resolvedL, canon)
+		let id = mut 0
+		match Some(fv){ id = fv.size(fv) / 6 }
+		let result = mut ? TokStore.newList(ts)
+		match Some(fv){ ? fv.push(fv, lines) }
+		match Some(fv){ ? fv.push(fv, 0) }
+		match Some(fv){ ? fv.push(fv, path) }
+		match Some(fv){ ? fv.push(fv, TOK_NONE) }
+		match Some(fv){ ? fv.push(fv, 0) }
+		match Some(fv){ ? fv.push(fv, result) }
+		return id
+	}
+
+	/** The files one import line brings in, in order: one for a plain import, one per .caspien file for a wildcard. Returns a list of import-path ids. */
+	@throws
+	static func importJobs(rs: ref imut ImportResolver, ts: ref mut TokStore, importTok: mut u64, currentFile: mut u64) mut u64{
+		?catch(e){ throw e }
+		let pathTok = mut TokStore.listGet(ts, TokStore.childs(ts, importTok), 0)
+		let rawSid = mut TokStore.literalValue(ts, pathTok)
+		if rawSid == TOK_NONE{
+			rawSid = TokStore.text(ts, pathTok)
+		}
+		let platform = mut 0
+		let cwd = mut 0
+		let stdlib = mut 0
+		match Some(rs){
+			platform = rs.platform
+			cwd = rs.cwd
+			stdlib = rs.stdlib
+		}
+		let importPath = mut ? ImportResolver.expandTarget(ts, rawSid, platform)
+		let canonFile = mut ? ImportResolver.canonical(ts, cwd, currentFile)
+		let importerDir = mut ? ImportResolver.parentOf(ts, canonFile)
+		let jobs = mut ? TokStore.newList(ts)
+		let isWild = mut (TokStore.strEq(ts, importPath, "*") || ImportResolver.endsWithLit(ts, importPath, "/*"))
+		if isWild == false{
+			? TokStore.listAdd(ts, jobs, importPath)
+			return jobs
+		}
+		let dirPart = mut 0
+		if TokStore.strEq(ts, importPath, "*"){
+			dirPart = ? TokStore.addLit(ts, ".")
+		} else {
+			dirPart = ? ImportResolver.subSid(ts, importPath, 0, TokStore.strLen(ts, importPath) - 2)
+		}
+		if TokStore.strLen(ts, dirPart) == 0{
+			dirPart = ? TokStore.addLit(ts, "/")
+		}
+		let dir = mut 0
+		dir = ? ImportResolver.resolveImport(ts, stdlib, cwd, importerDir, dirPart)
+		let dirStr = mut ? TokStore.strCopy(ts, dir)
+		let isDir = mut ? String.from("test -d '")
+		? isDir.append(isDir, dirStr)
+		? isDir.append(isDir, "'")
+		if Io.shell(isDir) != 0{
+			throw "[import error] wildcard import: not a folder"
+		}
+		let cmd = mut ? String.from("find '")
+		? cmd.append(cmd, dirStr)
+		? cmd.append(cmd, "' -maxdepth 1 -type f -name '*.caspien' | LC_ALL=C sort")
+		let names = mut ? new ObjectList:<String>()
+		let code = mut Io.collect(cmd, names)
+		let count = mut names.size(names)
+		if code != 0 || count == 0{
+			throw "[import error] wildcard import: no .caspien files in folder"
+		}
+		for ni in 0..count{
+			let full = mut names.get(names, ni)
+			let fullSid = mut ? TokStore.addStr(ts, full)
+			let slashAt = mut 0
+			let fl = mut TokStore.strLen(ts, fullSid)
+			for ci in 0..fl{
+				if TokStore.strCh(ts, fullSid, ci) == '/'{
+					slashAt = ci
+				}
+			}
+			let base = mut ? ImportResolver.subSid(ts, fullSid, slashAt + 1, fl)
+			let one = mut 0
+			if TokStore.strEq(ts, dirPart, "/"){
+				let sl = mut ? TokStore.addLit(ts, "/")
+				let st = mut TokStore.strBegin(ts)
+				? TokStore.strAppendId(ts, sl)
+				? TokStore.strAppendId(ts, base)
+				one = ? TokStore.strEnd(ts, st)
+			} else {
+				one = ? ImportResolver.joinSid(ts, dirPart, base)
+			}
+			? TokStore.listAdd(ts, jobs, one)
+		}
+		return jobs
+	}
+
+	/** One file import: TOK_NONE when the file is already resolved elsewhere (dropped), else a new frame for its lines. */
+	@throws
+	static func startFile(rs: ref imut ImportResolver, ts: ref mut TokStore, fv: ref mut Vec, currentFile: mut u64, importPath: mut u64) mut u64{
+		?catch(e){ throw e }
+		let cwd = mut 0
+		let stdlib = mut 0
+		let stackL = mut 0
+		let resolvedL = mut 0
+		let depsL = mut 0
+		match Some(rs){
+			cwd = rs.cwd
+			stdlib = rs.stdlib
+			stackL = rs.stack
+			resolvedL = rs.resolved
+			depsL = rs.deps
+		}
+		let canonFile = mut ? ImportResolver.canonical(ts, cwd, currentFile)
+		let importerDir = mut ? ImportResolver.parentOf(ts, canonFile)
+		let resolvedPath = mut ? ImportResolver.resolveImport(ts, stdlib, cwd, importerDir, importPath)
+		if ImportResolver.listHas(ts, stackL, resolvedPath){
+			throw "[import error] circular import"
+		}
+		if ImportResolver.listHas(ts, resolvedL, resolvedPath){
+			return TOK_NONE
+		}
+		? TokStore.listAdd(ts, depsL, resolvedPath)
+		let pathStr = mut ? TokStore.strCopy(ts, resolvedPath)
+		let source = mut ? Io.readFile(pathStr)
+		let lines = mut ? SourceParser.parseSource(ts, source, resolvedPath, importPath)
+		let f = mut ? ImportResolver.enter(rs, ts, fv, lines, resolvedPath)
+		return f
+	}
+
+	/** Resolves imports in an already-compiled file's top-level statements; returns the new line list (the file's own lines with imports spliced in). */
+	@pub
+	@throws
+	static func resolve(rs: ref imut ImportResolver, ts: ref mut TokStore, lines: mut u64, currentFile: mut u64) mut u64{
+		?catch(e){ throw e }
+		let fv = mut ? Vec.make()
+		let stack = mut ? Vec.make()
+		let first = mut ? ImportResolver.enter(rs, ts, fv, lines, currentFile)
+		? stack.push(stack, first)
+		for lp1 in 0..1000000000{
+			let sz = mut stack.size(stack)
+			let f = mut stack.get(stack, sz - 1)
+			let jobs = mut ImportResolver.g(fv, f, IF_JOBS)
+			if jobs != TOK_NONE && ImportResolver.g(fv, f, IF_JOBIDX) < TokStore.listSize(ts, jobs){
+				let ji = mut ImportResolver.g(fv, f, IF_JOBIDX)
+				ImportResolver.s(fv, f, IF_JOBIDX, ji + 1)
+				let jobPath = mut TokStore.listGet(ts, jobs, ji)
+				let child = mut ? ImportResolver.startFile(rs, ts, fv, ImportResolver.g(fv, f, IF_PATH), jobPath)
+				if child != TOK_NONE{
+					? stack.push(stack, child)
+				}
+				continue
+			}
+			ImportResolver.s(fv, f, IF_JOBS, TOK_NONE)
+			let ls = mut ImportResolver.g(fv, f, IF_LINES)
+			let idx = mut ImportResolver.g(fv, f, IF_IDX)
+			if idx < TokStore.listSize(ts, ls){
+				let lineTok = mut TokStore.listGet(ts, ls, idx)
+				ImportResolver.s(fv, f, IF_IDX, idx + 1)
+				let tokens = mut TokStore.childs(ts, lineTok)
+				let isImport = mut false
+				if TokStore.listSize(ts, tokens) == 1{
+					let t0 = mut TokStore.listGet(ts, tokens, 0)
+					isImport = TokStore.kind(ts, t0) == TT_KEYWORD && TokStore.textEq(ts, t0, "import")
+				}
+				if isImport{
+					let newJobs = mut ? ImportResolver.importJobs(rs, ts, TokStore.listGet(ts, tokens, 0), ImportResolver.g(fv, f, IF_PATH))
+					ImportResolver.s(fv, f, IF_JOBS, newJobs)
+					ImportResolver.s(fv, f, IF_JOBIDX, 0)
+				} else {
+					? TokStore.listAdd(ts, ImportResolver.g(fv, f, IF_RESULT), lineTok)
+				}
+				continue
+			}
+			let stackL = mut 0
+			match Some(rs){ stackL = rs.stack }
+			let dropped = mut TokStore.listPop(ts, stackL)
+			let dead = mut stack.pop(stack)
+			let res = mut ImportResolver.g(fv, f, IF_RESULT)
+			if stack.size(stack) == 0{
+				return res
+			}
+			let parent = mut stack.get(stack, stack.size(stack) - 1)
+			? TokStore.listAddAll(ts, ImportResolver.g(fv, parent, IF_RESULT), res)
+		}
+		return lines
+	}
+}

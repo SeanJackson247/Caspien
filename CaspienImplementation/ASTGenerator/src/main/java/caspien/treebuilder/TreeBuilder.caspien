@@ -1,0 +1,306 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+
+/**
+ * Stage 4 (port of caspien.treebuilder.TreeBuilder): turns every RPN-ordered flat expression list into a binary expression tree via the tokens' left/right fields.
+ * Same explicit task-stack scheme as RpnConverter (task pool Vec of TB_STRIDE slots). Error messages are shortened.
+ */
+const TB_KIND 0
+const TB_TOK 1
+const TB_LIST 2
+const TB_TOK2 3
+
+const TK_LINES 1
+const TK_STMT 2
+const TK_FINISH_STMT 3
+const TK_GATHERED 4
+const TK_NEXT 5
+const TK_NESTED 6
+const TK_BUILD_GROUP 7
+const TK_BUILD_SUB 8
+const TK_BUILD_CHILDS 9
+
+@pub
+struct TreeBuilder{@pub{
+}}
+
+@pub
+impl TreeBuilder{
+	static func tg(tv: ref imut Vec, t: mut u64, k: mut u64) mut u64{
+		match Some(tv){
+			return tv.get(tv, t * 4 + k)
+		}
+		return TOK_NONE
+	}
+
+	@throws
+	static func emit(tv: ref mut Vec, outV: ref mut Vec, kind: mut u64, tok: mut u64, list: mut u64, tok2: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut 0
+		match Some(tv){
+			id = tv.size(tv) / 4
+		}
+		match Some(tv){ ? tv.push(tv, kind) }
+		match Some(tv){ ? tv.push(tv, tok) }
+		match Some(tv){ ? tv.push(tv, list) }
+		match Some(tv){ ? tv.push(tv, tok2) }
+		match Some(outV){ ? outV.push(outV, id) }
+		return id
+	}
+
+	static func isTk(ts: ref imut TokStore, t: mut u64, kind: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == kind && TokStore.textEq(ts, t, lit)
+	}
+
+	@throws
+	static func singleton(ts: ref mut TokStore, t: mut u64) mut u64{
+		?catch(e){ throw e }
+		let l = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, l, t)
+		return l
+	}
+
+	static func arityOf(ts: ref imut TokStore, t: mut u64) mut u64{
+		if TokStore.kind(ts, t) != TT_OPERATOR{
+			return 0
+		}
+		if TokStore.textEq(ts, t, "++") || TokStore.textEq(ts, t, "--"){
+			return 1
+		}
+		if TokStore.unary(ts, t) != 0{
+			return 1
+		}
+		return 2
+	}
+
+	/** Standard RPN-to-tree: an operand stack, popping 1 or 2 operands per operator depending on its arity. */
+	@throws
+	static func buildTree(ts: ref mut TokStore, rpn: mut u64) mut u64{
+		?catch(e){ throw e }
+		let stack = mut ? Vec.make()
+		let n = mut TokStore.listSize(ts, rpn)
+		for q in 0..n{
+			let t = mut TokStore.listGet(ts, rpn, q)
+			let arity = mut TreeBuilder.arityOf(ts, t)
+			if arity == 0{
+				? stack.push(stack, t)
+			} else if arity == 1{
+				if stack.size(stack) == 0{
+					throw "[parse error] operator has no operand to apply to"
+				}
+				let operand = mut stack.pop(stack)
+				TokStore.setLeft(ts, t, operand)
+				? stack.push(stack, t)
+			} else {
+				if stack.size(stack) < 2{
+					throw "[parse error] operator is missing an operand"
+				}
+				let right = mut stack.pop(stack)
+				let left = mut stack.pop(stack)
+				TokStore.setLeft(ts, t, left)
+				TokStore.setRight(ts, t, right)
+				? stack.push(stack, t)
+			}
+		}
+		if stack.size(stack) != 1{
+			throw "[parse error] expression did not reduce to a single value (internal error in RPN conversion)"
+		}
+		return stack.get(stack, 0)
+	}
+
+	@throws
+	static func resolveNestedGroups(ts: ref mut TokStore, tv: ref mut Vec, tokens: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		for q in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, q)
+			let k = mut TokStore.kind(ts, t)
+			if k == TT_DELINEATOR && (TokStore.textEq(ts, t, "(") || TokStore.textEq(ts, t, "[")){
+				let a1 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+				let a2 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_GROUP, t, TOK_NONE, TOK_NONE)
+			} else if k == TT_DELINEATOR && TokStore.textEq(ts, t, "{"){
+				let a3 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+			} else if k == TT_TEMPLATE_STRING{
+				let segs = mut TokStore.childs(ts, t)
+				let ns = mut TokStore.listSize(ts, segs)
+				for si in 0..ns{
+					let seg = mut TokStore.listGet(ts, segs, si)
+					if TreeBuilder.isTk(ts, seg, TT_DELINEATOR, "("){
+						let a4 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.childs(ts, seg), TOK_NONE)
+						let a5 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_GROUP, seg, TOK_NONE, TOK_NONE)
+					}
+				}
+			} else if k == TT_KEYWORD && TokStore.textEq(ts, t, "try"){
+				let a6 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.sub(ts, t), TOK_NONE)
+				let a7 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_SUB, t, TOK_NONE, TOK_NONE)
+				let a8 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+			}
+		}
+	}
+
+	@throws
+	static func processStatement(ts: ref mut TokStore, tv: ref mut Vec, lineTok: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let tokens = mut TokStore.childs(ts, lineTok)
+		let n = mut TokStore.listSize(ts, tokens)
+		if n == 0{
+			return
+		}
+		let first = mut TokStore.listGet(ts, tokens, 0)
+		if n == 1 && TokStore.kind(ts, first) == TT_KEYWORD{
+			if TokStore.textEq(ts, first, "if") || TokStore.textEq(ts, first, "loop") || TokStore.textEq(ts, first, "func") || TokStore.textEq(ts, first, "struct") || TokStore.textEq(ts, first, "enum") || TokStore.textEq(ts, first, "interface") || TokStore.textEq(ts, first, "impl") || TokStore.textEq(ts, first, "impl_default_lock_match") || TokStore.textEq(ts, first, "library") || TokStore.textEq(ts, first, "for") || TokStore.textEq(ts, first, "type") || TokStore.textEq(ts, first, "match") || TokStore.textEq(ts, first, "unsafe") || TokStore.textEq(ts, first, "safe") || TokStore.textEq(ts, first, "extern") || TokStore.textEq(ts, first, "export") || TokStore.textEq(ts, first, "ASM") || TokStore.textEq(ts, first, "const") || TokStore.textEq(ts, first, "assume") || TokStore.textEq(ts, first, "lock") || TokStore.textEq(ts, first, "try"){
+				let g1 = mut ? TreeBuilder.emit(tv, outV, TK_GATHERED, first, TOK_NONE, TOK_NONE)
+				return
+			}
+			if TokStore.textEq(ts, first, "import") || TokStore.textEq(ts, first, "return") || TokStore.textEq(ts, first, "break") || TokStore.textEq(ts, first, "continue") || TokStore.textEq(ts, first, "yield"){
+				return
+			}
+		}
+		let start = mut 0
+		let returnTok = mut TOK_NONE
+		if TokStore.kind(ts, first) == TT_KEYWORD && (TokStore.textEq(ts, first, "return") || TokStore.textEq(ts, first, "throw")){
+			returnTok = first
+			start = 1
+		}
+		if start >= n{
+			return
+		}
+		let exprTokens = mut ? TokStore.listSlice(ts, tokens, start, n)
+		let a1 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, exprTokens, TOK_NONE)
+		let a2 = mut ? TreeBuilder.emit(tv, outV, TK_FINISH_STMT, lineTok, exprTokens, returnTok)
+	}
+
+	@throws
+	static func processGathered(ts: ref mut TokStore, tv: ref mut Vec, t: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let isCond = mut (TokStore.textEq(ts, t, "if") || TokStore.textEq(ts, t, "elseif") || TokStore.textEq(ts, t, "for") || TokStore.textEq(ts, t, "match") || TokStore.textEq(ts, t, "elsematch") || TokStore.textEq(ts, t, "lock"))
+		if isCond{
+			let a1 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.sub(ts, t), TOK_NONE)
+			let a2 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_SUB, t, TOK_NONE, TOK_NONE)
+			if TokStore.isCaseMatch(ts, t) != 0{
+				let cs = mut TokStore.childs(ts, t)
+				let nc = mut TokStore.listSize(ts, cs)
+				for ci in 0..nc{
+					let a3 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, TokStore.listGet(ts, cs, ci)), TOK_NONE)
+				}
+			} else {
+				let a4 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+			}
+		} else if TokStore.textEq(ts, t, "else"){
+			let a5 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+		} else if TokStore.textEq(ts, t, "assume"){
+			let a6 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.sub(ts, t), TOK_NONE)
+			let a7 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_SUB, t, TOK_NONE, TOK_NONE)
+			if TokStore.hasBlock(ts, t) != 0{
+				let a8 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+			}
+		} else if TokStore.textEq(ts, t, "loop") || TokStore.textEq(ts, t, "func") || TokStore.textEq(ts, t, "unsafe") || TokStore.textEq(ts, t, "safe"){
+			let a9 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+		} else if TokStore.textEq(ts, t, "try"){
+			let b1 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.sub(ts, t), TOK_NONE)
+			let b2 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_SUB, t, TOK_NONE, TOK_NONE)
+			let b3 = mut ? TreeBuilder.emit(tv, outV, TK_LINES, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+		} else if TokStore.textEq(ts, t, "struct") || TokStore.textEq(ts, t, "enum") || TokStore.textEq(ts, t, "type") || TokStore.textEq(ts, t, "extern") || TokStore.textEq(ts, t, "export") || TokStore.textEq(ts, t, "ASM") || TokStore.textEq(ts, t, "impl_default_lock_match") || TokStore.textEq(ts, t, "interface"){
+			return
+		} else if TokStore.textEq(ts, t, "const"){
+			let c1 = mut ? TreeBuilder.emit(tv, outV, TK_NESTED, TOK_NONE, TokStore.childs(ts, t), TOK_NONE)
+			let c2 = mut ? TreeBuilder.emit(tv, outV, TK_BUILD_CHILDS, t, TOK_NONE, TOK_NONE)
+			return
+		} else if TokStore.textEq(ts, t, "impl") || TokStore.textEq(ts, t, "library"){
+			let ms = mut TokStore.childs(ts, t)
+			let nm = mut TokStore.listSize(ts, ms)
+			for mi in 0..nm{
+				let d1 = mut ? TreeBuilder.emit(tv, outV, TK_GATHERED, TokStore.listGet(ts, ms, mi), TOK_NONE, TOK_NONE)
+			}
+			return
+		} else {
+			throw "[parse error] internal error: unexpected gathered keyword"
+		}
+		let nx = mut ? TreeBuilder.emit(tv, outV, TK_NEXT, t, TOK_NONE, TOK_NONE)
+	}
+
+	@throws
+	static func step(ts: ref mut TokStore, tv: ref mut Vec, t: mut u64, outV: ref mut Vec) void{
+		?catch(e){ throw e }
+		let kind = mut TreeBuilder.tg(tv, t, TB_KIND)
+		let tok = mut TreeBuilder.tg(tv, t, TB_TOK)
+		let list = mut TreeBuilder.tg(tv, t, TB_LIST)
+		if kind == TK_LINES{
+			let n = mut TokStore.listSize(ts, list)
+			for q in 0..n{
+				let s1 = mut ? TreeBuilder.emit(tv, outV, TK_STMT, TokStore.listGet(ts, list, q), TOK_NONE, TOK_NONE)
+			}
+		} else if kind == TK_STMT{
+			? TreeBuilder.processStatement(ts, tv, tok, outV)
+		} else if kind == TK_FINISH_STMT{
+			let root = mut ? TreeBuilder.buildTree(ts, list)
+			let tok2 = mut TreeBuilder.tg(tv, t, TB_TOK2)
+			if tok2 != TOK_NONE{
+				let sl = mut ? TreeBuilder.singleton(ts, root)
+				TokStore.setSub(ts, tok2, sl)
+				let cl = mut ? TreeBuilder.singleton(ts, tok2)
+				TokStore.setChilds(ts, tok, cl)
+			} else {
+				let cl2 = mut ? TreeBuilder.singleton(ts, root)
+				TokStore.setChilds(ts, tok, cl2)
+			}
+		} else if kind == TK_GATHERED{
+			? TreeBuilder.processGathered(ts, tv, tok, outV)
+		} else if kind == TK_NEXT{
+			let nx = mut TokStore.next(ts, tok)
+			if nx != TOK_NONE{
+				let g = mut ? TreeBuilder.emit(tv, outV, TK_GATHERED, nx, TOK_NONE, TOK_NONE)
+			}
+		} else if kind == TK_NESTED{
+			? TreeBuilder.resolveNestedGroups(ts, tv, list, outV)
+		} else if kind == TK_BUILD_GROUP{
+			let gc = mut TokStore.childs(ts, tok)
+			if TokStore.listSize(ts, gc) > 0{
+				let r1 = mut ? TreeBuilder.buildTree(ts, gc)
+				let s1 = mut ? TreeBuilder.singleton(ts, r1)
+				TokStore.setChilds(ts, tok, s1)
+			}
+		} else if kind == TK_BUILD_SUB{
+			let gs = mut TokStore.sub(ts, tok)
+			if TokStore.listSize(ts, gs) > 0{
+				let r2 = mut ? TreeBuilder.buildTree(ts, gs)
+				let s2 = mut ? TreeBuilder.singleton(ts, r2)
+				TokStore.setSub(ts, tok, s2)
+			}
+		} else if kind == TK_BUILD_CHILDS{
+			let r3 = mut ? TreeBuilder.buildTree(ts, TokStore.childs(ts, tok))
+			let s3 = mut ? TreeBuilder.singleton(ts, r3)
+			TokStore.setChilds(ts, tok, s3)
+		} else {
+			throw "[parse error] unknown tree task"
+		}
+	}
+
+	@pub
+	@throws
+	static func buildLines(ts: ref mut TokStore, lines: mut u64) void{
+		?catch(e){ throw e }
+		let tv = mut ? Vec.make()
+		let stack = mut ? Vec.make()
+		let outV = mut ? Vec.make()
+		let dummy = mut ? Vec.make()
+		let root = mut ? TreeBuilder.emit(tv, dummy, TK_LINES, TOK_NONE, lines, TOK_NONE)
+		? stack.push(stack, root)
+		for lp1 in 0..1000000000{
+			if stack.size(stack) == 0{
+				break
+			}
+			let t = mut stack.pop(stack)
+			outV.clear(outV)
+			? TreeBuilder.step(ts, tv, t, outV)
+			let no = mut outV.size(outV)
+			for qi in 0..no{
+				let idx = mut (no - 1 - qi)
+				? stack.push(stack, outV.get(outV, idx))
+			}
+		}
+	}
+}

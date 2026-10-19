@@ -1,0 +1,2253 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+import "../util/Txt.caspien"
+
+/**
+ * Stage 2b of the front end (port of caspien.parser.ParserBlocks + the two helpers of Parser): gathers keyword blocks (statements, functions, structs, enums,
+ * interfaces, impls, ...) into single tokens, bottom-up, with an explicit frame stack. A frame is PB_STRIDE consecutive u64 slots of one Vec (the GatherFrame fields,
+ * indexed by PF_*); frame 0 is the global slot (the pending "?catch" declaration). Error messages are shortened (literals only); the cases that throw are the Java ones.
+ * See docs/ASTGeneratorPort.md.
+ */
+const PB_STRIDE 56
+
+const PF_KIND 0
+const PF_STAGE 1
+const PF_RET 2
+const PF_RETB 3
+const PF_GOT 4
+const PF_GOTB 5
+const PF_GOTCONS 6
+const PF_CONSUMED 7
+const PF_LINES 8
+const PF_ISROOT 9
+const PF_RESULT 10
+const PF_I 11
+const PF_J 12
+const PF_LINE 13
+const PF_TOKENS 14
+const PF_FIRST 15
+const PF_TRYG 17
+const PF_TOK 18
+const PF_BLOCKTOK 19
+const PF_HEAD 20
+const PF_TAIL 21
+const PF_NAMETOK 22
+const PF_PARAMSTOK 23
+const PF_GATHERED 24
+const PF_BRKW 25
+const PF_BRBLOCK 26
+const PF_COND 27
+const PF_RETTYPES 28
+const PF_TPN 29
+const PF_TPB 30
+const PF_TPNEXT 31
+const PF_ITPN 32
+const PF_ITPB 33
+const PF_ITPNEXT 34
+const PF_TEXT 35
+const PF_INDEX 36
+const PF_FLAG 37
+const PF_MEMBERS 38
+const PF_NAMES 39
+const PF_FLAT 40
+const PF_CASES 41
+const PF_CASETOK 42
+const PF_ALLOWDEF 43
+const PF_IFNAME 44
+const PF_CONNAME 45
+const PF_IFARGS 46
+const PF_CONARGS 47
+const PF_LINESTATIC 48
+
+const PK_KEYWORD_BLOCKS 0
+const PK_FUNC 1
+const PK_IF 2
+const PK_MATCH 3
+const PK_CASES 4
+const PK_LOCK 5
+const PK_TRY_SPAN 6
+const PK_CATCH 7
+const PK_BLOCK 8
+const PK_INTERFACE 9
+const PK_IMPL 10
+const PK_LIBRARY 11
+const PK_CONSTRUCTOR 12
+
+// resume points of the statement-list frame
+const AT_START 0
+const AT_AFTER_QEXPR 1
+const AT_AFTER_TRY_BLOCK 2
+const AT_AFTER_TRY_SPAN 3
+const AT_AFTER_STATEMENT 4
+const AT_TRY_SCAN 5
+const AT_DISPATCH 6
+
+@pub
+struct ParserBlocks{@pub{
+}}
+
+@pub
+impl ParserBlocks{
+	// ---- frame slots -----------------------------------------------------------------------------------------------------
+
+	static func g(fv: ref imut Vec, f: mut u64, k: mut u64) mut u64{
+		match Some(fv){
+			return fv.get(fv, f * 56 + k)
+		}
+		return TOK_NONE
+	}
+
+	static func s(fv: ref mut Vec, f: mut u64, k: mut u64, v: mut u64) void{
+		match Some(fv){
+			fv.set(fv, f * 56 + k, v)
+		}
+	}
+
+	/** A new frame of `kind`; every slot starts as TOK_NONE except the numeric ones. */
+	@throws
+	static func newFrame(fv: ref mut Vec, kind: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut 0
+		match Some(fv){
+			id = fv.size(fv) / 56
+		}
+		for q in 0..56{
+			match Some(fv){
+				? fv.push(fv, TOK_NONE)
+			}
+		}
+		ParserBlocks.s(fv, id, PF_KIND, kind)
+		ParserBlocks.s(fv, id, PF_STAGE, 0)
+		ParserBlocks.s(fv, id, PF_CONSUMED, 1)
+		ParserBlocks.s(fv, id, PF_ISROOT, 0)
+		ParserBlocks.s(fv, id, PF_I, 0)
+		ParserBlocks.s(fv, id, PF_J, 0)
+		ParserBlocks.s(fv, id, PF_TEXT, 0)
+		ParserBlocks.s(fv, id, PF_INDEX, 0)
+		ParserBlocks.s(fv, id, PF_FLAG, 0)
+		ParserBlocks.s(fv, id, PF_ALLOWDEF, 0)
+		ParserBlocks.s(fv, id, PF_LINESTATIC, 0)
+		return id
+	}
+
+	/** Ends frame `f` with an answer; 0 = no child frame. */
+	static func finish(fv: ref mut Vec, f: mut u64, answer: mut u64) mut u64{
+		ParserBlocks.s(fv, f, PF_RET, answer)
+		return 0
+	}
+
+	// ---- token predicates ------------------------------------------------------------------------------------------------
+
+	static func isTk(ts: ref imut TokStore, t: mut u64, kind: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == kind && TokStore.textEq(ts, t, lit)
+	}
+
+	/** Index of `x` in list `l`, or TOK_NONE. */
+	static func indexOfTok(ts: ref imut TokStore, l: mut u64, x: mut u64) mut u64{
+		let r = mut TokStore.listIndexOf(ts, l, x)
+		if r < 0{
+			return TOK_NONE
+		}
+		return wrap:<u64>(r)
+	}
+
+	/** A LINE token holding just `gathered`. */
+	@throws
+	static func wrapAsLine(ts: ref mut TokStore, gathered: mut u64) mut u64{
+		?catch(e){ throw e }
+		let lt = mut ? TokStore.newToken(ts, TT_LINE, STR_LINE, TokStore.line(ts, gathered), TokStore.fileId(ts, gathered))
+		let cl = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, cl, gathered)
+		TokStore.setChilds(ts, lt, cl)
+		return lt
+	}
+
+	/** A new KEYWORD token `lit` at the position of `at`. */
+	@throws
+	static func newKeyword(ts: ref mut TokStore, lit: static imut string, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		let tid = mut ? TokStore.addLit(ts, lit)
+		let t = mut ? TokStore.newToken(ts, TT_KEYWORD, tid, TokStore.line(ts, at), TokStore.fileId(ts, at))
+		return t
+	}
+
+	/** Copies decorators and pinned comments of `src` onto `dst` (shared list ids, like the Java references). */
+	static func copyDecoPin(ts: ref mut TokStore, dst: mut u64, src: mut u64) void{
+		TokStore.setDecorators(ts, dst, TokStore.decorators(ts, src))
+		TokStore.setPinned(ts, dst, TokStore.pinned(ts, src))
+	}
+
+	@throws
+	static func requireRoot(isRoot: mut u64) void{
+		?catch(e){ throw e }
+		if isRoot == 0{
+			throw "[parse error] this declaration is only allowed at the top level, not nested inside a block"
+		}
+	}
+
+	/** The trailing '{' block token (always the last token of a gathered construct's line). */
+	@throws
+	static func requireTrailingBlock(ts: ref imut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n == 0{
+			throw "[parse error] expected '{' block"
+		}
+		let last = mut TokStore.listGet(ts, tokens, n - 1)
+		if ParserBlocks.isTk(ts, last, TT_DELINEATOR, "{") == false{
+			throw "[parse error] expected '{' block"
+		}
+		return last
+	}
+
+	// ---- header sub-parsers (type parameters, type arguments, implements) -----------------------------------------------
+
+	/** "<Name[: Bound], ...>" at tokens[idx]: out[0] = names list (TOK_NONE if no '<'), out[1] = bounds list (TOK_NONE if none anywhere; TOK_NONE entries = no bound), out[2] = next index. */
+	@throws
+	static func parseTypeParams(ts: ref mut TokStore, tokens: mut u64, idx: mut u64, out: ref mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if idx >= n || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_OPERATOR, "<") == false{
+			match Some(out){
+				out.set(out, 0, TOK_NONE)
+				out.set(out, 1, TOK_NONE)
+				out.set(out, 2, idx)
+			}
+			return
+		}
+		let names = mut ? TokStore.newList(ts)
+		let bounds = mut ? TokStore.newList(ts)
+		let anyBound = mut false
+		let j = mut (idx + 1)
+		let expectName = mut true
+		for lp1 in 0..1000000000{
+			if j >= n{
+				throw "[parse error] unterminated type-parameter list, expected a matching '>'"
+			}
+			let t = mut TokStore.listGet(ts, tokens, j)
+			if expectName{
+				if TokStore.kind(ts, t) != TT_VARREF{
+					throw "[parse error] expected a type-parameter name"
+				}
+				? TokStore.listAdd(ts, names, TokStore.text(ts, t))
+				j = j + 1
+				expectName = false
+				if j < n && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, j), TT_OPERATOR, ":"){
+					j = j + 1
+					if j >= n || TokStore.kind(ts, TokStore.listGet(ts, tokens, j)) != TT_VARREF{
+						throw "[parse error] expected an interface name after ':' in type-parameter bound"
+					}
+					? TokStore.listAdd(ts, bounds, TokStore.text(ts, TokStore.listGet(ts, tokens, j)))
+					anyBound = true
+					j = j + 1
+				} else {
+					? TokStore.listAdd(ts, bounds, TOK_NONE)
+				}
+			} else if ParserBlocks.isTk(ts, t, TT_OPERATOR, ","){
+				j = j + 1
+				expectName = true
+			} else if ParserBlocks.isTk(ts, t, TT_OPERATOR, ">"){
+				j = j + 1
+				break
+			} else {
+				throw "[parse error] expected ',' or '>' in type-parameter list"
+			}
+		}
+		if TokStore.listSize(ts, names) == 0{
+			throw "[parse error] type-parameter list must name at least one parameter"
+		}
+		let boundsOut = mut TOK_NONE
+		if anyBound{
+			boundsOut = bounds
+		}
+		match Some(out){
+			out.set(out, 0, names)
+			out.set(out, 1, boundsOut)
+			out.set(out, 2, j)
+		}
+	}
+
+	/** Same as the comma splitter of ParserLines but tracks bare '<' '>' depth (header context). Returns a list of lists. */
+	@throws
+	static func splitCommaGroupsBare(ts: ref mut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let groups = mut ? TokStore.newList(ts)
+		let current = mut ? TokStore.newList(ts)
+		let depth = mut 0
+		let n = mut TokStore.listSize(ts, tokens)
+		for q in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, q)
+			if ParserBlocks.isTk(ts, t, TT_OPERATOR, "<"){
+				depth = depth + 1
+			} else if ParserBlocks.isTk(ts, t, TT_OPERATOR, ">"){
+				depth = depth - 1
+			}
+			if depth == 0 && ParserBlocks.isTk(ts, t, TT_OPERATOR, ","){
+				? TokStore.listAdd(ts, groups, current)
+				current = ? TokStore.newList(ts)
+				continue
+			}
+			? TokStore.listAdd(ts, current, t)
+		}
+		? TokStore.listAdd(ts, groups, current)
+		return groups
+	}
+
+	/** Bare "<TypeExpr, ...>" at tokens[idx]: out[0] = groups (TOK_NONE if no '<'), out[1] = next index. */
+	@throws
+	static func parseTypeArgsRaw(ts: ref mut TokStore, tokens: mut u64, idx: mut u64, out: ref mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if idx >= n || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_OPERATOR, "<") == false{
+			match Some(out){
+				out.set(out, 0, TOK_NONE)
+				out.set(out, 1, idx)
+			}
+			return
+		}
+		let depth = mut 1
+		let closeIdx = mut TOK_NONE
+		let j = mut (idx + 1)
+		for lp1 in 0..1000000000{
+			if j >= n{
+				break
+			}
+			let t = mut TokStore.listGet(ts, tokens, j)
+			if ParserBlocks.isTk(ts, t, TT_OPERATOR, "<"){
+				depth = depth + 1
+			} else if ParserBlocks.isTk(ts, t, TT_OPERATOR, ">"){
+				depth = depth - 1
+				if depth == 0{
+					closeIdx = j
+					break
+				}
+			}
+			j = j + 1
+		}
+		if closeIdx == TOK_NONE{
+			throw "[parse error] unterminated type-argument list, expected a matching '>'"
+		}
+		let rawToks = mut ? TokStore.listSlice(ts, tokens, idx + 1, closeIdx)
+		let groups = mut ? ParserBlocks.splitCommaGroupsBare(ts, rawToks)
+		match Some(out){
+			out.set(out, 0, groups)
+			out.set(out, 1, closeIdx + 1)
+		}
+	}
+
+	/** Optional "implements A, B, ..." at tokens[idx]: out[0] = names (sid list, TOK_NONE if no clause), out[1] = next index. */
+	@throws
+	static func parseImplementsClause(ts: ref mut TokStore, tokens: mut u64, idx: mut u64, out: ref mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if idx >= n || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_OPERATOR, "implements") == false{
+			match Some(out){
+				out.set(out, 0, TOK_NONE)
+				out.set(out, 1, idx)
+			}
+			return
+		}
+		let names = mut ? TokStore.newList(ts)
+		let j = mut (idx + 1)
+		let expectName = mut true
+		for lp1 in 0..1000000000{
+			if j >= n{
+				throw "[parse error] expected an interface name after 'implements'"
+			}
+			let t = mut TokStore.listGet(ts, tokens, j)
+			if expectName{
+				if TokStore.kind(ts, t) != TT_VARREF{
+					throw "[parse error] expected an interface name in 'implements' clause"
+				}
+				? TokStore.listAdd(ts, names, TokStore.text(ts, t))
+				j = j + 1
+				expectName = false
+			} else if ParserBlocks.isTk(ts, t, TT_OPERATOR, ","){
+				j = j + 1
+				expectName = true
+			} else {
+				break
+			}
+		}
+		match Some(out){
+			out.set(out, 0, names)
+			out.set(out, 1, j)
+		}
+	}
+
+	// ---- small statement predicates ---------------------------------------------------------------------------------------
+
+	/** True when `tokens` open a "match @lock EXPR{...}" statement; rejects the removed "lock x{...}" and "lock match" spellings. */
+	@throws
+	static func isLockStatementStart(ts: ref imut TokStore, tokens: mut u64) mut bool{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 3{
+			return false
+		}
+		let first = mut TokStore.listGet(ts, tokens, 0)
+		let second = mut TokStore.listGet(ts, tokens, 1)
+		let last = mut TokStore.listGet(ts, tokens, n - 1)
+		let lastIsBrace = mut ParserBlocks.isTk(ts, last, TT_DELINEATOR, "{")
+		if ParserBlocks.isTk(ts, first, TT_KEYWORD, "match"){
+			if n >= 4 && ParserBlocks.isTk(ts, second, TT_OPERATOR, "@") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 2), TT_VARREF, "lock"){
+				if lastIsBrace == false{
+					return false
+				}
+				if n < 5{
+					throw "[parse error] 'match @lock' requires an expression before its '{'"
+				}
+				return true
+			}
+			if n >= 4 && ParserBlocks.isTk(ts, second, TT_VARREF, "lock") && TokStore.kind(ts, TokStore.listGet(ts, tokens, 2)) == TT_VARREF && lastIsBrace{
+				throw "[parse error] 'match lock EXPR{...}' is now spelled 'match @lock EXPR{...}'"
+			}
+			return false
+		}
+		if ParserBlocks.isTk(ts, first, TT_VARREF, "lock") == false{
+			return false
+		}
+		if ParserBlocks.isTk(ts, second, TT_DELINEATOR, "("){
+			return false
+		}
+		if ParserBlocks.isTk(ts, second, TT_KEYWORD, "match"){
+			throw "[parse error] 'lock match' has been renamed -- write 'match @lock EXPR{...}'"
+		}
+		if lastIsBrace{
+			throw "[parse error] the 'lock x{...}' statement has been removed; use 'match @lock x{...}'"
+		}
+		return false
+	}
+
+	/** True when a match body's first non-empty line starts a case label: "VARREF ('|' VARREF)* ':' '{'". */
+	static func isCaseMatchBody(ts: ref imut TokStore, bodyLines: mut u64) mut bool{
+		let nl = mut TokStore.listSize(ts, bodyLines)
+		for q in 0..nl{
+			let flat = mut TokStore.childs(ts, TokStore.listGet(ts, bodyLines, q))
+			let n = mut TokStore.listSize(ts, flat)
+			if n == 0{
+				continue
+			}
+			if TokStore.kind(ts, TokStore.listGet(ts, flat, 0)) != TT_VARREF{
+				return false
+			}
+			let i = mut 1
+			for lp1 in 0..1000000000{
+				if i + 1 < n && ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_OPERATOR, "|") && TokStore.kind(ts, TokStore.listGet(ts, flat, i + 1)) == TT_VARREF{
+					i = i + 2
+					continue
+				}
+				break
+			}
+			return i + 1 < n && ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_OPERATOR, ":") && ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i + 1), TT_DELINEATOR, "{")
+		}
+		return false
+	}
+
+	/** True right after "impl" for "impl [<T>] constructor for Name(...) self {...}". */
+	@throws
+	static func isConstructorImplStart(ts: ref mut TokStore, tokens: mut u64) mut bool{
+		?catch(e){ throw e }
+		let rv = mut ? Vec.make()
+		? rv.push(rv, 0)
+		? rv.push(rv, 0)
+		? rv.push(rv, 0)
+		? ParserBlocks.parseTypeParams(ts, tokens, 1, rv)
+		let idx = mut rv.get(rv, 2)
+		let n = mut TokStore.listSize(ts, tokens)
+		return n > idx + 1 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_VARREF, "constructor") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx + 1), TT_KEYWORD, "for")
+	}
+
+	// ---- declaration gatherers -------------------------------------------------------------------------------------------
+
+	/** "extern name(params) ret" */
+	@throws
+	static func gatherExtern(ts: ref mut TokStore, tokens: mut u64, externTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 3 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+			throw "[parse error] expected a function name after 'extern'"
+		}
+		let nameTok = mut TokStore.listGet(ts, tokens, 1)
+		if ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 2), TT_DELINEATOR, "(") == false{
+			throw "[parse error] expected '(' after 'extern name'"
+		}
+		let paramsTok = mut TokStore.listGet(ts, tokens, 2)
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "extern", externTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, nameTok)
+		? TokStore.listAdd(ts, sub, paramsTok)
+		for q in 3..n{
+			? TokStore.listAdd(ts, sub, TokStore.listGet(ts, tokens, q))
+		}
+		TokStore.setSub(ts, gathered, sub)
+		ParserBlocks.copyDecoPin(ts, gathered, externTok)
+		return gathered
+	}
+
+	/** "export foo" */
+	@throws
+	static func gatherExport(ts: ref mut TokStore, tokens: mut u64, exportTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		if TokStore.listSize(ts, tokens) != 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+			throw "[parse error] expected exactly one function name after 'export'"
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "export", exportTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, TokStore.listGet(ts, tokens, 1))
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, exportTok))
+		return gathered
+	}
+
+	/** "ASM [name] { block }" or "ASM [name] \"path\"" */
+	@throws
+	static func gatherAsm(ts: ref mut TokStore, tokens: mut u64, asmTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		let idx = mut 1
+		let nameTok = mut TOK_NONE
+		if idx < n && TokStore.kind(ts, TokStore.listGet(ts, tokens, idx)) == TT_VARREF{
+			nameTok = TokStore.listGet(ts, tokens, idx)
+			idx = idx + 1
+		}
+		if idx >= n{
+			throw "[parse error] expected an 'ASM' block or a file path after 'ASM'"
+		}
+		let bodyTok = mut TokStore.listGet(ts, tokens, idx)
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "ASM", asmTok)
+		let sub = mut ? TokStore.newList(ts)
+		if nameTok != TOK_NONE{
+			? TokStore.listAdd(ts, sub, nameTok)
+		}
+		TokStore.setSub(ts, gathered, sub)
+		if TokStore.kind(ts, bodyTok) == TT_ASM_BLOCK{
+			TokStore.setAsmBlockText(ts, gathered, TokStore.text(ts, bodyTok))
+		} else if TokStore.kind(ts, bodyTok) == TT_STRING{
+			if TokStore.literalValue(ts, bodyTok) != TOK_NONE{
+				TokStore.setAsmFilePath(ts, gathered, TokStore.literalValue(ts, bodyTok))
+			} else {
+				TokStore.setAsmFilePath(ts, gathered, TokStore.text(ts, bodyTok))
+			}
+		} else {
+			throw "[parse error] expected an 'ASM' block or a file path after 'ASM'"
+		}
+		if idx + 1 != n{
+			throw "[parse error] unexpected tokens after the 'ASM' body"
+		}
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, asmTok))
+		return gathered
+	}
+
+	/** "struct Name<T> implements A, B {members}" (a member line starting with "extends" is an error). `kindLit` is the keyword text. */
+	@throws
+	static func gatherStruct(ts: ref mut TokStore, tokens: mut u64, kwTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+			throw "[parse error] expected a name after 'struct'"
+		}
+		let nameTok = mut TokStore.listGet(ts, tokens, 1)
+		let tp = mut ? Vec.make()
+		? tp.push(tp, 0)
+		? tp.push(tp, 0)
+		? tp.push(tp, 0)
+		? ParserBlocks.parseTypeParams(ts, tokens, 2, tp)
+		let im = mut ? Vec.make()
+		? im.push(im, 0)
+		? im.push(im, 0)
+		? ParserBlocks.parseImplementsClause(ts, tokens, tp.get(tp, 2), im)
+		let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+		if ParserBlocks.indexOfTok(ts, tokens, blockTok) != im.get(im, 1){
+			throw "[parse error] unexpected tokens between 'struct Name' and '{'"
+		}
+		let lines = mut TokStore.childs(ts, blockTok)
+		let nl = mut TokStore.listSize(ts, lines)
+		for q in 0..nl{
+			let lt = mut TokStore.childs(ts, TokStore.listGet(ts, lines, q))
+			if TokStore.listSize(ts, lt) > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lt, 0), TT_KEYWORD, "extends"){
+				throw "[parse error] struct 'extends' has been removed; use composition and interfaces"
+			}
+		}
+		let memberLines = mut ? TokStore.listCopy(ts, lines)
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "struct", kwTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, nameTok)
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setTypeParams(ts, gathered, tp.get(tp, 0))
+		TokStore.setTypeParamBounds(ts, gathered, tp.get(tp, 1))
+		TokStore.setImplementsNames(ts, gathered, im.get(im, 0))
+		TokStore.setDecorators(ts, gathered, TokStore.decorators(ts, kwTok))
+		TokStore.setChilds(ts, gathered, memberLines)
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, kwTok))
+		return gathered
+	}
+
+	/** "type NAME <target tokens>" */
+	@throws
+	static func gatherType(ts: ref mut TokStore, tokens: mut u64, typeTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+			throw "[parse error] expected an alias name after 'type'"
+		}
+		if n < 3{
+			throw "[parse error] expected a target type after 'type NAME'"
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "type", typeTok)
+		let sub = mut ? TokStore.listSlice(ts, tokens, 1, n)
+		TokStore.setSub(ts, gathered, sub)
+		ParserBlocks.copyDecoPin(ts, gathered, typeTok)
+		return gathered
+	}
+
+	/** "const NAME expr": .sub = [name], .childs = the raw expression tokens. */
+	@throws
+	static func gatherConst(ts: ref mut TokStore, tokens: mut u64, constTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+			throw "[parse error] expected a name after 'const'"
+		}
+		if n < 3{
+			throw "[parse error] expected an expression after 'const NAME'"
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "const", constTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, TokStore.listGet(ts, tokens, 1))
+		TokStore.setSub(ts, gathered, sub)
+		let expr = mut ? TokStore.listSlice(ts, tokens, 2, n)
+		TokStore.setChilds(ts, gathered, expr)
+		ParserBlocks.copyDecoPin(ts, gathered, constTok)
+		return gathered
+	}
+
+	/** An enum variant's integer value (decimal text); more than 63 bits is an error. */
+	@throws
+	static func enumLiteralValue(ts: ref imut TokStore, t: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.textLen(ts, t)
+		let v = mut 0
+		if n == 0{
+			throw "[parse error] enum value is not a number"
+		}
+		for q in 0..n{
+			let c = mut TokStore.textCh(ts, t, q)
+			if c < '0' || c > '9'{
+				throw "[parse error] enum value is not a number"
+			}
+			let d = mut (String.charCode(c) - 48)
+			if v > 922337203685477580 || (v == 922337203685477580 && d > 7){
+				throw "[parse error] enum value is too large (the largest an enum variant can hold is 9223372036854775807)"
+			}
+			v = v * 10 + d
+		}
+		return v
+	}
+
+	/** True if any of an enum body's own variant lines uses the nested shape "NAME{...}". */
+	static func hasNestedEnumVariant(ts: ref imut TokStore, variantLines: mut u64) mut bool{
+		let nl = mut TokStore.listSize(ts, variantLines)
+		for q in 0..nl{
+			let lt = mut TokStore.childs(ts, TokStore.listGet(ts, variantLines, q))
+			if TokStore.listSize(ts, lt) >= 2 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lt, 1), TT_DELINEATOR, "{"){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** Nested-hierarchy enum body, pre-order: each variant gets start = running index, end = last index in its block. */
+	@throws
+	static func gatherNestedEnumVariants(ts: ref mut TokStore, topLines: mut u64, outVariants: mut u64) void{
+		?catch(e){ throw e }
+		let counter = mut 0
+		let stL = mut ? Vec.make()
+		let stP = mut ? Vec.make()
+		let stO = mut ? Vec.make()
+		let stS = mut ? Vec.make()
+		? stL.push(stL, topLines)
+		? stP.push(stP, 0)
+		? stO.push(stO, TOK_NONE)
+		? stS.push(stS, 0)
+		for lp1 in 0..1000000000{
+			let top = mut stL.size(stL)
+			if top == 0{
+				break
+			}
+			let levelLines = mut stL.get(stL, top - 1)
+			let pos = mut stP.get(stP, top - 1)
+			if pos >= TokStore.listSize(ts, levelLines){
+				let owner = mut stO.get(stO, top - 1)
+				let startV = mut stS.get(stS, top - 1)
+				let d1 = mut stL.pop(stL)
+				let d2 = mut stP.pop(stP)
+				let d3 = mut stO.pop(stO)
+				let d4 = mut stS.pop(stS)
+				if owner != TOK_NONE{
+					TokStore.setHasRangeStart(ts, owner, 1)
+					TokStore.setRangeStart(ts, owner, startV)
+					TokStore.setHasRangeEnd(ts, owner, 1)
+					TokStore.setRangeEnd(ts, owner, counter - 1)
+				}
+				continue
+			}
+			stP.set(stP, top - 1, pos + 1)
+			let variantLine = mut TokStore.listGet(ts, levelLines, pos)
+			let lineTokens = mut TokStore.childs(ts, variantLine)
+			let nlt = mut TokStore.listSize(ts, lineTokens)
+			if nlt == 0 || TokStore.kind(ts, TokStore.listGet(ts, lineTokens, 0)) != TT_VARREF{
+				throw "[parse error] expected a bare variant name in this nested-hierarchy enum body"
+			}
+			let nameTok = mut TokStore.listGet(ts, lineTokens, 0)
+			let blockTok = mut TOK_NONE
+			if nlt > 1{
+				if ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 1), TT_DELINEATOR, "{"){
+					blockTok = TokStore.listGet(ts, lineTokens, 1)
+					if nlt > 2{
+						throw "[parse error] unexpected tokens after 'NAME{...}' in a nested-hierarchy enum body"
+					}
+				} else {
+					throw "[parse error] a nested-hierarchy enum variant is either a bare name or a bare name followed by '{...}'"
+				}
+			}
+			let startIdx = mut counter
+			counter = counter + 1
+			? TokStore.listAdd(ts, outVariants, nameTok)
+			if blockTok != TOK_NONE{
+				? stL.push(stL, TokStore.childs(ts, blockTok))
+				? stP.push(stP, 0)
+				? stO.push(stO, nameTok)
+				? stS.push(stS, startIdx)
+			} else {
+				TokStore.setHasRangeStart(ts, nameTok, 1)
+				TokStore.setRangeStart(ts, nameTok, startIdx)
+				TokStore.setHasRangeEnd(ts, nameTok, 1)
+				TokStore.setRangeEnd(ts, nameTok, startIdx)
+			}
+		}
+	}
+
+	@throws
+	static func gatherEnum(ts: ref mut TokStore, tokens: mut u64, enumTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+			throw "[parse error] expected enum name after 'enum'"
+		}
+		let nameTok = mut TokStore.listGet(ts, tokens, 1)
+		let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+		if ParserBlocks.indexOfTok(ts, tokens, blockTok) != 2{
+			throw "[parse error] unexpected tokens between enum name and '{'"
+		}
+		let variants = mut ? TokStore.newList(ts)
+		let body = mut TokStore.childs(ts, blockTok)
+		if ParserBlocks.hasNestedEnumVariant(ts, body){
+			? ParserBlocks.gatherNestedEnumVariants(ts, body, variants)
+		} else {
+			let nl = mut TokStore.listSize(ts, body)
+			for q in 0..nl{
+				let lt = mut TokStore.childs(ts, TokStore.listGet(ts, body, q))
+				let nlt = mut TokStore.listSize(ts, lt)
+				let vi = mut 0
+				for lp1 in 0..1000000000{
+					if vi >= nlt{
+						break
+					}
+					let t = mut TokStore.listGet(ts, lt, vi)
+					if ParserBlocks.isTk(ts, t, TT_OPERATOR, ","){
+						vi = vi + 1
+						continue
+					}
+					if TokStore.kind(ts, t) != TT_VARREF{
+						throw "[parse error] unexpected token in enum body"
+					}
+					? TokStore.listAdd(ts, variants, t)
+					if vi + 1 < nlt && TokStore.kind(ts, TokStore.listGet(ts, lt, vi + 1)) == TT_OPERATOR && (TokStore.textEq(ts, TokStore.listGet(ts, lt, vi + 1), ":") || TokStore.textEq(ts, TokStore.listGet(ts, lt, vi + 1), "=")){
+						if vi + 2 >= nlt || TokStore.kind(ts, TokStore.listGet(ts, lt, vi + 2)) != TT_INTEGER{
+							throw "[parse error] enum value expects an integer literal (positive only), or a range literal, after it"
+						}
+						if vi + 4 < nlt && ParserBlocks.isTk(ts, TokStore.listGet(ts, lt, vi + 3), TT_OPERATOR, "..") && TokStore.kind(ts, TokStore.listGet(ts, lt, vi + 4)) == TT_INTEGER{
+							let a = mut ? ParserBlocks.enumLiteralValue(ts, TokStore.listGet(ts, lt, vi + 2))
+							let b = mut ? ParserBlocks.enumLiteralValue(ts, TokStore.listGet(ts, lt, vi + 4))
+							TokStore.setHasRangeStart(ts, t, 1)
+							TokStore.setRangeStart(ts, t, a)
+							TokStore.setHasRangeEnd(ts, t, 1)
+							TokStore.setRangeEnd(ts, t, b)
+							vi = vi + 4
+						} else {
+							let ev = mut ? ParserBlocks.enumLiteralValue(ts, TokStore.listGet(ts, lt, vi + 2))
+							TokStore.setHasEnumValue(ts, t, 1)
+							TokStore.setEnumValue(ts, t, ev)
+							vi = vi + 2
+						}
+					}
+					vi = vi + 1
+				}
+			}
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "enum", enumTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, nameTok)
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setChilds(ts, gathered, variants)
+		ParserBlocks.copyDecoPin(ts, gathered, enumTok)
+		return gathered
+	}
+
+	/** One interface method signature "name(params) ret;" */
+	@throws
+	static func gatherInterfaceMethod(ts: ref mut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n == 0 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 0)) != TT_VARREF{
+			throw "[parse error] expected a method signature in interface body"
+		}
+		let nameTok = mut TokStore.listGet(ts, tokens, 0)
+		if n < 2 || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_DELINEATOR, "(") == false{
+			throw "[parse error] expected '(' after method name"
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "interface_method", nameTok)
+		let sub = mut ? TokStore.newList(ts)
+		for q in 0..n{
+			? TokStore.listAdd(ts, sub, TokStore.listGet(ts, tokens, q))
+		}
+		TokStore.setSub(ts, gathered, sub)
+		ParserBlocks.copyDecoPin(ts, gathered, nameTok)
+		return gathered
+	}
+
+	/** True for "impl default match @lock ..." (shape-based; "default" and "lock" are ordinary VARREFs). */
+	static func isDefaultLockMatchImplStart(ts: ref imut TokStore, tokens: mut u64) mut bool{
+		return TokStore.listSize(ts, tokens) > 4 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_VARREF, "default") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 2), TT_KEYWORD, "match") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 3), TT_VARREF, "lock")
+	}
+
+	/** "impl default match @lock T{ CLOSED:(params)=>{...} }": a policy template kept raw. */
+	@throws
+	static func gatherDefaultLockMatchImpl(ts: ref mut TokStore, tokens: mut u64, implTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if n < 6 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 4)) != TT_VARREF{
+			throw "[parse error] expected a struct name after 'impl default match @lock'"
+		}
+		let typeNameTok = mut TokStore.listGet(ts, tokens, 4)
+		let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+		if ParserBlocks.indexOfTok(ts, tokens, blockTok) != 5{
+			throw "[parse error] unexpected tokens between 'impl default match @lock Name' and '{'"
+		}
+		let flat = mut ? TokStore.newList(ts)
+		let body = mut TokStore.childs(ts, blockTok)
+		let nl = mut TokStore.listSize(ts, body)
+		for q in 0..nl{
+			? TokStore.listAddAll(ts, flat, TokStore.childs(ts, TokStore.listGet(ts, body, q)))
+		}
+		let nf = mut TokStore.listSize(ts, flat)
+		if nf == 0 || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, 0), TT_VARREF, "CLOSED") == false{
+			throw "[parse error] 'impl default match @lock' requires exactly one case, 'CLOSED:(params)=>{...}'"
+		}
+		let idx = mut 1
+		if idx >= nf || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, idx), TT_OPERATOR, ":") == false{
+			throw "[parse error] expected ':' after 'CLOSED' in 'impl default match @lock'"
+		}
+		idx = idx + 1
+		if idx >= nf || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, idx), TT_DELINEATOR, "(") == false{
+			throw "[parse error] expected a parameter list '(...)' after 'CLOSED:'"
+		}
+		let paramsTok = mut TokStore.listGet(ts, flat, idx)
+		idx = idx + 1
+		if idx >= nf || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, idx), TT_OPERATOR, "=>") == false{
+			throw "[parse error] expected '=>' after the parameter list"
+		}
+		idx = idx + 1
+		if idx >= nf || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, idx), TT_DELINEATOR, "{") == false{
+			throw "[parse error] expected a '{...}' body after '=>'"
+		}
+		let policyBody = mut TokStore.listGet(ts, flat, idx)
+		idx = idx + 1
+		if idx != nf{
+			throw "[parse error] unexpected tokens after the 'CLOSED' case"
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "impl_default_lock_match", implTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, typeNameTok)
+		? TokStore.listAdd(ts, sub, paramsTok)
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setChilds(ts, gathered, TokStore.childs(ts, policyBody))
+		ParserBlocks.copyDecoPin(ts, gathered, implTok)
+		return gathered
+	}
+
+	/** Raw deep clone of a token tree: type, text, literal fields, pinned, decorators, unsafe tags, flags and type bound are copied; `sub` is not; childs are fresh. */
+	@throws
+	static func deepCloneRaw(ts: ref mut TokStore, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		let srcS = mut ? Vec.make()
+		let dstS = mut ? Vec.make()
+		let rootC = mut ? ParserBlocks.rawShell(ts, root)
+		? srcS.push(srcS, root)
+		? dstS.push(dstS, rootC)
+		for lp1 in 0..1000000000{
+			let top = mut srcS.size(srcS)
+			if top == 0{
+				break
+			}
+			let src = mut srcS.pop(srcS)
+			let dst = mut dstS.pop(dstS)
+			let ch = mut TokStore.childs(ts, src)
+			let nc = mut TokStore.listSize(ts, ch)
+			let dl = mut TokStore.childs(ts, dst)
+			for q in 0..nc{
+				let child = mut TokStore.listGet(ts, ch, q)
+				let copy = mut ? ParserBlocks.rawShell(ts, child)
+				? TokStore.listAdd(ts, dl, copy)
+				? srcS.push(srcS, child)
+				? dstS.push(dstS, copy)
+			}
+		}
+		return rootC
+	}
+
+	@throws
+	static func rawShell(ts: ref mut TokStore, src: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? TokStore.newToken(ts, TokStore.kind(ts, src), TokStore.text(ts, src), TokStore.line(ts, src), TokStore.fileId(ts, src))
+		TokStore.setLiteralValue(ts, c, TokStore.literalValue(ts, src))
+		TokStore.setForcedLiteralType(ts, c, TokStore.forcedLiteralType(ts, src))
+		TokStore.setPinned(ts, c, TokStore.pinned(ts, src))
+		TokStore.setDecorators(ts, c, TokStore.decorators(ts, src))
+		TokStore.setUnsafeTags(ts, c, TokStore.unsafeTags(ts, src))
+		TokStore.setIsStatic(ts, c, TokStore.isStatic(ts, src))
+		TokStore.setIsConst(ts, c, TokStore.isConst(ts, src))
+		TokStore.setTypeBound(ts, c, TokStore.typeBound(ts, src))
+		let cl = mut ? TokStore.newList(ts)
+		TokStore.setChilds(ts, c, cl)
+		return c
+	}
+
+	// ---- the gatherers' explicit stack -----------------------------------------------------------------------------------
+
+	/** A fresh scratch Vec of `n` zero slots (results of the header sub-parsers). */
+	@throws
+	static func scratch(n: mut u64) owns some mut Vec{
+		?catch(e){ throw e }
+		let v = mut ? Vec.make()
+		for q in 0..n{
+			? v.push(v, 0)
+		}
+		return v
+	}
+
+	/** A statement-list frame over `lines`. */
+	@throws
+	static func kbFrame(fv: ref mut Vec, lines: mut u64, isRoot: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? ParserBlocks.newFrame(fv, PK_KEYWORD_BLOCKS)
+		ParserBlocks.s(fv, c, PF_LINES, lines)
+		ParserBlocks.s(fv, c, PF_ISROOT, isRoot)
+		return c
+	}
+
+	/** A func-gatherer frame over `tokens` (index 0 is the "func" token). */
+	@throws
+	static func funcFrame(fv: ref mut Vec, tokens: mut u64, funcTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? ParserBlocks.newFrame(fv, PK_FUNC)
+		ParserBlocks.s(fv, c, PF_TOKENS, tokens)
+		ParserBlocks.s(fv, c, PF_TOK, funcTok)
+		return c
+	}
+
+	/** A chain or lock statement frame over `lines` starting at the current line. */
+	@throws
+	static func statementChild(fv: ref mut Vec, f: mut u64, kind: mut u64, lines: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? ParserBlocks.newFrame(fv, kind)
+		ParserBlocks.s(fv, c, PF_LINES, lines)
+		ParserBlocks.s(fv, c, PF_INDEX, ParserBlocks.g(fv, f, PF_I))
+		ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_STATEMENT)
+		return c
+	}
+
+	/** Runs gatherer frames depth-first: a step returns a child frame to run first (its answer arrives in GOT), or 0 when it has finished. */
+	@throws
+	static func runGather(ts: ref mut TokStore, fv: ref mut Vec, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		let stk = mut ? Vec.make()
+		? stk.push(stk, root)
+		let answer = mut TOK_NONE
+		for lp1 in 0..1000000000{
+			let fr = mut stk.get(stk, stk.size(stk) - 1)
+			let child = mut ? ParserBlocks.stepGather(ts, fv, fr)
+			if child != 0{
+				? stk.push(stk, child)
+				continue
+			}
+			let popped = mut stk.pop(stk)
+			if stk.size(stk) == 0{
+				answer = ParserBlocks.g(fv, fr, PF_RET)
+				break
+			}
+			let parent = mut stk.get(stk, stk.size(stk) - 1)
+			ParserBlocks.s(fv, parent, PF_GOT, ParserBlocks.g(fv, fr, PF_RET))
+			ParserBlocks.s(fv, parent, PF_GOTB, ParserBlocks.g(fv, fr, PF_RETB))
+			ParserBlocks.s(fv, parent, PF_GOTCONS, ParserBlocks.g(fv, fr, PF_CONSUMED))
+		}
+		return answer
+	}
+
+	@throws
+	static func stepGather(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let k = mut ParserBlocks.g(fv, f, PF_KIND)
+		let r = mut 0
+		if k == PK_KEYWORD_BLOCKS{
+			r = ? ParserBlocks.stepKeywordBlocks(ts, fv, f)
+		} else if k == PK_FUNC{
+			r = ? ParserBlocks.stepFunc(ts, fv, f)
+		} else if k == PK_IF || k == PK_MATCH{
+			r = ? ParserBlocks.stepChain(ts, fv, f)
+		} else if k == PK_CASES{
+			r = ? ParserBlocks.stepMatchCases(ts, fv, f)
+		} else if k == PK_LOCK{
+			r = ? ParserBlocks.stepLock(ts, fv, f)
+		} else if k == PK_TRY_SPAN{
+			r = ? ParserBlocks.stepTrySpan(ts, fv, f)
+		} else if k == PK_CATCH{
+			r = ? ParserBlocks.stepCatch(ts, fv, f)
+		} else if k == PK_BLOCK{
+			r = ? ParserBlocks.stepBlockStmt(ts, fv, f)
+		} else if k == PK_INTERFACE{
+			r = ? ParserBlocks.stepInterface(ts, fv, f)
+		} else if k == PK_IMPL{
+			r = ? ParserBlocks.stepImpl(ts, fv, f)
+		} else if k == PK_LIBRARY{
+			r = ? ParserBlocks.stepLibrary(ts, fv, f)
+		} else {
+			r = ? ParserBlocks.stepConstructor(ts, fv, f)
+		}
+		return r
+	}
+
+	/** The checks of a catch clause at tokens[catchIdx]; rv[0] = parameter name, rv[1] = the raw (ungathered) body. */
+	@throws
+	static func catchClauseHeader(ts: ref imut TokStore, tokens: mut u64, catchIdx: mut u64, rv: ref mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, tokens)
+		if catchIdx + 1 >= n || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, catchIdx + 1), TT_DELINEATOR, "(") == false{
+			throw "[parse error] 'catch' requires exactly one parameter in parentheses, e.g. 'catch(e) { ... }'"
+		}
+		let parenTok = mut TokStore.listGet(ts, tokens, catchIdx + 1)
+		let pt = mut TokStore.childs(ts, parenTok)
+		if TokStore.listSize(ts, pt) != 1 || TokStore.kind(ts, TokStore.listGet(ts, pt, 0)) != TT_VARREF{
+			throw "[parse error] 'catch' takes exactly one plain, untyped parameter name"
+		}
+		let paramSid = mut TokStore.text(ts, TokStore.listGet(ts, pt, 0))
+		let blockIdx = mut (catchIdx + 2)
+		if blockIdx >= n{
+			throw "[parse error] 'catch(...)' requires a '{ ... }' block"
+		}
+		let blockTok = mut TokStore.listGet(ts, tokens, blockIdx)
+		if ParserBlocks.isTk(ts, blockTok, TT_DELINEATOR, "{") == false{
+			throw "[parse error] 'catch(...)' requires a '{ ... }' block"
+		}
+		if blockIdx + 1 != n{
+			throw "[parse error] unexpected token after 'catch(...) { ... }'"
+		}
+		match Some(rv){
+			rv.set(rv, 0, paramSid)
+			rv.set(rv, 1, TokStore.childs(ts, blockTok))
+		}
+	}
+
+	// ---- statement list --------------------------------------------------------------------------------------------------
+
+	/** Collapses each "keyword [tokens] { block }" construct into one token, bottom-up. Resumable: see the AT_* points. */
+	@throws
+	static func stepKeywordBlocks(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let lines = mut ParserBlocks.g(fv, f, PF_LINES)
+		let isRoot = mut ParserBlocks.g(fv, f, PF_ISROOT)
+		if ParserBlocks.g(fv, f, PF_RESULT) == TOK_NONE{
+			let fresh = mut ? TokStore.newList(ts)
+			ParserBlocks.s(fv, f, PF_RESULT, fresh)
+		}
+		let result = mut ParserBlocks.g(fv, f, PF_RESULT)
+		let at = mut ParserBlocks.g(fv, f, PF_STAGE)
+		ParserBlocks.s(fv, f, PF_STAGE, 0)
+		let line = mut TOK_NONE
+		let tokens = mut TOK_NONE
+		let first = mut TOK_NONE
+		let expandedHere = mut false
+		for lp1 in 0..1000000000{
+			if at == AT_START{
+				let cur = mut ParserBlocks.g(fv, f, PF_I)
+				if cur >= TokStore.listSize(ts, lines){
+					return ParserBlocks.finish(fv, f, result)
+				}
+				line = TokStore.listGet(ts, lines, cur)
+				tokens = TokStore.childs(ts, line)
+				first = TokStore.listGet(ts, tokens, 0)
+				let nTok = mut TokStore.listSize(ts, tokens)
+				// "?catch(e){..}" declaration: emits no code
+				if nTok > 1 && ParserBlocks.isTk(ts, first, TT_OPERATOR, "?") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_KEYWORD, "catch"){
+					let rv = mut ? ParserBlocks.scratch(2)
+					? ParserBlocks.catchClauseHeader(ts, tokens, 1, rv)
+					ParserBlocks.s(fv, 0, 0, rv.get(rv, 0))
+					ParserBlocks.s(fv, 0, 1, rv.get(rv, 1))
+					ParserBlocks.s(fv, f, PF_I, cur + 1)
+					continue
+				}
+				// "?EXPR": sugar for "try EXPR catch(e){BLOCK}" with the most recent ?catch block
+				let qIdx = mut TOK_NONE
+				for k in 0..nTok{
+					if ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, k), TT_OPERATOR, "?"){
+						qIdx = k
+						break
+					}
+				}
+				expandedHere = false
+				if qIdx != TOK_NONE{
+					let qTok = mut TokStore.listGet(ts, tokens, qIdx)
+					let pendBody = mut ParserBlocks.g(fv, 0, 1)
+					if pendBody == TOK_NONE{
+						throw "[parse error] '?' requires a preceding '?catch(e) { ... }' declaration, earlier in this same function, to supply its catch block"
+					}
+					if qIdx + 1 >= nTok{
+						throw "[parse error] '?' requires an expression (a call to a '@throws' function, or 'new') immediately after it"
+					}
+					let exprTokens = mut ? TokStore.listSlice(ts, tokens, qIdx + 1, nTok)
+					let cloned = mut ? TokStore.newList(ts)
+					let nb = mut TokStore.listSize(ts, pendBody)
+					for bq in 0..nb{
+						let cl = mut ? ParserBlocks.deepCloneRaw(ts, TokStore.listGet(ts, pendBody, bq))
+						? TokStore.listAdd(ts, cloned, cl)
+					}
+					let tryG = mut ? ParserBlocks.newKeyword(ts, "try", qTok)
+					TokStore.setSub(ts, tryG, exprTokens)
+					ParserBlocks.s(fv, f, PF_LINE, line)
+					ParserBlocks.s(fv, f, PF_TOKENS, tokens)
+					ParserBlocks.s(fv, f, PF_FIRST, first)
+					ParserBlocks.s(fv, f, PF_TRYG, tryG)
+					ParserBlocks.s(fv, f, PF_TOK, qTok)
+					ParserBlocks.s(fv, f, PF_INDEX, qIdx)
+					ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_QEXPR)
+					let child = mut ? ParserBlocks.kbFrame(fv, cloned, 0)
+					return child
+				}
+				at = AT_TRY_SCAN
+			} else {
+				line = ParserBlocks.g(fv, f, PF_LINE)
+				tokens = ParserBlocks.g(fv, f, PF_TOKENS)
+				first = ParserBlocks.g(fv, f, PF_FIRST)
+			}
+
+			if at == AT_AFTER_QEXPR{
+				let tryG = mut ParserBlocks.g(fv, f, PF_TRYG)
+				let qTok = mut ParserBlocks.g(fv, f, PF_TOK)
+				TokStore.setChilds(ts, tryG, ParserBlocks.g(fv, f, PF_GOT))
+				TokStore.setCatchParamName(ts, tryG, ParserBlocks.g(fv, 0, 0))
+				ParserBlocks.copyDecoPin(ts, tryG, qTok)
+				let replaced = mut ? TokStore.listSlice(ts, tokens, 0, ParserBlocks.g(fv, f, PF_INDEX))
+				? TokStore.listAdd(ts, replaced, tryG)
+				tokens = replaced
+				TokStore.setChilds(ts, line, tokens)
+				first = TokStore.listGet(ts, tokens, 0)
+				expandedHere = true
+				at = AT_TRY_SCAN
+			}
+
+			if at == AT_AFTER_STATEMENT{
+				let wl = mut ? ParserBlocks.wrapAsLine(ts, ParserBlocks.g(fv, f, PF_GOT))
+				? TokStore.listAdd(ts, result, wl)
+				ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + ParserBlocks.g(fv, f, PF_GOTCONS))
+				at = AT_START
+				continue
+			}
+
+			if at == AT_AFTER_TRY_BLOCK{
+				let blockTok = mut ParserBlocks.g(fv, f, PF_BLOCKTOK)
+				let got = mut ParserBlocks.g(fv, f, PF_GOT)
+				TokStore.setChilds(ts, blockTok, got)
+				let gathered = mut ? ParserBlocks.newKeyword(ts, "try", first)
+				TokStore.setChilds(ts, gathered, got)
+				TokStore.setIsTryBlock(ts, gathered, 1)
+				ParserBlocks.copyDecoPin(ts, gathered, first)
+				let wl2 = mut ? ParserBlocks.wrapAsLine(ts, gathered)
+				? TokStore.listAdd(ts, result, wl2)
+				ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+				at = AT_START
+				continue
+			}
+
+			if at == AT_AFTER_TRY_SPAN{
+				let tryG2 = mut ParserBlocks.g(fv, f, PF_GOT)
+				let replaced2 = mut ? TokStore.listSlice(ts, tokens, 0, ParserBlocks.g(fv, f, PF_INDEX))
+				? TokStore.listAdd(ts, replaced2, tryG2)
+				tokens = replaced2
+				TokStore.setChilds(ts, line, tokens)
+				first = TokStore.listGet(ts, tokens, 0)
+				at = AT_DISPATCH
+			}
+
+			// "try EXPR catch{..}" can sit anywhere in a line: the whole span collapses to one KEYWORD token
+			if at == AT_TRY_SCAN{
+				if expandedHere == false{
+					let nT = mut TokStore.listSize(ts, tokens)
+					let tryIdx = mut TOK_NONE
+					for k2 in 0..nT{
+						if ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, k2), TT_KEYWORD, "try"){
+							tryIdx = k2
+							break
+						}
+					}
+					if tryIdx == 0 && nT > 1 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_DELINEATOR, "{"){
+						let blockTok2 = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+						if ParserBlocks.indexOfTok(ts, tokens, blockTok2) != 1{
+							throw "[parse error] 'try' takes no condition"
+						}
+						ParserBlocks.s(fv, f, PF_LINE, line)
+						ParserBlocks.s(fv, f, PF_TOKENS, tokens)
+						ParserBlocks.s(fv, f, PF_FIRST, first)
+						ParserBlocks.s(fv, f, PF_BLOCKTOK, blockTok2)
+						ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_TRY_BLOCK)
+						let child2 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, blockTok2), isRoot)
+						return child2
+					}
+					if tryIdx != TOK_NONE{
+						let span = mut ? ParserBlocks.newFrame(fv, PK_TRY_SPAN)
+						ParserBlocks.s(fv, span, PF_TOKENS, tokens)
+						ParserBlocks.s(fv, span, PF_INDEX, tryIdx)
+						ParserBlocks.s(fv, f, PF_LINE, line)
+						ParserBlocks.s(fv, f, PF_TOKENS, tokens)
+						ParserBlocks.s(fv, f, PF_FIRST, first)
+						ParserBlocks.s(fv, f, PF_INDEX, tryIdx)
+						ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_TRY_SPAN)
+						return span
+					} else if ParserBlocks.isTk(ts, first, TT_KEYWORD, "catch"){
+						throw "[parse error] 'catch' without a preceding 'try'"
+					}
+				}
+				at = AT_DISPATCH
+			}
+
+			// at == AT_DISPATCH: one statement, by its first token
+			ParserBlocks.s(fv, f, PF_LINE, line)
+			ParserBlocks.s(fv, f, PF_TOKENS, tokens)
+			ParserBlocks.s(fv, f, PF_FIRST, first)
+			let isLock = mut ? ParserBlocks.isLockStatementStart(ts, tokens)
+			if isLock{
+				let lc = mut ? ParserBlocks.statementChild(fv, f, PK_LOCK, lines)
+				return lc
+			}
+			if TokStore.kind(ts, first) == TT_KEYWORD{
+				let nf = mut TokStore.listSize(ts, tokens)
+				if TokStore.textEq(ts, first, "if"){
+					let c1 = mut ? ParserBlocks.statementChild(fv, f, PK_IF, lines)
+					return c1
+				}
+				if TokStore.textEq(ts, first, "elseif") || TokStore.textEq(ts, first, "else"){
+					throw "[parse error] 'elseif'/'else' without a preceding 'if'"
+				}
+				let blockCode = mut 0
+				if TokStore.textEq(ts, first, "loop"){ blockCode = 1 }
+				else if TokStore.textEq(ts, first, "unsafe"){ blockCode = 2 }
+				else if TokStore.textEq(ts, first, "safe"){ blockCode = 3 }
+				else if TokStore.textEq(ts, first, "for"){ blockCode = 4 }
+				else if TokStore.textEq(ts, first, "assume"){ blockCode = 5 }
+				if blockCode != 0{
+					let bc = mut ? ParserBlocks.newFrame(fv, PK_BLOCK)
+					ParserBlocks.s(fv, bc, PF_TOKENS, tokens)
+					ParserBlocks.s(fv, bc, PF_TOK, first)
+					ParserBlocks.s(fv, bc, PF_TEXT, blockCode)
+					ParserBlocks.s(fv, bc, PF_ISROOT, isRoot)
+					ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_STATEMENT)
+					return bc
+				}
+				if TokStore.textEq(ts, first, "match"){
+					let c2 = mut ? ParserBlocks.statementChild(fv, f, PK_MATCH, lines)
+					return c2
+				}
+				if TokStore.textEq(ts, first, "elsematch"){
+					throw "[parse error] 'elsematch' without a preceding 'match'"
+				}
+				if TokStore.textEq(ts, first, "func"){
+					? ParserBlocks.requireRoot(isRoot)
+					ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_STATEMENT)
+					let fc = mut ? ParserBlocks.funcFrame(fv, tokens, first)
+					return fc
+				}
+				let simple = mut TOK_NONE
+				if TokStore.textEq(ts, first, "extern"){
+					? ParserBlocks.requireRoot(isRoot)
+					simple = ? ParserBlocks.gatherExtern(ts, tokens, first)
+				} else if TokStore.textEq(ts, first, "export"){
+					? ParserBlocks.requireRoot(isRoot)
+					simple = ? ParserBlocks.gatherExport(ts, tokens, first)
+				} else if TokStore.textEq(ts, first, "ASM"){
+					simple = ? ParserBlocks.gatherAsm(ts, tokens, first)
+				} else if TokStore.textEq(ts, first, "type"){
+					? ParserBlocks.requireRoot(isRoot)
+					simple = ? ParserBlocks.gatherType(ts, tokens, first)
+				} else if TokStore.textEq(ts, first, "const"){
+					? ParserBlocks.requireRoot(isRoot)
+					simple = ? ParserBlocks.gatherConst(ts, tokens, first)
+				} else if TokStore.textEq(ts, first, "struct"){
+					? ParserBlocks.requireRoot(isRoot)
+					simple = ? ParserBlocks.gatherStruct(ts, tokens, first)
+				} else if TokStore.textEq(ts, first, "enum"){
+					? ParserBlocks.requireRoot(isRoot)
+					simple = ? ParserBlocks.gatherEnum(ts, tokens, first)
+				}
+				if simple != TOK_NONE{
+					let wl3 = mut ? ParserBlocks.wrapAsLine(ts, simple)
+					? TokStore.listAdd(ts, result, wl3)
+					ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+					at = AT_START
+					continue
+				}
+				if TokStore.textEq(ts, first, "interface"){
+					? ParserBlocks.requireRoot(isRoot)
+					let ic = mut ? ParserBlocks.newFrame(fv, PK_INTERFACE)
+					ParserBlocks.s(fv, ic, PF_TOKENS, tokens)
+					ParserBlocks.s(fv, ic, PF_TOK, first)
+					ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_STATEMENT)
+					return ic
+				}
+				if TokStore.textEq(ts, first, "impl"){
+					? ParserBlocks.requireRoot(isRoot)
+					if nf > 3 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_VARREF, "default") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 2), TT_VARREF, "lock") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 3), TT_KEYWORD, "match"){
+						throw "[parse error] 'impl default lock match' has been renamed -- write 'impl default match @lock'"
+					}
+					if nf > 5 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_VARREF, "default") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 2), TT_KEYWORD, "match") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 3), TT_VARREF, "lock"){
+						throw "[parse error] 'impl default match lock' is now spelled 'impl default match @lock'"
+					}
+					if nf > 5 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 3), TT_OPERATOR, "@") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 2), TT_KEYWORD, "match") && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 4), TT_VARREF, "lock"){
+						tokens = ? TokStore.listCopy(ts, tokens)
+						TokStore.listRemoveAt(ts, tokens, 3)
+					}
+					if ParserBlocks.isDefaultLockMatchImplStart(ts, tokens){
+						let dg = mut ? ParserBlocks.gatherDefaultLockMatchImpl(ts, tokens, first)
+						let wl4 = mut ? ParserBlocks.wrapAsLine(ts, dg)
+						? TokStore.listAdd(ts, result, wl4)
+						ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+						at = AT_START
+						continue
+					}
+					let isCtor = mut ? ParserBlocks.isConstructorImplStart(ts, tokens)
+					let kindC = mut PK_IMPL
+					if isCtor{
+						kindC = PK_CONSTRUCTOR
+					}
+					let ch = mut ? ParserBlocks.newFrame(fv, kindC)
+					ParserBlocks.s(fv, ch, PF_TOKENS, tokens)
+					ParserBlocks.s(fv, ch, PF_TOK, first)
+					ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_STATEMENT)
+					return ch
+				}
+				if TokStore.textEq(ts, first, "library"){
+					? ParserBlocks.requireRoot(isRoot)
+					let lb = mut ? ParserBlocks.newFrame(fv, PK_LIBRARY)
+					ParserBlocks.s(fv, lb, PF_TOKENS, tokens)
+					ParserBlocks.s(fv, lb, PF_TOK, first)
+					ParserBlocks.s(fv, f, PF_STAGE, AT_AFTER_STATEMENT)
+					return lb
+				}
+				if TokStore.textEq(ts, first, "import"){
+					? ParserBlocks.requireRoot(isRoot)
+				}
+			}
+			? TokStore.listAdd(ts, result, line)
+			ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+			at = AT_START
+		}
+		return 0
+	}
+
+	/** loop / unsafe / safe / for / assume: one block statement. PF_TEXT: 1 loop, 2 unsafe, 3 safe, 4 for, 5 assume. */
+	@throws
+	static func stepBlockStmt(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let first = mut ParserBlocks.g(fv, f, PF_TOK)
+		let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+		let code = mut ParserBlocks.g(fv, f, PF_TEXT)
+		let n = mut TokStore.listSize(ts, tokens)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			if code == 1{
+				let bt1 = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+				if ParserBlocks.indexOfTok(ts, tokens, bt1) != 1{
+					throw "[parse error] 'loop' takes no condition"
+				}
+				ParserBlocks.s(fv, f, PF_BLOCKTOK, bt1)
+				ParserBlocks.s(fv, f, PF_STAGE, 1)
+				let c1 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, bt1), 0)
+				return c1
+			}
+			if code == 2 || code == 3{
+				let bt2 = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+				let ubi = mut ParserBlocks.indexOfTok(ts, tokens, bt2)
+				let tagList = mut TOK_NONE
+				if code == 2 && ubi > 1{
+					tagList = ? TokStore.newList(ts)
+					let ti = mut 1
+					for lp1 in 0..1000000000{
+						if ti >= ubi{
+							break
+						}
+						let cnt = mut TokStore.listSize(ts, tagList)
+						if TokStore.textEq(ts, TokStore.listGet(ts, tokens, ti), ":") && cnt > 0 && ti + 1 < ubi{
+							let lastSid = mut TokStore.listGet(ts, tagList, cnt - 1)
+							let st = mut TokStore.strBegin(ts)
+							? TokStore.strAppendId(ts, lastSid)
+							? TokStore.strPush(ts, ':')
+							? TokStore.strAppendId(ts, TokStore.text(ts, TokStore.listGet(ts, tokens, ti + 1)))
+							let joined = mut ? TokStore.strEnd(ts, st)
+							TokStore.listSet(ts, tagList, cnt - 1, joined)
+							ti = ti + 2
+						} else {
+							? TokStore.listAdd(ts, tagList, TokStore.text(ts, TokStore.listGet(ts, tokens, ti)))
+							ti = ti + 1
+						}
+					}
+				} else if ubi != 1{
+					throw "[parse error] 'unsafe'/'safe' takes no condition"
+				}
+				ParserBlocks.s(fv, f, PF_BLOCKTOK, bt2)
+				ParserBlocks.s(fv, f, PF_NAMES, tagList)
+				ParserBlocks.s(fv, f, PF_STAGE, 1)
+				let c2 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, bt2), ParserBlocks.g(fv, f, PF_ISROOT))
+				return c2
+			}
+			if code == 4{
+				let bt3 = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+				let isFM = mut 0
+				if n > 1 && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_KEYWORD, "match"){
+					isFM = 1
+				}
+				let condStart = mut (1 + isFM)
+				let cond3 = mut ? TokStore.listSlice(ts, tokens, condStart, ParserBlocks.indexOfTok(ts, tokens, bt3))
+				ParserBlocks.s(fv, f, PF_COND, cond3)
+				ParserBlocks.s(fv, f, PF_FLAG, isFM)
+				ParserBlocks.s(fv, f, PF_BLOCKTOK, bt3)
+				ParserBlocks.s(fv, f, PF_STAGE, 1)
+				let c3 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, bt3), 0)
+				return c3
+			}
+			// "assume match EXPR" with an optional block
+			if n < 2 || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, 1), TT_KEYWORD, "match") == false{
+				throw "[parse error] expected 'match' after 'assume'"
+			}
+			let last = mut TokStore.listGet(ts, tokens, n - 1)
+			let hasBlock = mut 0
+			if ParserBlocks.isTk(ts, last, TT_DELINEATOR, "{"){
+				hasBlock = 1
+			}
+			let ag = mut ? ParserBlocks.newKeyword(ts, "assume", first)
+			ParserBlocks.s(fv, f, PF_GATHERED, ag)
+			ParserBlocks.s(fv, f, PF_FLAG, hasBlock)
+			ParserBlocks.s(fv, f, PF_BLOCKTOK, last)
+			if hasBlock != 0{
+				let cond5 = mut ? TokStore.listSlice(ts, tokens, 2, ParserBlocks.indexOfTok(ts, tokens, last))
+				ParserBlocks.s(fv, f, PF_COND, cond5)
+				ParserBlocks.s(fv, f, PF_STAGE, 1)
+				let c5 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, last), 0)
+				return c5
+			}
+			let cond6 = mut ? TokStore.listSlice(ts, tokens, 2, n)
+			ParserBlocks.s(fv, f, PF_COND, cond6)
+			ParserBlocks.s(fv, f, PF_GOT, TOK_NONE)
+		}
+		// the block (if any) has been gathered
+		let got = mut ParserBlocks.g(fv, f, PF_GOT)
+		let blockTok = mut ParserBlocks.g(fv, f, PF_BLOCKTOK)
+		if code == 1{
+			TokStore.setChilds(ts, blockTok, got)
+			let lg = mut ? ParserBlocks.newKeyword(ts, "loop", first)
+			TokStore.setChilds(ts, lg, got)
+			ParserBlocks.copyDecoPin(ts, lg, first)
+			return ParserBlocks.finish(fv, f, lg)
+		}
+		if code == 2 || code == 3{
+			TokStore.setChilds(ts, blockTok, got)
+			let ug = mut ? TokStore.newToken(ts, TT_KEYWORD, TokStore.text(ts, first), TokStore.line(ts, first), TokStore.fileId(ts, first))
+			TokStore.setUnsafeTags(ts, ug, ParserBlocks.g(fv, f, PF_NAMES))
+			TokStore.setChilds(ts, ug, got)
+			ParserBlocks.copyDecoPin(ts, ug, first)
+			return ParserBlocks.finish(fv, f, ug)
+		}
+		if code == 4{
+			TokStore.setChilds(ts, blockTok, got)
+			let fg = mut ? ParserBlocks.newKeyword(ts, "for", first)
+			TokStore.setSub(ts, fg, ParserBlocks.g(fv, f, PF_COND))
+			TokStore.setChilds(ts, fg, got)
+			ParserBlocks.copyDecoPin(ts, fg, first)
+			TokStore.setIsForMatch(ts, fg, ParserBlocks.g(fv, f, PF_FLAG))
+			return ParserBlocks.finish(fv, f, fg)
+		}
+		let r = mut ? ParserBlocks.finishAssume(ts, fv, f, first)
+		return r
+	}
+
+	@throws
+	static func finishAssume(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64, first: mut u64) mut u64{
+		?catch(e){ throw e }
+		let gathered = mut ParserBlocks.g(fv, f, PF_GATHERED)
+		let condition = mut ParserBlocks.g(fv, f, PF_COND)
+		if ParserBlocks.g(fv, f, PF_FLAG) != 0{
+			let got = mut ParserBlocks.g(fv, f, PF_GOT)
+			TokStore.setChilds(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK), got)
+			TokStore.setChilds(ts, gathered, got)
+			TokStore.setHasBlock(ts, gathered, 1)
+		} else {
+			let empty = mut ? TokStore.newList(ts)
+			TokStore.setChilds(ts, gathered, empty)
+			TokStore.setHasBlock(ts, gathered, 0)
+		}
+		let nc = mut TokStore.listSize(ts, condition)
+		if nc == 0{
+			throw "[parse error] 'assume match' requires a condition"
+		}
+		let colonIdx = mut TOK_NONE
+		for ci in 0..nc{
+			if ParserBlocks.isTk(ts, TokStore.listGet(ts, condition, ci), TT_OPERATOR, ":"){
+				colonIdx = ci
+				break
+			}
+		}
+		if colonIdx != TOK_NONE{
+			// "assume match x.f : A|B": split at ':' and parse the variant chain here
+			if colonIdx == 0{
+				throw "[parse error] 'assume match x.field : VARIANT' requires an expression before ':'"
+			}
+			let leftTokens = mut ? TokStore.listSlice(ts, condition, 0, colonIdx)
+			let variants = mut ? TokStore.newList(ts)
+			let vi = mut (colonIdx + 1)
+			for lp1 in 0..1000000000{
+				if vi >= nc || TokStore.kind(ts, TokStore.listGet(ts, condition, vi)) != TT_VARREF{
+					throw "[parse error] 'assume match x.field : VARIANT' expects a variant name after ':'"
+				}
+				? TokStore.listAdd(ts, variants, TokStore.text(ts, TokStore.listGet(ts, condition, vi)))
+				vi = vi + 1
+				if vi < nc && ParserBlocks.isTk(ts, TokStore.listGet(ts, condition, vi), TT_OPERATOR, "|"){
+					vi = vi + 1
+					continue
+				}
+				break
+			}
+			if vi != nc{
+				throw "[parse error] unexpected token in 'assume match x.field : VARIANT'"
+			}
+			condition = leftTokens
+			TokStore.setAssumeVariants(ts, gathered, variants)
+		}
+		TokStore.setSub(ts, gathered, condition)
+		ParserBlocks.copyDecoPin(ts, gathered, first)
+		return ParserBlocks.finish(fv, f, gathered)
+	}
+
+	/** "try EXPR catch(e) { BLOCK }" -> one synthetic "try" KEYWORD token (.sub = raw expr tokens, .childs = gathered catch body). */
+	@throws
+	static func stepTrySpan(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+		let tryIdx = mut ParserBlocks.g(fv, f, PF_INDEX)
+		let tryTok = mut TokStore.listGet(ts, tokens, tryIdx)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let n = mut TokStore.listSize(ts, tokens)
+			let catchIdx = mut TOK_NONE
+			let scanFrom = mut (tryIdx + 1)
+			for k in scanFrom..n{
+				if ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, k), TT_KEYWORD, "catch"){
+					catchIdx = k
+					break
+				}
+			}
+			if catchIdx == TOK_NONE{
+				throw "[parse error] 'try' requires a matching 'catch(e) { ... }'"
+			}
+			let cond = mut ? TokStore.listSlice(ts, tokens, tryIdx + 1, catchIdx)
+			if TokStore.listSize(ts, cond) == 0{
+				throw "[parse error] 'try' requires an expression (a call to a '@throws' function) before 'catch'"
+			}
+			ParserBlocks.s(fv, f, PF_COND, cond)
+			let cf = mut ? ParserBlocks.newFrame(fv, PK_CATCH)
+			ParserBlocks.s(fv, cf, PF_TOKENS, tokens)
+			ParserBlocks.s(fv, cf, PF_INDEX, catchIdx)
+			ParserBlocks.s(fv, f, PF_STAGE, 1)
+			return cf
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "try", tryTok)
+		TokStore.setSub(ts, gathered, ParserBlocks.g(fv, f, PF_COND))
+		TokStore.setChilds(ts, gathered, ParserBlocks.g(fv, f, PF_GOT))
+		TokStore.setCatchParamName(ts, gathered, ParserBlocks.g(fv, f, PF_GOTB))
+		ParserBlocks.copyDecoPin(ts, gathered, tryTok)
+		return ParserBlocks.finish(fv, f, gathered)
+	}
+
+	/** One "catch(e) { ... }" clause that must end the line: ret = gathered body, retB = parameter name. */
+	@throws
+	static func stepCatch(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let rv = mut ? ParserBlocks.scratch(2)
+			? ParserBlocks.catchClauseHeader(ts, ParserBlocks.g(fv, f, PF_TOKENS), ParserBlocks.g(fv, f, PF_INDEX), rv)
+			ParserBlocks.s(fv, f, PF_TEXT, rv.get(rv, 0))
+			ParserBlocks.s(fv, f, PF_STAGE, 1)
+			let c = mut ? ParserBlocks.kbFrame(fv, rv.get(rv, 1), 0)
+			return c
+		}
+		ParserBlocks.s(fv, f, PF_RETB, ParserBlocks.g(fv, f, PF_TEXT))
+		return ParserBlocks.finish(fv, f, ParserBlocks.g(fv, f, PF_GOT))
+	}
+
+	/** An if/elseif/else chain (linked through .next) or a match/elsematch/else chain (plus the case-block form of match); CONSUMED = lines consumed. */
+	@throws
+	static func stepChain(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let isIf = mut (ParserBlocks.g(fv, f, PF_KIND) == PK_IF)
+		let lines = mut ParserBlocks.g(fv, f, PF_LINES)
+		let stage = mut ParserBlocks.g(fv, f, PF_STAGE)
+		if stage == 0{
+			let kwTokens = mut TokStore.childs(ts, TokStore.listGet(ts, lines, ParserBlocks.g(fv, f, PF_INDEX)))
+			let kwTok = mut TokStore.listGet(ts, kwTokens, 0)
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, kwTokens)
+			let cond = mut ? TokStore.listSlice(ts, kwTokens, 1, ParserBlocks.indexOfTok(ts, kwTokens, blockTok))
+			ParserBlocks.s(fv, f, PF_COND, cond)
+			ParserBlocks.s(fv, f, PF_TOK, kwTok)
+			ParserBlocks.s(fv, f, PF_BLOCKTOK, blockTok)
+			if isIf == false && ParserBlocks.isCaseMatchBody(ts, TokStore.childs(ts, blockTok)){
+				let cases = mut ? ParserBlocks.newFrame(fv, PK_CASES)
+				ParserBlocks.s(fv, cases, PF_LINES, TokStore.childs(ts, blockTok))
+				ParserBlocks.s(fv, cases, PF_ALLOWDEF, 0)
+				ParserBlocks.s(fv, f, PF_STAGE, 4)
+				return cases
+			}
+			ParserBlocks.s(fv, f, PF_STAGE, 1)
+			let c0 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, blockTok), 0)
+			return c0
+		}
+		if stage == 4{
+			let matchTok = mut ParserBlocks.g(fv, f, PF_TOK)
+			let enumHead = mut ? ParserBlocks.newKeyword(ts, "match", matchTok)
+			TokStore.setIsCaseMatch(ts, enumHead, 1)
+			TokStore.setSub(ts, enumHead, ParserBlocks.g(fv, f, PF_COND))
+			TokStore.setChilds(ts, enumHead, ParserBlocks.g(fv, f, PF_GOT))
+			ParserBlocks.copyDecoPin(ts, enumHead, matchTok)
+			ParserBlocks.s(fv, f, PF_CONSUMED, 1)
+			return ParserBlocks.finish(fv, f, enumHead)
+		}
+		if stage == 1{
+			let kwTok1 = mut ParserBlocks.g(fv, f, PF_TOK)
+			let got1 = mut ParserBlocks.g(fv, f, PF_GOT)
+			TokStore.setChilds(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK), got1)
+			let head = mut TOK_NONE
+			if isIf{
+				head = ? ParserBlocks.newKeyword(ts, "if", kwTok1)
+			} else {
+				head = ? ParserBlocks.newKeyword(ts, "match", kwTok1)
+			}
+			TokStore.setSub(ts, head, ParserBlocks.g(fv, f, PF_COND))
+			TokStore.setChilds(ts, head, got1)
+			if isIf == false{
+				TokStore.setDecorators(ts, head, TokStore.decorators(ts, kwTok1))
+			}
+			TokStore.setPinned(ts, head, TokStore.pinned(ts, kwTok1))
+			ParserBlocks.s(fv, f, PF_HEAD, head)
+			ParserBlocks.s(fv, f, PF_TAIL, head)
+			ParserBlocks.s(fv, f, PF_CONSUMED, 1)
+			ParserBlocks.s(fv, f, PF_J, ParserBlocks.g(fv, f, PF_INDEX) + 1)
+			ParserBlocks.s(fv, f, PF_STAGE, 2)
+		} else if stage == 3{
+			let branchKw = mut ParserBlocks.g(fv, f, PF_BRKW)
+			let got3 = mut ParserBlocks.g(fv, f, PF_GOT)
+			TokStore.setChilds(ts, ParserBlocks.g(fv, f, PF_BRBLOCK), got3)
+			let branch = mut ? TokStore.newToken(ts, TT_KEYWORD, TokStore.text(ts, branchKw), TokStore.line(ts, branchKw), TokStore.fileId(ts, branchKw))
+			TokStore.setSub(ts, branch, ParserBlocks.g(fv, f, PF_COND))
+			TokStore.setChilds(ts, branch, got3)
+			TokStore.setPinned(ts, branch, TokStore.pinned(ts, branchKw))
+			TokStore.setNext(ts, ParserBlocks.g(fv, f, PF_TAIL), branch)
+			ParserBlocks.s(fv, f, PF_TAIL, branch)
+			ParserBlocks.s(fv, f, PF_CONSUMED, ParserBlocks.g(fv, f, PF_CONSUMED) + 1)
+			ParserBlocks.s(fv, f, PF_J, ParserBlocks.g(fv, f, PF_J) + 1)
+			ParserBlocks.s(fv, f, PF_STAGE, 2)
+			if TokStore.textEq(ts, branchKw, "else"){
+				return ParserBlocks.finish(fv, f, ParserBlocks.g(fv, f, PF_HEAD))
+			}
+		}
+		let j = mut ParserBlocks.g(fv, f, PF_J)
+		if j < TokStore.listSize(ts, lines){
+			let branchTokens = mut TokStore.childs(ts, TokStore.listGet(ts, lines, j))
+			let bkw = mut TokStore.listGet(ts, branchTokens, 0)
+			let isElseKw = mut false
+			if isIf{
+				isElseKw = ParserBlocks.isTk(ts, bkw, TT_KEYWORD, "elseif")
+			} else {
+				isElseKw = ParserBlocks.isTk(ts, bkw, TT_KEYWORD, "elsematch")
+			}
+			let isElse = mut ParserBlocks.isTk(ts, bkw, TT_KEYWORD, "else")
+			if isElseKw || isElse{
+				let bb = mut ? ParserBlocks.requireTrailingBlock(ts, branchTokens)
+				let bbi = mut ParserBlocks.indexOfTok(ts, branchTokens, bb)
+				let bcond = mut TOK_NONE
+				if isElseKw{
+					bcond = ? TokStore.listSlice(ts, branchTokens, 1, bbi)
+				} else {
+					if bbi != 1{
+						throw "[parse error] 'else' takes no condition"
+					}
+					bcond = ? TokStore.newList(ts)
+				}
+				ParserBlocks.s(fv, f, PF_BRKW, bkw)
+				ParserBlocks.s(fv, f, PF_BRBLOCK, bb)
+				ParserBlocks.s(fv, f, PF_COND, bcond)
+				ParserBlocks.s(fv, f, PF_STAGE, 3)
+				let c3 = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, bb), 0)
+				return c3
+			}
+		}
+		return ParserBlocks.finish(fv, f, ParserBlocks.g(fv, f, PF_HEAD))
+	}
+
+	/** "match @lock EXPR{...}" as a "lock" token with isCaseMatch set; the body goes through the case gatherer. */
+	@throws
+	static func stepLock(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let lockTokens = mut TokStore.childs(ts, TokStore.listGet(ts, ParserBlocks.g(fv, f, PF_LINES), ParserBlocks.g(fv, f, PF_INDEX)))
+			let lockTok = mut TokStore.listGet(ts, lockTokens, 0)
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, lockTokens)
+			let condition = mut ? TokStore.listSlice(ts, lockTokens, 3, ParserBlocks.indexOfTok(ts, lockTokens, blockTok))
+			let gathered = mut ? ParserBlocks.newKeyword(ts, "lock", lockTok)
+			TokStore.setSub(ts, gathered, condition)
+			ParserBlocks.copyDecoPin(ts, gathered, lockTok)
+			TokStore.setIsCaseMatch(ts, gathered, 1)
+			ParserBlocks.s(fv, f, PF_GATHERED, gathered)
+			let cases = mut ? ParserBlocks.newFrame(fv, PK_CASES)
+			ParserBlocks.s(fv, cases, PF_LINES, TokStore.childs(ts, blockTok))
+			ParserBlocks.s(fv, cases, PF_ALLOWDEF, 1)
+			ParserBlocks.s(fv, f, PF_STAGE, 1)
+			return cases
+		}
+		let gathered2 = mut ParserBlocks.g(fv, f, PF_GATHERED)
+		TokStore.setChilds(ts, gathered2, ParserBlocks.g(fv, f, PF_GOT))
+		ParserBlocks.s(fv, f, PF_CONSUMED, 1)
+		return ParserBlocks.finish(fv, f, gathered2)
+	}
+
+	/** One Token per case ("LABEL:{...}" or "A|B:{...}") of a case-block body, flattening the lines first; each case block is a child statement-list frame. */
+	@throws
+	static func stepMatchCases(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let flat0 = mut ? TokStore.newList(ts)
+			let body = mut ParserBlocks.g(fv, f, PF_LINES)
+			let nb = mut TokStore.listSize(ts, body)
+			for q in 0..nb{
+				? TokStore.listAddAll(ts, flat0, TokStore.childs(ts, TokStore.listGet(ts, body, q)))
+			}
+			let cases0 = mut ? TokStore.newList(ts)
+			ParserBlocks.s(fv, f, PF_FLAT, flat0)
+			ParserBlocks.s(fv, f, PF_CASES, cases0)
+			ParserBlocks.s(fv, f, PF_I, 0)
+		} else {
+			let ct = mut ParserBlocks.g(fv, f, PF_CASETOK)
+			TokStore.setChilds(ts, ct, ParserBlocks.g(fv, f, PF_GOT))
+			? TokStore.listAdd(ts, ParserBlocks.g(fv, f, PF_CASES), ct)
+		}
+		ParserBlocks.s(fv, f, PF_STAGE, 1)
+		let flat = mut ParserBlocks.g(fv, f, PF_FLAT)
+		let cases = mut ParserBlocks.g(fv, f, PF_CASES)
+		let allowDefault = mut ParserBlocks.g(fv, f, PF_ALLOWDEF)
+		let nflat = mut TokStore.listSize(ts, flat)
+		let i = mut ParserBlocks.g(fv, f, PF_I)
+		for lp1 in 0..1000000000{
+			if i >= nflat{
+				break
+			}
+			let sep = mut TokStore.listGet(ts, flat, i)
+			if ParserBlocks.isTk(ts, sep, TT_OPERATOR, ",") || ParserBlocks.isTk(ts, sep, TT_OPERATOR, ";"){
+				i = i + 1
+				continue
+			}
+			if TokStore.kind(ts, sep) != TT_VARREF{
+				throw "[parse error] expected a case label (a variant name, 'default', or a float state) to start a match case"
+			}
+			let labels = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, labels, sep)
+			i = i + 1
+			for lp2 in 0..1000000000{
+				if i + 1 < nflat && ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_OPERATOR, "|") && TokStore.kind(ts, TokStore.listGet(ts, flat, i + 1)) == TT_VARREF{
+					? TokStore.listAdd(ts, labels, TokStore.listGet(ts, flat, i + 1))
+					i = i + 2
+					continue
+				}
+				break
+			}
+			let firstLabel = mut TokStore.listGet(ts, labels, 0)
+			if i >= nflat || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_OPERATOR, ":") == false{
+				throw "[parse error] expected ':' after a case label in a match case"
+			}
+			i = i + 1
+			// "CLOSED:default" / "CLOSED:default(args)" (match @lock only): wrapped as a plain expression statement
+			if allowDefault != 0 && i < nflat && ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_VARREF, "default"){
+				let defaultTok = mut TokStore.listGet(ts, flat, i)
+				i = i + 1
+				let refTokens = mut ? TokStore.newList(ts)
+				? TokStore.listAdd(ts, refTokens, defaultTok)
+				if i < nflat && ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_OPERATOR, "CALL"){
+					? TokStore.listAdd(ts, refTokens, TokStore.listGet(ts, flat, i))
+					i = i + 1
+					if i >= nflat || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_DELINEATOR, "(") == false{
+						throw "[parse error] expected '(' after 'default' in a 'match @lock' case"
+					}
+					? TokStore.listAdd(ts, refTokens, TokStore.listGet(ts, flat, i))
+					i = i + 1
+				}
+				let defaultLineTok = mut ? TokStore.newToken(ts, TT_LINE, STR_LINE, TokStore.line(ts, defaultTok), TokStore.fileId(ts, defaultTok))
+				TokStore.setChilds(ts, defaultLineTok, refTokens)
+				let defaultCaseTok = mut ? TokStore.newToken(ts, TT_VARREF, TokStore.text(ts, firstLabel), TokStore.line(ts, firstLabel), TokStore.fileId(ts, firstLabel))
+				TokStore.setSub(ts, defaultCaseTok, labels)
+				let dcc = mut ? TokStore.newList(ts)
+				? TokStore.listAdd(ts, dcc, defaultLineTok)
+				TokStore.setChilds(ts, defaultCaseTok, dcc)
+				? TokStore.listAdd(ts, cases, defaultCaseTok)
+				continue
+			}
+			if i >= nflat || ParserBlocks.isTk(ts, TokStore.listGet(ts, flat, i), TT_DELINEATOR, "{") == false{
+				throw "[parse error] expected '{' after a case label in a match case"
+			}
+			let blockTok = mut TokStore.listGet(ts, flat, i)
+			i = i + 1
+			let caseTok = mut ? TokStore.newToken(ts, TT_VARREF, TokStore.text(ts, firstLabel), TokStore.line(ts, firstLabel), TokStore.fileId(ts, firstLabel))
+			TokStore.setSub(ts, caseTok, labels)
+			ParserBlocks.s(fv, f, PF_CASETOK, caseTok)
+			ParserBlocks.s(fv, f, PF_I, i)
+			let child = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, blockTok), 0)
+			return child
+		}
+		return ParserBlocks.finish(fv, f, cases)
+	}
+
+	/** "func name<T>(params) ret { body }": the checks, then the body as a child statement list, then the "func" token. */
+	@throws
+	static func stepFunc(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let funcTok = mut ParserBlocks.g(fv, f, PF_TOK)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+			let n = mut TokStore.listSize(ts, tokens)
+			if n < 3 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+				throw "[parse error] expected function name after 'func'"
+			}
+			ParserBlocks.s(fv, f, PF_NAMETOK, TokStore.listGet(ts, tokens, 1))
+			let tp = mut ? ParserBlocks.scratch(3)
+			? ParserBlocks.parseTypeParams(ts, tokens, 2, tp)
+			ParserBlocks.s(fv, f, PF_TPN, tp.get(tp, 0))
+			ParserBlocks.s(fv, f, PF_TPB, tp.get(tp, 1))
+			let parenIdx = mut tp.get(tp, 2)
+			if parenIdx >= n || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, parenIdx), TT_DELINEATOR, "(") == false{
+				throw "[parse error] expected '(' after function name"
+			}
+			ParserBlocks.s(fv, f, PF_PARAMSTOK, TokStore.listGet(ts, tokens, parenIdx))
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+			ParserBlocks.s(fv, f, PF_BLOCKTOK, blockTok)
+			let blockIdx = mut ParserBlocks.indexOfTok(ts, tokens, blockTok)
+			let rt = mut ? TokStore.listSlice(ts, tokens, parenIdx + 1, blockIdx)
+			ParserBlocks.s(fv, f, PF_RETTYPES, rt)
+			// the pending "?catch" state is reset here, the only reset site
+			ParserBlocks.s(fv, 0, 0, TOK_NONE)
+			ParserBlocks.s(fv, 0, 1, TOK_NONE)
+			ParserBlocks.s(fv, f, PF_STAGE, 1)
+			let c = mut ? ParserBlocks.kbFrame(fv, TokStore.childs(ts, blockTok), 0)
+			return c
+		}
+		let got = mut ParserBlocks.g(fv, f, PF_GOT)
+		TokStore.setChilds(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK), got)
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "func", funcTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, ParserBlocks.g(fv, f, PF_NAMETOK))
+		? TokStore.listAdd(ts, sub, ParserBlocks.g(fv, f, PF_PARAMSTOK))
+		? TokStore.listAddAll(ts, sub, ParserBlocks.g(fv, f, PF_RETTYPES))
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setTypeParams(ts, gathered, ParserBlocks.g(fv, f, PF_TPN))
+		TokStore.setTypeParamBounds(ts, gathered, ParserBlocks.g(fv, f, PF_TPB))
+		TokStore.setDecorators(ts, gathered, TokStore.decorators(ts, funcTok))
+		TokStore.setChilds(ts, gathered, got)
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, funcTok))
+		return ParserBlocks.finish(fv, f, gathered)
+	}
+
+	/** "interface Name{ sig; ... }": one "interface_method" token per signature; also "extends", "static" and default-method lines. */
+	@throws
+	static func stepInterface(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let interfaceTok = mut ParserBlocks.g(fv, f, PF_TOK)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+			if TokStore.listSize(ts, tokens) < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+				throw "[parse error] expected interface name after 'interface'"
+			}
+			ParserBlocks.s(fv, f, PF_NAMETOK, TokStore.listGet(ts, tokens, 1))
+			let tp = mut ? ParserBlocks.scratch(3)
+			? ParserBlocks.parseTypeParams(ts, tokens, 2, tp)
+			ParserBlocks.s(fv, f, PF_TPN, tp.get(tp, 0))
+			ParserBlocks.s(fv, f, PF_TPB, tp.get(tp, 1))
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+			ParserBlocks.s(fv, f, PF_BLOCKTOK, blockTok)
+			if ParserBlocks.indexOfTok(ts, tokens, blockTok) != tp.get(tp, 2){
+				throw "[parse error] unexpected tokens between interface name and '{'"
+			}
+			let members0 = mut ? TokStore.newList(ts)
+			let names0 = mut ? TokStore.newList(ts)
+			ParserBlocks.s(fv, f, PF_MEMBERS, members0)
+			ParserBlocks.s(fv, f, PF_NAMES, names0)
+			ParserBlocks.s(fv, f, PF_I, 0)
+		} else {
+			let method = mut ParserBlocks.g(fv, f, PF_GOT)
+			if ParserBlocks.g(fv, f, PF_LINESTATIC) != 0{
+				TokStore.setIsStaticMethod(ts, method, 1)
+			}
+			? TokStore.listAdd(ts, ParserBlocks.g(fv, f, PF_MEMBERS), method)
+			ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+		}
+		ParserBlocks.s(fv, f, PF_STAGE, 1)
+		let methods = mut ParserBlocks.g(fv, f, PF_MEMBERS)
+		let names = mut ParserBlocks.g(fv, f, PF_NAMES)
+		let lines = mut TokStore.childs(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK))
+		let nlines = mut TokStore.listSize(ts, lines)
+		for lp1 in 0..1000000000{
+			let i = mut ParserBlocks.g(fv, f, PF_I)
+			if i >= nlines{
+				break
+			}
+			let lineTokens = mut TokStore.childs(ts, TokStore.listGet(ts, lines, i))
+			let nlt = mut TokStore.listSize(ts, lineTokens)
+			if nlt > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 0), TT_KEYWORD, "extends"){
+				if nlt != 2 || TokStore.kind(ts, TokStore.listGet(ts, lineTokens, 1)) != TT_VARREF{
+					throw "[parse error] expected 'extends InterfaceName'"
+				}
+				? TokStore.listAdd(ts, names, TokStore.text(ts, TokStore.listGet(ts, lineTokens, 1)))
+				ParserBlocks.s(fv, f, PF_I, i + 1)
+				continue
+			}
+			if nlt > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 0), TT_MODIFIER, "static"){
+				let afterStatic = mut ? TokStore.listSlice(ts, lineTokens, 1, nlt)
+				if TokStore.listSize(ts, afterStatic) > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, afterStatic, 0), TT_KEYWORD, "func"){
+					ParserBlocks.s(fv, f, PF_LINESTATIC, 1)
+					let fc = mut ? ParserBlocks.funcFrame(fv, afterStatic, TokStore.listGet(ts, afterStatic, 0))
+					return fc
+				}
+				let gs = mut ? ParserBlocks.gatherInterfaceMethod(ts, afterStatic)
+				TokStore.setIsStaticMethod(ts, gs, 1)
+				? TokStore.listAdd(ts, methods, gs)
+				ParserBlocks.s(fv, f, PF_I, i + 1)
+				continue
+			}
+			if nlt > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 0), TT_KEYWORD, "func"){
+				ParserBlocks.s(fv, f, PF_LINESTATIC, 0)
+				let fc2 = mut ? ParserBlocks.funcFrame(fv, lineTokens, TokStore.listGet(ts, lineTokens, 0))
+				return fc2
+			}
+			let gm = mut ? ParserBlocks.gatherInterfaceMethod(ts, lineTokens)
+			? TokStore.listAdd(ts, methods, gm)
+			ParserBlocks.s(fv, f, PF_I, i + 1)
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "interface", interfaceTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, ParserBlocks.g(fv, f, PF_NAMETOK))
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setTypeParams(ts, gathered, ParserBlocks.g(fv, f, PF_TPN))
+		TokStore.setTypeParamBounds(ts, gathered, ParserBlocks.g(fv, f, PF_TPB))
+		TokStore.setExtendsNames(ts, gathered, names)
+		TokStore.setDecorators(ts, gathered, TokStore.decorators(ts, interfaceTok))
+		TokStore.setChilds(ts, gathered, methods)
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, interfaceTok))
+		return ParserBlocks.finish(fv, f, gathered)
+	}
+
+	/** "impl Iface for Concrete{...}" or "impl Concrete{...}"; methods go through the func gatherer. .sub has 1 or 2 name tokens. */
+	@throws
+	static func stepImpl(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let implTok = mut ParserBlocks.g(fv, f, PF_TOK)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+			let n = mut TokStore.listSize(ts, tokens)
+			let tp = mut ? ParserBlocks.scratch(3)
+			? ParserBlocks.parseTypeParams(ts, tokens, 1, tp)
+			ParserBlocks.s(fv, f, PF_ITPN, tp.get(tp, 0))
+			ParserBlocks.s(fv, f, PF_ITPB, tp.get(tp, 1))
+			let idx = mut tp.get(tp, 2)
+			if idx >= n || TokStore.kind(ts, TokStore.listGet(ts, tokens, idx)) != TT_VARREF{
+				throw "[parse error] expected a name after 'impl'"
+			}
+			let firstNameTok = mut TokStore.listGet(ts, tokens, idx)
+			idx = idx + 1
+			let ta = mut ? ParserBlocks.scratch(2)
+			? ParserBlocks.parseTypeArgsRaw(ts, tokens, idx, ta)
+			let firstArgs = mut ta.get(ta, 0)
+			idx = ta.get(ta, 1)
+			if idx < n && ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_KEYWORD, "for"){
+				idx = idx + 1
+				if idx >= n || TokStore.kind(ts, TokStore.listGet(ts, tokens, idx)) != TT_VARREF{
+					throw "[parse error] expected a concrete type name after 'for'"
+				}
+				ParserBlocks.s(fv, f, PF_IFNAME, firstNameTok)
+				ParserBlocks.s(fv, f, PF_IFARGS, firstArgs)
+				ParserBlocks.s(fv, f, PF_CONNAME, TokStore.listGet(ts, tokens, idx))
+				idx = idx + 1
+				let tb = mut ? ParserBlocks.scratch(2)
+				? ParserBlocks.parseTypeArgsRaw(ts, tokens, idx, tb)
+				idx = tb.get(tb, 1)
+				ParserBlocks.s(fv, f, PF_CONARGS, tb.get(tb, 0))
+			} else {
+				ParserBlocks.s(fv, f, PF_CONNAME, firstNameTok)
+				ParserBlocks.s(fv, f, PF_CONARGS, firstArgs)
+			}
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+			ParserBlocks.s(fv, f, PF_BLOCKTOK, blockTok)
+			if ParserBlocks.indexOfTok(ts, tokens, blockTok) != idx{
+				throw "[parse error] unexpected tokens before 'impl' block's '{'"
+			}
+			let members0 = mut ? TokStore.newList(ts)
+			ParserBlocks.s(fv, f, PF_MEMBERS, members0)
+			ParserBlocks.s(fv, f, PF_I, 0)
+		} else {
+			let gm = mut ParserBlocks.g(fv, f, PF_GOT)
+			let wasStatic = mut ParserBlocks.g(fv, f, PF_LINESTATIC)
+			TokStore.setIsStaticMethod(ts, gm, wasStatic)
+			if wasStatic != 0{
+				// decorators attach to the line's first token ("static"), not to "func": copy them over
+				let ln = mut TokStore.childs(ts, TokStore.listGet(ts, TokStore.childs(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK)), ParserBlocks.g(fv, f, PF_I)))
+				TokStore.setDecorators(ts, gm, TokStore.decorators(ts, TokStore.listGet(ts, ln, 0)))
+			}
+			? TokStore.listAdd(ts, ParserBlocks.g(fv, f, PF_MEMBERS), gm)
+			ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+		}
+		ParserBlocks.s(fv, f, PF_STAGE, 1)
+		let lines = mut TokStore.childs(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK))
+		let cur = mut ParserBlocks.g(fv, f, PF_I)
+		if cur < TokStore.listSize(ts, lines){
+			let line = mut TokStore.listGet(ts, lines, cur)
+			let lineTokens = mut TokStore.childs(ts, line)
+			let nlt = mut TokStore.listSize(ts, lineTokens)
+			let isStaticLine = mut 0
+			if nlt > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 0), TT_MODIFIER, "static"){
+				isStaticLine = 1
+			}
+			let fk = mut isStaticLine
+			if nlt <= fk || ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, fk), TT_KEYWORD, "func") == false{
+				throw "[parse error] only 'func'/'static func' declarations are allowed directly inside an 'impl' block"
+			}
+			ParserBlocks.s(fv, f, PF_LINESTATIC, isStaticLine)
+			let sl = mut ? TokStore.listSlice(ts, lineTokens, fk, nlt)
+			let fc = mut ? ParserBlocks.funcFrame(fv, sl, TokStore.listGet(ts, lineTokens, fk))
+			return fc
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "impl", implTok)
+		let sub = mut ? TokStore.newList(ts)
+		let ifn = mut ParserBlocks.g(fv, f, PF_IFNAME)
+		if ifn != TOK_NONE{
+			TokStore.setGenericArgs(ts, ifn, ParserBlocks.g(fv, f, PF_IFARGS))
+			? TokStore.listAdd(ts, sub, ifn)
+		}
+		let cn = mut ParserBlocks.g(fv, f, PF_CONNAME)
+		TokStore.setGenericArgs(ts, cn, ParserBlocks.g(fv, f, PF_CONARGS))
+		? TokStore.listAdd(ts, sub, cn)
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setTypeParams(ts, gathered, ParserBlocks.g(fv, f, PF_ITPN))
+		TokStore.setTypeParamBounds(ts, gathered, ParserBlocks.g(fv, f, PF_ITPB))
+		TokStore.setDecorators(ts, gathered, TokStore.decorators(ts, implTok))
+		TokStore.setChilds(ts, gathered, ParserBlocks.g(fv, f, PF_MEMBERS))
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, implTok))
+		return ParserBlocks.finish(fv, f, gathered)
+	}
+
+	/** "library NAME<T?>{ func...; extends T; }" */
+	@throws
+	static func stepLibrary(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let libraryTok = mut ParserBlocks.g(fv, f, PF_TOK)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+			if TokStore.listSize(ts, tokens) < 2 || TokStore.kind(ts, TokStore.listGet(ts, tokens, 1)) != TT_VARREF{
+				throw "[parse error] expected a name after 'library'"
+			}
+			ParserBlocks.s(fv, f, PF_NAMETOK, TokStore.listGet(ts, tokens, 1))
+			let tp = mut ? ParserBlocks.scratch(3)
+			? ParserBlocks.parseTypeParams(ts, tokens, 2, tp)
+			ParserBlocks.s(fv, f, PF_TPN, tp.get(tp, 0))
+			ParserBlocks.s(fv, f, PF_TPB, tp.get(tp, 1))
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+			ParserBlocks.s(fv, f, PF_BLOCKTOK, blockTok)
+			if ParserBlocks.indexOfTok(ts, tokens, blockTok) != tp.get(tp, 2){
+				throw "[parse error] unexpected tokens between 'library Name' and '{'"
+			}
+			let members0 = mut ? TokStore.newList(ts)
+			let names0 = mut ? TokStore.newList(ts)
+			ParserBlocks.s(fv, f, PF_MEMBERS, members0)
+			ParserBlocks.s(fv, f, PF_NAMES, names0)
+			ParserBlocks.s(fv, f, PF_I, 0)
+		} else {
+			? TokStore.listAdd(ts, ParserBlocks.g(fv, f, PF_MEMBERS), ParserBlocks.g(fv, f, PF_GOT))
+			ParserBlocks.s(fv, f, PF_I, ParserBlocks.g(fv, f, PF_I) + 1)
+		}
+		ParserBlocks.s(fv, f, PF_STAGE, 1)
+		let lines = mut TokStore.childs(ts, ParserBlocks.g(fv, f, PF_BLOCKTOK))
+		let nlines = mut TokStore.listSize(ts, lines)
+		let names = mut ParserBlocks.g(fv, f, PF_NAMES)
+		for lp1 in 0..1000000000{
+			let i = mut ParserBlocks.g(fv, f, PF_I)
+			if i >= nlines{
+				break
+			}
+			let lineTokens = mut TokStore.childs(ts, TokStore.listGet(ts, lines, i))
+			let nlt = mut TokStore.listSize(ts, lineTokens)
+			if nlt > 0 && ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 0), TT_KEYWORD, "extends"){
+				if nlt != 2 || TokStore.kind(ts, TokStore.listGet(ts, lineTokens, 1)) != TT_VARREF{
+					throw "[parse error] expected 'extends TypeName'"
+				}
+				? TokStore.listAdd(ts, names, TokStore.text(ts, TokStore.listGet(ts, lineTokens, 1)))
+				ParserBlocks.s(fv, f, PF_I, i + 1)
+				continue
+			}
+			if nlt == 0 || ParserBlocks.isTk(ts, TokStore.listGet(ts, lineTokens, 0), TT_KEYWORD, "func") == false{
+				throw "[parse error] only 'func' declarations and 'extends' statements are allowed directly inside a 'library' block"
+			}
+			let fc = mut ? ParserBlocks.funcFrame(fv, lineTokens, TokStore.listGet(ts, lineTokens, 0))
+			return fc
+		}
+		let gathered = mut ? ParserBlocks.newKeyword(ts, "library", libraryTok)
+		let sub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, sub, ParserBlocks.g(fv, f, PF_NAMETOK))
+		TokStore.setSub(ts, gathered, sub)
+		TokStore.setTypeParams(ts, gathered, ParserBlocks.g(fv, f, PF_TPN))
+		TokStore.setTypeParamBounds(ts, gathered, ParserBlocks.g(fv, f, PF_TPB))
+		TokStore.setExtendsNames(ts, gathered, names)
+		TokStore.setDecorators(ts, gathered, TokStore.decorators(ts, libraryTok))
+		TokStore.setChilds(ts, gathered, ParserBlocks.g(fv, f, PF_MEMBERS))
+		TokStore.setPinned(ts, gathered, TokStore.pinned(ts, libraryTok))
+		return ParserBlocks.finish(fv, f, gathered)
+	}
+
+	/** A constructor declaration "impl [<T>] constructor for Name<..>(params) self {..}" as a "func" token (generic ones wrapped in an "impl" token). */
+	@throws
+	static func stepConstructor(ts: ref mut TokStore, fv: ref mut Vec, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let implTok = mut ParserBlocks.g(fv, f, PF_TOK)
+		if ParserBlocks.g(fv, f, PF_STAGE) == 0{
+			let tokens = mut ParserBlocks.g(fv, f, PF_TOKENS)
+			let n = mut TokStore.listSize(ts, tokens)
+			let tp = mut ? ParserBlocks.scratch(3)
+			? ParserBlocks.parseTypeParams(ts, tokens, 1, tp)
+			let implNames = mut tp.get(tp, 0)
+			ParserBlocks.s(fv, f, PF_ITPN, implNames)
+			ParserBlocks.s(fv, f, PF_ITPB, tp.get(tp, 1))
+			let idx = mut (tp.get(tp, 2) + 2)
+			if idx >= n || TokStore.kind(ts, TokStore.listGet(ts, tokens, idx)) != TT_VARREF{
+				throw "[parse error] expected a struct name after 'impl constructor for'"
+			}
+			let concreteNameTok = mut TokStore.listGet(ts, tokens, idx)
+			ParserBlocks.s(fv, f, PF_CONNAME, concreteNameTok)
+			idx = idx + 1
+			let ta = mut ? ParserBlocks.scratch(2)
+			? ParserBlocks.parseTypeArgsRaw(ts, tokens, idx, ta)
+			idx = ta.get(ta, 1)
+			let concreteArgs = mut ta.get(ta, 0)
+			ParserBlocks.s(fv, f, PF_CONARGS, concreteArgs)
+			if implNames == TOK_NONE && concreteArgs != TOK_NONE{
+				throw "[parse error] a constructor for a generic struct needs an 'impl<...>' header"
+			}
+			if implNames != TOK_NONE && concreteArgs == TOK_NONE{
+				throw "[parse error] a generic constructor's target struct must itself be written with type arguments"
+			}
+			if idx >= n || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_DELINEATOR, "(") == false{
+				throw "[parse error] expected a parameter list '(...)' after 'impl constructor for Name'"
+			}
+			let paramsTok = mut TokStore.listGet(ts, tokens, idx)
+			idx = idx + 1
+			let blockTok = mut ? ParserBlocks.requireTrailingBlock(ts, tokens)
+			let blockIdx = mut ParserBlocks.indexOfTok(ts, tokens, blockTok)
+			if blockIdx != idx + 1 || ParserBlocks.isTk(ts, TokStore.listGet(ts, tokens, idx), TT_VARREF, "self") == false{
+				throw "[parse error] a constructor's return type must be 'self'"
+			}
+			let selfTok = mut TokStore.listGet(ts, tokens, idx)
+			let funcKw = mut ? ParserBlocks.newKeyword(ts, "func", implTok)
+			ParserBlocks.copyDecoPin(ts, funcKw, implTok)
+			// name = "__ctor__" + struct name
+			let prefix = mut ? TokStore.addLit(ts, "__ctor__")
+			let st = mut TokStore.strBegin(ts)
+			? TokStore.strAppendId(ts, prefix)
+			? TokStore.strAppendId(ts, TokStore.text(ts, concreteNameTok))
+			let nameSid = mut ? TokStore.strEnd(ts, st)
+			let nameTok = mut ? TokStore.newToken(ts, TT_VARREF, nameSid, TokStore.line(ts, implTok), TokStore.fileId(ts, implTok))
+			let returnTypeTok = mut ? TokStore.newToken(ts, TT_VARREF, TokStore.text(ts, concreteNameTok), TokStore.line(ts, selfTok), TokStore.fileId(ts, selfTok))
+			if concreteArgs != TOK_NONE{
+				TokStore.setGenericArgs(ts, returnTypeTok, concreteArgs)
+			}
+			let synth = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, synth, funcKw)
+			? TokStore.listAdd(ts, synth, nameTok)
+			? TokStore.listAdd(ts, synth, paramsTok)
+			? TokStore.listAdd(ts, synth, returnTypeTok)
+			? TokStore.listAdd(ts, synth, blockTok)
+			ParserBlocks.s(fv, f, PF_STAGE, 1)
+			let fc = mut ? ParserBlocks.funcFrame(fv, synth, funcKw)
+			return fc
+		}
+		let gathered = mut ParserBlocks.g(fv, f, PF_GOT)
+		let conName = mut ParserBlocks.g(fv, f, PF_CONNAME)
+		TokStore.setIsConstructorDecl(ts, gathered, 1)
+		TokStore.setConstructorConcreteName(ts, gathered, TokStore.text(ts, conName))
+		if ParserBlocks.g(fv, f, PF_ITPN) == TOK_NONE{
+			return ParserBlocks.finish(fv, f, gathered)
+		}
+		// generic case: wrap in an impl-shaped token
+		let wrapName = mut ? TokStore.newToken(ts, TT_VARREF, TokStore.text(ts, conName), TokStore.line(ts, conName), TokStore.fileId(ts, conName))
+		TokStore.setGenericArgs(ts, wrapName, ParserBlocks.g(fv, f, PF_CONARGS))
+		let wrapper = mut ? ParserBlocks.newKeyword(ts, "impl", implTok)
+		let wsub = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, wsub, wrapName)
+		TokStore.setSub(ts, wrapper, wsub)
+		TokStore.setTypeParams(ts, wrapper, ParserBlocks.g(fv, f, PF_ITPN))
+		TokStore.setTypeParamBounds(ts, wrapper, ParserBlocks.g(fv, f, PF_ITPB))
+		// the wrapper "impl" only accepts impl-level decorators (@pub)
+		let decos = mut TokStore.decorators(ts, implTok)
+		if decos != TOK_NONE{
+			let implLevel = mut ? TokStore.newList(ts)
+			let nd = mut TokStore.listSize(ts, decos)
+			for di in 0..nd{
+				let d = mut TokStore.listGet(ts, decos, di)
+				if TokStore.strEq(ts, TokStore.dName(ts, d), "pub"){
+					? TokStore.listAdd(ts, implLevel, d)
+				}
+			}
+			if TokStore.listSize(ts, implLevel) > 0{
+				TokStore.setDecorators(ts, wrapper, implLevel)
+			}
+		}
+		TokStore.setPinned(ts, wrapper, TokStore.pinned(ts, implTok))
+		let wch = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, wch, gathered)
+		TokStore.setChilds(ts, wrapper, wch)
+		return ParserBlocks.finish(fv, f, wrapper)
+	}
+
+	// ---- entry -----------------------------------------------------------------------------------------------------------
+
+	/** Gathers a statement list (bottom-up); returns the new list of LINE tokens. */
+	@pub
+	@throws
+	static func gatherKeywordBlocks(ts: ref mut TokStore, lines: mut u64, isRoot: mut u64) mut u64{
+		?catch(e){ throw e }
+		let fv = mut ? Vec.make()
+		for q in 0..56{
+			? fv.push(fv, TOK_NONE)
+		}
+		let root = mut ? ParserBlocks.kbFrame(fv, lines, isRoot)
+		let answer = mut ? ParserBlocks.runGather(ts, fv, root)
+		return answer
+	}
+}

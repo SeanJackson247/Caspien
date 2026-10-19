@@ -1,0 +1,1054 @@
+import "stdlib/string.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokClone.caspien"
+import "../util/StrMap.caspien"
+
+/**
+ * Stage 7 (port of caspien.genericsexpander.GenericsExpander): monomorphizes every generic struct/func/interface/impl into one concrete, mangled copy per
+ * unique combination of type arguments used anywhere in the program, and rewrites every usage to the mangled name. All state lives in the token store's list pool:
+ * `st` is a list of list ids (GS_* slots below); tasks are GT_STRIDE consecutive slots of the `tasks` list. Error messages are shortened.
+ */
+const GS_OUT 0
+const GS_MEMO 1
+const GS_STRUCT 2
+const GS_FUNC 3
+const GS_IFACE 4
+const GS_LIB 5
+const GS_IMPLT 6
+const GS_TASKS 7
+const GS_STACK 8
+const GS_OUTQ 9
+const GS_CMAP 10
+const GS_PEND 11
+const GS_TOUCH 12
+const GS_WORK 13
+
+const GT_STRIDE 13
+const GT_KIND 0
+const GT_TOK 1
+const GT_LIST 2
+const GT_OFF 3
+const GT_LEN 4
+const GT_GROUPS 5
+const GT_INDEX 6
+const GT_CLOSE 7
+const GT_ARGNAMES 8
+const GT_ARGTOKS 9
+const GT_MANGLED 10
+const GT_NAME 11
+const GT_PHASE 12
+
+const GK_WALK 1
+const GK_WALK_NO_TOP 2
+const GK_PROCESS 3
+const GK_PROC_DYN 4
+const GK_PROC_ARG 5
+const GK_SET_MANGLED 6
+const GK_INST_IMPLS 7
+const GK_IMPL_INST 8
+const GK_IMPL_ADD 9
+const GK_SPAN 10
+const GK_SPAN_ANGLE_POST 11
+const GK_SPAN_PAREN_POST 12
+
+@pub
+struct GenericsExpander{@pub{
+}}
+
+@pub
+impl GenericsExpander{
+	// ---- state and tasks ---------------------------------------------------------------------------------------------------
+
+	@throws
+	static func newState(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let st = mut ? TokStore.newList(ts)
+		let l0 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, st, l0)
+		let m1 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, st, m1)
+		let m2 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, st, m2)
+		let m3 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, st, m3)
+		let m4 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, st, m4)
+		let m5 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, st, m5)
+		let m6 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, st, m6)
+		for k in 7..14{
+			let l = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, st, l)
+		}
+		return st
+	}
+
+	static func sg(ts: ref imut TokStore, st: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, st, k)
+	}
+
+	@throws
+	static func newTask(ts: ref mut TokStore, st: mut u64, kind: mut u64, tok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let tasks = mut TokStore.listGet(ts, st, GS_TASKS)
+		let id = mut (TokStore.listSize(ts, tasks) / 13)
+		? TokStore.listAdd(ts, tasks, kind)
+		? TokStore.listAdd(ts, tasks, tok)
+		for k in 2..13{
+			? TokStore.listAdd(ts, tasks, TOK_NONE)
+		}
+		return id
+	}
+
+	static func tget(ts: ref imut TokStore, st: mut u64, t: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, TokStore.listGet(ts, st, GS_TASKS), t * 13 + k)
+	}
+
+	static func tset(ts: ref mut TokStore, st: mut u64, t: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, TokStore.listGet(ts, st, GS_TASKS), t * 13 + k, v)
+	}
+
+	/** Creates a task and queues it in the step's output list; returns its id. */
+	@throws
+	static func emit(ts: ref mut TokStore, st: mut u64, kind: mut u64, tok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut ? GenericsExpander.newTask(ts, st, kind, tok)
+		? TokStore.listAdd(ts, TokStore.listGet(ts, st, GS_OUTQ), id)
+		return id
+	}
+
+	@throws
+	static func emitWalk(ts: ref mut TokStore, st: mut u64, kind: mut u64, tok: mut u64) void{
+		?catch(e){ throw e }
+		if tok != TOK_NONE{
+			let id = mut ? GenericsExpander.emit(ts, st, kind, tok)
+		}
+	}
+
+	static func isOp(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		return TokStore.kind(ts, t) == TT_OPERATOR && TokStore.textEq(ts, t, lit)
+	}
+
+	@throws
+	static func wrapAsLine(ts: ref mut TokStore, decl: mut u64) mut u64{
+		?catch(e){ throw e }
+		let lineTok = mut ? TokStore.newToken(ts, TT_LINE, STR_LINE, TokStore.line(ts, decl), TokStore.fileId(ts, decl))
+		let cs = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, cs, decl)
+		TokStore.setChilds(ts, lineTok, cs)
+		return lineTok
+	}
+
+	static func listHasText(ts: ref imut TokStore, l: mut u64, sid: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, l, i), sid){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** Index of the last entry of `keys` equal to `sid`, or TOK_NONE (the last duplicate wins, like a map's put). */
+	static func lastIndexOfText(ts: ref imut TokStore, keys: mut u64, sid: mut u64) mut u64{
+		let n = mut TokStore.listSize(ts, keys)
+		for i in 0..n{
+			let k = mut (n - 1 - i)
+			if TokStore.strsEq(ts, TokStore.listGet(ts, keys, k), sid){
+				return k
+			}
+		}
+		return TOK_NONE
+	}
+
+	// ---- driving the task stack --------------------------------------------------------------------------------------------
+
+	@throws
+	static func run(ts: ref mut TokStore, st: mut u64, first: mut u64) void{
+		?catch(e){ throw e }
+		let stack = mut TokStore.listGet(ts, st, GS_STACK)
+		let outq = mut TokStore.listGet(ts, st, GS_OUTQ)
+		TokStore.listClear(ts, stack)
+		? TokStore.listAdd(ts, stack, first)
+		for lp1 in 0..1000000000{
+			if TokStore.listSize(ts, stack) == 0{
+				break
+			}
+			let t = mut TokStore.listPop(ts, stack)
+			TokStore.listClear(ts, outq)
+			? GenericsExpander.step(ts, st, t)
+			let no = mut TokStore.listSize(ts, outq)
+			for qi in 0..no{
+				let idx = mut (no - 1 - qi)
+				? TokStore.listAdd(ts, stack, TokStore.listGet(ts, outq, idx))
+			}
+		}
+		// the pool only needs to live for one run
+		TokStore.listClear(ts, TokStore.listGet(ts, st, GS_TASKS))
+	}
+
+	@throws
+	static func walkAndProcess(ts: ref mut TokStore, st: mut u64, node: mut u64) void{
+		?catch(e){ throw e }
+		let t = mut ? GenericsExpander.newTask(ts, st, GK_WALK, node)
+		? GenericsExpander.run(ts, st, t)
+	}
+
+	// ---- Step A: annotation-context scanning -------------------------------------------------------------------------------
+
+	/** Splits at top-level ',' operators (angle-bracket depth zero) into a list of fresh token lists; the last group is always added. */
+	@throws
+	static func splitGroups(ts: ref mut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let groups = mut ? TokStore.newList(ts)
+		let current = mut ? TokStore.newList(ts)
+		let depth = mut 0
+		let neg = mut 0
+		let n = mut TokStore.listSize(ts, tokens)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, i)
+			let isComma = mut false
+			if TokStore.kind(ts, t) == TT_OPERATOR{
+				// the Java depth counter may go negative on a stray '>': depth - neg is that value
+				if TokStore.textEq(ts, t, "<"){
+					if neg > 0{
+						neg = neg - 1
+					} else {
+						depth = depth + 1
+					}
+				} else if TokStore.textEq(ts, t, ">"){
+					if depth > 0{
+						depth = depth - 1
+					} else {
+						neg = neg + 1
+					}
+				}
+				if depth == 0 && neg == 0 && TokStore.textEq(ts, t, ","){
+					isComma = true
+				}
+			}
+			if isComma{
+				? TokStore.listAdd(ts, groups, current)
+				current = ? TokStore.newList(ts)
+			} else {
+				? TokStore.listAdd(ts, current, t)
+			}
+		}
+		? TokStore.listAdd(ts, groups, current)
+		return groups
+	}
+
+	@throws
+	static func scanTypeTokenSpan(ts: ref mut TokStore, st: mut u64, list: mut u64, off: mut u64, len: mut u64) void{
+		?catch(e){ throw e }
+		let first = mut ? GenericsExpander.newTask(ts, st, GK_SPAN, TOK_NONE)
+		GenericsExpander.tset(ts, st, first, GT_LIST, list)
+		GenericsExpander.tset(ts, st, first, GT_OFF, off)
+		GenericsExpander.tset(ts, st, first, GT_LEN, len)
+		? GenericsExpander.run(ts, st, first)
+	}
+
+	/** Next top-level ',' or TERMINATOR at or after `from`; a ',' inside a type-argument list is not a separator. TOK_NONE when there is none. */
+	static func findNextSeparator(ts: ref imut TokStore, flat: mut u64, from: mut u64) mut u64{
+		let angle = mut 0
+		let n = mut TokStore.listSize(ts, flat)
+		for i in from..n{
+			let t = mut TokStore.listGet(ts, flat, i)
+			let k = mut TokStore.kind(ts, t)
+			if k == TT_TERMINATOR{
+				return i
+			}
+			if k == TT_OPERATOR{
+				if TokStore.textEq(ts, t, "<"){
+					angle = angle + 1
+				} else if TokStore.textEq(ts, t, ">") && angle > 0{
+					angle = angle - 1
+				} else if TokStore.textEq(ts, t, ",") && angle == 0{
+					return i
+				}
+			}
+		}
+		return TOK_NONE
+	}
+
+	@throws
+	static func scanRawNameTypeGroups(ts: ref mut TokStore, st: mut u64, flat: mut u64) void{
+		?catch(e){ throw e }
+		let start = mut 0
+		for lp1 in 0..1000000000{
+			let sepIdx = mut GenericsExpander.findNextSeparator(ts, flat, start)
+			let end = mut sepIdx
+			if sepIdx == TOK_NONE{
+				end = TokStore.listSize(ts, flat)
+			}
+			if end >= start + 3{
+				? GenericsExpander.scanTypeTokenSpan(ts, st, flat, start + 2, end - start - 2)
+			}
+			if sepIdx == TOK_NONE{
+				break
+			}
+			let again = mut GenericsExpander.findNextSeparator(ts, flat, start)
+			start = again + 1
+		}
+	}
+
+	@throws
+	static func scanFuncOrMethodSignature(ts: ref mut TokStore, st: mut u64, f: mut u64) void{
+		?catch(e){ throw e }
+		let sub = mut TokStore.sub(ts, f)
+		let paramsTok = mut TokStore.listGet(ts, sub, 1)
+		? GenericsExpander.scanRawNameTypeGroups(ts, st, TokStore.childs(ts, paramsTok))
+		let n = mut TokStore.listSize(ts, sub)
+		? GenericsExpander.scanTypeTokenSpan(ts, st, sub, 2, n - 2)
+	}
+
+	@throws
+	static func scanAnnotationContexts(ts: ref mut TokStore, st: mut u64, start: mut u64) void{
+		?catch(e){ throw e }
+		let work = mut TokStore.listGet(ts, st, GS_WORK)
+		TokStore.listClear(ts, work)
+		? TokStore.listAdd(ts, work, start)
+		for lp1 in 0..1000000000{
+			if TokStore.listSize(ts, work) == 0{
+				break
+			}
+			let entry = mut TokStore.listPop(ts, work)
+			if TokStore.kind(ts, entry) != TT_KEYWORD{
+				continue
+			}
+			if TokStore.textEq(ts, entry, "struct"){
+				let cs = mut TokStore.childs(ts, entry)
+				let n = mut TokStore.listSize(ts, cs)
+				for i in 0..n{
+					? GenericsExpander.scanRawNameTypeGroups(ts, st, TokStore.childs(ts, TokStore.listGet(ts, cs, i)))
+				}
+			} else if TokStore.textEq(ts, entry, "interface") || TokStore.textEq(ts, entry, "library"){
+				let cs2 = mut TokStore.childs(ts, entry)
+				let n2 = mut TokStore.listSize(ts, cs2)
+				for i2 in 0..n2{
+					? GenericsExpander.scanFuncOrMethodSignature(ts, st, TokStore.listGet(ts, cs2, i2))
+				}
+			} else if TokStore.textEq(ts, entry, "type"){
+				let sub = mut TokStore.sub(ts, entry)
+				let ns = mut TokStore.listSize(ts, sub)
+				? GenericsExpander.scanTypeTokenSpan(ts, st, sub, 1, ns - 1)
+			} else if TokStore.textEq(ts, entry, "func"){
+				? GenericsExpander.scanFuncOrMethodSignature(ts, st, entry)
+			} else if TokStore.textEq(ts, entry, "impl"){
+				let cs3 = mut TokStore.childs(ts, entry)
+				let n3 = mut TokStore.listSize(ts, cs3)
+				for i3 in 0..n3{
+					let k = mut (n3 - 1 - i3)
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, cs3, k))
+				}
+			}
+		}
+	}
+
+	/** One span: only the first base-type VARREF counts; nested argument groups are queued, then the post step. */
+	@throws
+	static func stepSpan(ts: ref mut TokStore, st: mut u64, task: mut u64) void{
+		?catch(e){ throw e }
+		let list = mut GenericsExpander.tget(ts, st, task, GT_LIST)
+		let off = mut GenericsExpander.tget(ts, st, task, GT_OFF)
+		let len = mut GenericsExpander.tget(ts, st, task, GT_LEN)
+		for i in 0..len{
+			let t = mut TokStore.listGet(ts, list, off + i)
+			if TokStore.kind(ts, t) != TT_VARREF{
+				continue
+			}
+			if i + 1 < len && GenericsExpander.isOp(ts, TokStore.listGet(ts, list, off + i + 1), "<"){
+				let depth = mut 1
+				let closeIdx = mut TOK_NONE
+				let j = mut (i + 2)
+				for lp1 in 0..1000000000{
+					if j >= len{
+						break
+					}
+					let u = mut TokStore.listGet(ts, list, off + j)
+					if GenericsExpander.isOp(ts, u, "<"){
+						depth = depth + 1
+					} else if GenericsExpander.isOp(ts, u, ">"){
+						depth = depth - 1
+						if depth == 0{
+							closeIdx = j
+							break
+						}
+					}
+					j = j + 1
+				}
+				if closeIdx == TOK_NONE{
+					throw "[type error] unterminated type-argument list"
+				}
+				let rawToks = mut ? TokStore.listSlice(ts, list, off + i + 2, off + closeIdx)
+				let groups = mut ? GenericsExpander.splitGroups(ts, rawToks)
+				let ng = mut TokStore.listSize(ts, groups)
+				for gi in 0..ng{
+					let grp = mut TokStore.listGet(ts, groups, gi)
+					let sp = mut ? GenericsExpander.emit(ts, st, GK_SPAN, TOK_NONE)
+					GenericsExpander.tset(ts, st, sp, GT_LIST, grp)
+					GenericsExpander.tset(ts, st, sp, GT_OFF, 0)
+					GenericsExpander.tset(ts, st, sp, GT_LEN, TokStore.listSize(ts, grp))
+				}
+				let post = mut ? GenericsExpander.emit(ts, st, GK_SPAN_ANGLE_POST, t)
+				GenericsExpander.tset(ts, st, post, GT_LIST, list)
+				GenericsExpander.tset(ts, st, post, GT_OFF, off)
+				GenericsExpander.tset(ts, st, post, GT_GROUPS, groups)
+				GenericsExpander.tset(ts, st, post, GT_INDEX, i)
+				GenericsExpander.tset(ts, st, post, GT_CLOSE, closeIdx)
+			} else if i + 1 < len && TokStore.kind(ts, TokStore.listGet(ts, list, off + i + 1)) == TT_DELINEATOR && TokStore.textEq(ts, TokStore.listGet(ts, list, off + i + 1), "("){
+				let parenTok = mut TokStore.listGet(ts, list, off + i + 1)
+				if TokStore.listSize(ts, TokStore.childs(ts, parenTok)) > 0{
+					let groups2 = mut ? GenericsExpander.splitGroups(ts, TokStore.childs(ts, parenTok))
+					let ng2 = mut TokStore.listSize(ts, groups2)
+					for gi2 in 0..ng2{
+						let grp2 = mut TokStore.listGet(ts, groups2, gi2)
+						let sp2 = mut ? GenericsExpander.emit(ts, st, GK_SPAN, TOK_NONE)
+						GenericsExpander.tset(ts, st, sp2, GT_LIST, grp2)
+						GenericsExpander.tset(ts, st, sp2, GT_OFF, 0)
+						GenericsExpander.tset(ts, st, sp2, GT_LEN, TokStore.listSize(ts, grp2))
+					}
+					let post2 = mut ? GenericsExpander.emit(ts, st, GK_SPAN_PAREN_POST, parenTok)
+					GenericsExpander.tset(ts, st, post2, GT_GROUPS, groups2)
+				}
+			}
+			return
+		}
+	}
+
+	// ---- substitution helpers ----------------------------------------------------------------------------------------------
+
+	/** Pushes typeBound, genericArgs groups, sub, childs, next, right, left (reversed, so they pop left first). */
+	@throws
+	static func pushChildrenReversed(ts: ref mut TokStore, stack: mut u64, node: mut u64) void{
+		?catch(e){ throw e }
+		let tb = mut TokStore.typeBound(ts, node)
+		let ntb = mut TokStore.listSize(ts, tb)
+		for i in 0..ntb{
+			let k = mut (ntb - 1 - i)
+			let x = mut TokStore.listGet(ts, tb, k)
+			if x != TOK_NONE{
+				? TokStore.listAdd(ts, stack, x)
+			}
+		}
+		let ga = mut TokStore.genericArgs(ts, node)
+		let ng = mut TokStore.listSize(ts, ga)
+		for gi in 0..ng{
+			let g = mut (ng - 1 - gi)
+			let grp = mut TokStore.listGet(ts, ga, g)
+			let gs = mut TokStore.listSize(ts, grp)
+			for i2 in 0..gs{
+				let k2 = mut (gs - 1 - i2)
+				let x2 = mut TokStore.listGet(ts, grp, k2)
+				if x2 != TOK_NONE{
+					? TokStore.listAdd(ts, stack, x2)
+				}
+			}
+		}
+		let sb = mut TokStore.sub(ts, node)
+		let nsb = mut TokStore.listSize(ts, sb)
+		for i3 in 0..nsb{
+			let k3 = mut (nsb - 1 - i3)
+			let x3 = mut TokStore.listGet(ts, sb, k3)
+			if x3 != TOK_NONE{
+				? TokStore.listAdd(ts, stack, x3)
+			}
+		}
+		let cs = mut TokStore.childs(ts, node)
+		let ncs = mut TokStore.listSize(ts, cs)
+		for i4 in 0..ncs{
+			let k4 = mut (ncs - 1 - i4)
+			let x4 = mut TokStore.listGet(ts, cs, k4)
+			if x4 != TOK_NONE{
+				? TokStore.listAdd(ts, stack, x4)
+			}
+		}
+		let nx = mut TokStore.next(ts, node)
+		if nx != TOK_NONE{
+			? TokStore.listAdd(ts, stack, nx)
+		}
+		let rt = mut TokStore.right(ts, node)
+		if rt != TOK_NONE{
+			? TokStore.listAdd(ts, stack, rt)
+		}
+		let lf = mut TokStore.left(ts, node)
+		if lf != TOK_NONE{
+			? TokStore.listAdd(ts, stack, lf)
+		}
+	}
+
+	/** Blanket VARREF-text substitution (every visit of a shared node substitutes again, like the Java walk); `files` (or TOK_NONE) corrects the file of substituted tokens. */
+	@throws
+	static func substituteParams(ts: ref mut TokStore, st: mut u64, root: mut u64, keys: mut u64, vals: mut u64, files: mut u64) void{
+		?catch(e){ throw e }
+		let stack = mut TokStore.listGet(ts, st, GS_WORK)
+		TokStore.listClear(ts, stack)
+		? TokStore.listAdd(ts, stack, root)
+		for lp1 in 0..1000000000{
+			if TokStore.listSize(ts, stack) == 0{
+				break
+			}
+			let node = mut TokStore.listPop(ts, stack)
+			if TokStore.kind(ts, node) == TT_VARREF{
+				let k = mut GenericsExpander.lastIndexOfText(ts, keys, TokStore.text(ts, node))
+				if k != TOK_NONE{
+					TokStore.setText(ts, node, TokStore.listGet(ts, vals, k))
+					if files != TOK_NONE{
+						TokStore.setFileId(ts, node, TokStore.listGet(ts, files, k))
+					}
+				}
+			}
+			? GenericsExpander.pushChildrenReversed(ts, stack, node)
+		}
+	}
+
+	/** True when `root`'s subtree (left/right/next/childs/sub/genericArgs/typeBound) holds a VARREF whose text is `name`. */
+	@throws
+	static func referencesName(ts: ref mut TokStore, st: mut u64, root: mut u64, name: mut u64) mut bool{
+		?catch(e){ throw e }
+		let stack = mut TokStore.listGet(ts, st, GS_WORK)
+		TokStore.listClear(ts, stack)
+		? TokStore.listAdd(ts, stack, root)
+		for lp1 in 0..1000000000{
+			if TokStore.listSize(ts, stack) == 0{
+				break
+			}
+			let node = mut TokStore.listPop(ts, stack)
+			if TokStore.kind(ts, node) == TT_VARREF && TokStore.strsEq(ts, TokStore.text(ts, node), name){
+				return true
+			}
+			? GenericsExpander.pushChildrenReversed(ts, stack, node)
+		}
+		return false
+	}
+
+	// ---- impl residual tagging ---------------------------------------------------------------------------------------------
+
+	@throws
+	static func tagResidualGenericMethods(ts: ref mut TokStore, st: mut u64, implTpl: mut u64, implClone: mut u64, consumed: mut u64) void{
+		?catch(e){ throw e }
+		let tps = mut TokStore.typeParams(ts, implTpl)
+		if tps == TOK_NONE{
+			TokStore.setTypeParams(ts, implClone, TOK_NONE)
+			return
+		}
+		let bounds = mut TokStore.typeParamBounds(ts, implTpl)
+		let resNames = mut ? TokStore.newList(ts)
+		let resBounds = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, tps)
+		for i in 0..n{
+			let pname = mut TokStore.listGet(ts, tps, i)
+			if GenericsExpander.listHasText(ts, consumed, pname) == false{
+				? TokStore.listAdd(ts, resNames, pname)
+				if bounds == TOK_NONE{
+					? TokStore.listAdd(ts, resBounds, TOK_NONE)
+				} else {
+					? TokStore.listAdd(ts, resBounds, TokStore.listGet(ts, bounds, i))
+				}
+			}
+		}
+		let nres = mut TokStore.listSize(ts, resNames)
+		let cloneChilds = mut TokStore.childs(ts, implClone)
+		if nres > 0 && cloneChilds != TOK_NONE{
+			let nm = mut TokStore.listSize(ts, cloneChilds)
+			for mi in 0..nm{
+				let methodTok = mut TokStore.listGet(ts, cloneChilds, mi)
+				let used = mut ? TokStore.newList(ts)
+				let usedBounds = mut ? TokStore.newList(ts)
+				for ri in 0..nres{
+					let refd = mut ? GenericsExpander.referencesName(ts, st, methodTok, TokStore.listGet(ts, resNames, ri))
+					if refd{
+						? TokStore.listAdd(ts, used, TokStore.listGet(ts, resNames, ri))
+						? TokStore.listAdd(ts, usedBounds, TokStore.listGet(ts, resBounds, ri))
+					}
+				}
+				if TokStore.listSize(ts, used) > 0{
+					TokStore.setTypeParams(ts, methodTok, used)
+					let anyBound = mut false
+					let nu = mut TokStore.listSize(ts, usedBounds)
+					for bi in 0..nu{
+						if TokStore.listGet(ts, usedBounds, bi) != TOK_NONE{
+							anyBound = true
+						}
+					}
+					if anyBound{
+						TokStore.setTypeParamBounds(ts, methodTok, usedBounds)
+					} else {
+						TokStore.setTypeParamBounds(ts, methodTok, TOK_NONE)
+					}
+				}
+			}
+		}
+		TokStore.setTypeParams(ts, implClone, TOK_NONE)
+	}
+
+	// ---- instantiation -----------------------------------------------------------------------------------------------------
+
+	@throws
+	static func deepClone(ts: ref mut TokStore, st: mut u64, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? TokClone.syntax(ts, TokStore.listGet(ts, st, GS_CMAP), TokStore.listGet(ts, st, GS_PEND), TokStore.listGet(ts, st, GS_TOUCH), root)
+		return c
+	}
+
+	/** name + '_' + each argument. */
+	@throws
+	static func mangleName(ts: ref mut TokStore, name: mut u64, argNames: mut u64) mut u64{
+		?catch(e){ throw e }
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, name)
+		let n = mut TokStore.listSize(ts, argNames)
+		for i in 0..n{
+			? TokStore.strPush(ts, '_')
+			? TokStore.strAppendId(ts, TokStore.listGet(ts, argNames, i))
+		}
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	/** "Name<a,b>" */
+	@throws
+	static func memoKey(ts: ref mut TokStore, name: mut u64, argNames: mut u64) mut u64{
+		?catch(e){ throw e }
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, name)
+		? TokStore.strPush(ts, '<')
+		let n = mut TokStore.listSize(ts, argNames)
+		for i in 0..n{
+			if i > 0{
+				? TokStore.strPush(ts, ',')
+			}
+			? TokStore.strAppendId(ts, TokStore.listGet(ts, argNames, i))
+		}
+		? TokStore.strPush(ts, '>')
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	@throws
+	static func beginInstantiation(ts: ref mut TokStore, st: mut u64, name: mut u64, argNames: mut u64, argTokens: mut u64, mangled: mut u64, usageTok: mut u64) void{
+		?catch(e){ throw e }
+		let structTpl = mut StrMap.get(ts, TokStore.listGet(ts, st, GS_STRUCT), name)
+		let funcTpl = mut StrMap.get(ts, TokStore.listGet(ts, st, GS_FUNC), name)
+		let ifaceTpl = mut StrMap.get(ts, TokStore.listGet(ts, st, GS_IFACE), name)
+		let libTpl = mut StrMap.get(ts, TokStore.listGet(ts, st, GS_LIB), name)
+		let template = mut libTpl
+		if ifaceTpl != TOK_NONE{
+			template = ifaceTpl
+		}
+		if funcTpl != TOK_NONE{
+			template = funcTpl
+		}
+		if structTpl != TOK_NONE{
+			template = structTpl
+		}
+		if template == TOK_NONE{
+			throw "[type error] not a known generic struct, func, interface, or library"
+		}
+		let tps = mut TokStore.typeParams(ts, template)
+		if TokStore.listSize(ts, tps) != TokStore.listSize(ts, argNames){
+			throw "[type error] wrong number of type arguments"
+		}
+		let files = mut ? TokStore.newList(ts)
+		let na = mut TokStore.listSize(ts, argTokens)
+		for i in 0..na{
+			? TokStore.listAdd(ts, files, TokStore.fileId(ts, TokStore.listGet(ts, argTokens, i)))
+		}
+		let clone = mut ? GenericsExpander.deepClone(ts, st, template)
+		let cloneSub = mut TokStore.sub(ts, clone)
+		let declName = mut TokStore.listGet(ts, cloneSub, 0)
+		let renamed = mut ? TokStore.newToken(ts, TokStore.kind(ts, declName), mangled, TokStore.line(ts, declName), TokStore.fileId(ts, declName))
+		TokStore.listSet(ts, cloneSub, 0, renamed)
+		// pending bound checks
+		let tpb = mut TokStore.typeParamBounds(ts, template)
+		let pending = mut TOK_NONE
+		if tpb != TOK_NONE{
+			let checks = mut ? TokStore.newList(ts)
+			let nb = mut TokStore.listSize(ts, tpb)
+			for bi in 0..nb{
+				let bound = mut TokStore.listGet(ts, tpb, bi)
+				if bound != TOK_NONE{
+					? TokStore.listAdd(ts, checks, TokStore.listGet(ts, tps, bi))
+					? TokStore.listAdd(ts, checks, TokStore.listGet(ts, argNames, bi))
+					? TokStore.listAdd(ts, checks, bound)
+				}
+			}
+			if TokStore.listSize(ts, checks) > 0{
+				pending = checks
+			}
+		}
+		TokStore.setPendingBounds(ts, clone, pending)
+		TokStore.setTypeParams(ts, clone, TOK_NONE)
+		TokStore.setTypeParamBounds(ts, clone, TOK_NONE)
+		? GenericsExpander.substituteParams(ts, st, clone, tps, argNames, files)
+		let wrapped = mut ? GenericsExpander.wrapAsLine(ts, clone)
+		? TokStore.listAdd(ts, TokStore.listGet(ts, st, GS_OUT), wrapped)
+		let w = mut ? GenericsExpander.emit(ts, st, GK_WALK, clone)
+		if structTpl != TOK_NONE{
+			let impls = mut ? GenericsExpander.emit(ts, st, GK_INST_IMPLS, TOK_NONE)
+			GenericsExpander.tset(ts, st, impls, GT_NAME, name)
+			GenericsExpander.tset(ts, st, impls, GT_ARGNAMES, argNames)
+			GenericsExpander.tset(ts, st, impls, GT_ARGTOKS, argTokens)
+			GenericsExpander.tset(ts, st, impls, GT_MANGLED, mangled)
+		}
+	}
+
+	@throws
+	static func beginImplInstantiation(ts: ref mut TokStore, st: mut u64, implTpl: mut u64, structArgNames: mut u64, structArgTokens: mut u64, mangledStructName: mut u64) void{
+		?catch(e){ throw e }
+		let tplSub = mut TokStore.sub(ts, implTpl)
+		let concreteNameTok = mut TokStore.listGet(ts, tplSub, TokStore.listSize(ts, tplSub) - 1)
+		let keys = mut ? TokStore.newList(ts)
+		let vals = mut ? TokStore.newList(ts)
+		let files = mut ? TokStore.newList(ts)
+		if TokStore.typeParams(ts, implTpl) != TOK_NONE{
+			let ga = mut TokStore.genericArgs(ts, concreteNameTok)
+			if TokStore.listSize(ts, ga) != TokStore.listSize(ts, structArgNames){
+				throw "[type error] impl's type-argument count doesn't match its declared arity"
+			}
+			let n = mut TokStore.listSize(ts, ga)
+			for i in 0..n{
+				let implParamName = mut TokStore.text(ts, TokStore.listGet(ts, TokStore.listGet(ts, ga, i), 0))
+				? TokStore.listAdd(ts, keys, implParamName)
+				? TokStore.listAdd(ts, vals, TokStore.listGet(ts, structArgNames, i))
+				? TokStore.listAdd(ts, files, TokStore.fileId(ts, TokStore.listGet(ts, structArgTokens, i)))
+			}
+		}
+		let clone = mut ? GenericsExpander.deepClone(ts, st, implTpl)
+		? GenericsExpander.tagResidualGenericMethods(ts, st, implTpl, clone, keys)
+		let cloneSub = mut TokStore.sub(ts, clone)
+		let cloneConcreteTok = mut TokStore.listGet(ts, cloneSub, TokStore.listSize(ts, cloneSub) - 1)
+		? GenericsExpander.substituteParams(ts, st, clone, keys, vals, files)
+		TokStore.setText(ts, cloneConcreteTok, mangledStructName)
+		TokStore.setGenericArgs(ts, cloneConcreteTok, TOK_NONE)
+		let methods = mut TokStore.childs(ts, clone)
+		let nm = mut TokStore.listSize(ts, methods)
+		for mi in 0..nm{
+			let method = mut TokStore.listGet(ts, methods, mi)
+			TokStore.setFromGenericInstance(ts, method, 1)
+			if TokStore.isConstructorDecl(ts, method) != 0{
+				let nameTok = mut TokStore.listGet(ts, TokStore.sub(ts, method), 0)
+				let sb = mut TokStore.strBegin(ts)
+				? TokStore.strPush(ts, '_')
+				? TokStore.strPush(ts, '_')
+				? TokStore.strPush(ts, 'c')
+				? TokStore.strPush(ts, 't')
+				? TokStore.strPush(ts, 'o')
+				? TokStore.strPush(ts, 'r')
+				? TokStore.strPush(ts, '_')
+				? TokStore.strPush(ts, '_')
+				? TokStore.strAppendId(ts, mangledStructName)
+				let ctorName = mut ? TokStore.strEnd(ts, sb)
+				TokStore.setText(ts, nameTok, ctorName)
+				TokStore.setConstructorConcreteName(ts, method, mangledStructName)
+			}
+		}
+		if TokStore.listSize(ts, cloneSub) == 2{
+			let w1 = mut ? GenericsExpander.emit(ts, st, GK_WALK, TokStore.listGet(ts, cloneSub, 0))
+			let add = mut ? GenericsExpander.emit(ts, st, GK_IMPL_ADD, clone)
+		} else {
+			let wrapped = mut ? GenericsExpander.wrapAsLine(ts, clone)
+			? TokStore.listAdd(ts, TokStore.listGet(ts, st, GS_OUT), wrapped)
+			let w2 = mut ? GenericsExpander.emit(ts, st, GK_WALK, clone)
+		}
+	}
+
+	// ---- one task ----------------------------------------------------------------------------------------------------------
+
+	@throws
+	static func step(ts: ref mut TokStore, st: mut u64, task: mut u64) void{
+		?catch(e){ throw e }
+		let kind = mut GenericsExpander.tget(ts, st, task, GT_KIND)
+		let node = mut GenericsExpander.tget(ts, st, task, GT_TOK)
+		if kind == GK_WALK || kind == GK_WALK_NO_TOP{
+			if node == TOK_NONE{
+				return
+			}
+			let top = mut (kind == GK_WALK)
+			if top{
+				let p = mut ? GenericsExpander.emit(ts, st, GK_PROCESS, node)
+			}
+			? GenericsExpander.emitWalk(ts, st, GK_WALK, TokStore.left(ts, node))
+			let isDot = mut false
+			if top && GenericsExpander.isOp(ts, node, "."){
+				isDot = true
+			}
+			if isDot{
+				? GenericsExpander.emitWalk(ts, st, GK_WALK_NO_TOP, TokStore.right(ts, node))
+			} else {
+				? GenericsExpander.emitWalk(ts, st, GK_WALK, TokStore.right(ts, node))
+			}
+			? GenericsExpander.emitWalk(ts, st, GK_WALK, TokStore.next(ts, node))
+			let cs = mut TokStore.childs(ts, node)
+			let nc = mut TokStore.listSize(ts, cs)
+			for ci in 0..nc{
+				? GenericsExpander.emitWalk(ts, st, GK_WALK, TokStore.listGet(ts, cs, ci))
+			}
+			let sb = mut TokStore.sub(ts, node)
+			let ns = mut TokStore.listSize(ts, sb)
+			for si in 0..ns{
+				? GenericsExpander.emitWalk(ts, st, GK_WALK, TokStore.listGet(ts, sb, si))
+			}
+			return
+		}
+		if kind == GK_PROCESS{
+			if TokStore.genericArgs(ts, node) == TOK_NONE{
+				return
+			}
+			if TokStore.kind(ts, node) == TT_VARREF && (TokStore.textEq(ts, node, "dyn") || TokStore.textEq(ts, node, "wrap") || TokStore.textEq(ts, node, "sat")){
+				let d = mut ? GenericsExpander.emit(ts, st, GK_PROC_DYN, node)
+				GenericsExpander.tset(ts, st, d, GT_INDEX, 0)
+				return
+			}
+			let a = mut ? GenericsExpander.emit(ts, st, GK_PROC_ARG, node)
+			let names = mut ? TokStore.newList(ts)
+			let toks = mut ? TokStore.newList(ts)
+			GenericsExpander.tset(ts, st, a, GT_ARGNAMES, names)
+			GenericsExpander.tset(ts, st, a, GT_ARGTOKS, toks)
+			GenericsExpander.tset(ts, st, a, GT_INDEX, 0)
+			GenericsExpander.tset(ts, st, a, GT_PHASE, 0)
+			return
+		}
+		if kind == GK_PROC_DYN{
+			let ga = mut TokStore.genericArgs(ts, node)
+			let idx = mut GenericsExpander.tget(ts, st, task, GT_INDEX)
+			if idx >= TokStore.listSize(ts, ga){
+				return
+			}
+			let group = mut TokStore.listGet(ts, ga, idx)
+			GenericsExpander.tset(ts, st, task, GT_INDEX, idx + 1)
+			if TokStore.listSize(ts, group) != 1{
+				throw "[type error] generic type argument must be a single type name, found a compound expression"
+			}
+			let p2 = mut ? GenericsExpander.emit(ts, st, GK_PROCESS, TokStore.listGet(ts, group, 0))
+			? TokStore.listAdd(ts, TokStore.listGet(ts, st, GS_OUTQ), task)
+			return
+		}
+		if kind == GK_PROC_ARG{
+			let ga2 = mut TokStore.genericArgs(ts, node)
+			let argNames = mut GenericsExpander.tget(ts, st, task, GT_ARGNAMES)
+			let argToks = mut GenericsExpander.tget(ts, st, task, GT_ARGTOKS)
+			let idx2 = mut GenericsExpander.tget(ts, st, task, GT_INDEX)
+			if GenericsExpander.tget(ts, st, task, GT_PHASE) == 1{
+				let argTok = mut TokStore.listGet(ts, TokStore.listGet(ts, ga2, idx2), 0)
+				? TokStore.listAdd(ts, argNames, TokStore.text(ts, argTok))
+				? TokStore.listAdd(ts, argToks, argTok)
+				idx2 = idx2 + 1
+				GenericsExpander.tset(ts, st, task, GT_INDEX, idx2)
+				GenericsExpander.tset(ts, st, task, GT_PHASE, 0)
+			}
+			if idx2 < TokStore.listSize(ts, ga2){
+				let group2 = mut TokStore.listGet(ts, ga2, idx2)
+				if TokStore.listSize(ts, group2) != 1{
+					throw "[type error] generic type argument must be a single type name, found a compound expression"
+				}
+				GenericsExpander.tset(ts, st, task, GT_PHASE, 1)
+				let p3 = mut ? GenericsExpander.emit(ts, st, GK_PROCESS, TokStore.listGet(ts, group2, 0))
+				? TokStore.listAdd(ts, TokStore.listGet(ts, st, GS_OUTQ), task)
+				return
+			}
+			let templateName = mut TokStore.text(ts, node)
+			let key = mut ? GenericsExpander.memoKey(ts, templateName, argNames)
+			let memo = mut TokStore.listGet(ts, st, GS_MEMO)
+			let mangled = mut StrMap.get(ts, memo, key)
+			if mangled == TOK_NONE{
+				mangled = ? GenericsExpander.mangleName(ts, templateName, argNames)
+				? StrMap.put(ts, memo, key, mangled)
+				? GenericsExpander.beginInstantiation(ts, st, templateName, argNames, argToks, mangled, node)
+			}
+			let setT = mut ? GenericsExpander.emit(ts, st, GK_SET_MANGLED, node)
+			GenericsExpander.tset(ts, st, setT, GT_MANGLED, mangled)
+			return
+		}
+		if kind == GK_SET_MANGLED{
+			TokStore.setText(ts, node, GenericsExpander.tget(ts, st, task, GT_MANGLED))
+			TokStore.setGenericArgs(ts, node, TOK_NONE)
+			return
+		}
+		if kind == GK_INST_IMPLS{
+			let name = mut GenericsExpander.tget(ts, st, task, GT_NAME)
+			let tpls = mut StrMap.get(ts, TokStore.listGet(ts, st, GS_IMPLT), name)
+			if tpls != TOK_NONE{
+				let nt = mut TokStore.listSize(ts, tpls)
+				for ti in 0..nt{
+					let it = mut ? GenericsExpander.emit(ts, st, GK_IMPL_INST, TokStore.listGet(ts, tpls, ti))
+					GenericsExpander.tset(ts, st, it, GT_ARGNAMES, GenericsExpander.tget(ts, st, task, GT_ARGNAMES))
+					GenericsExpander.tset(ts, st, it, GT_ARGTOKS, GenericsExpander.tget(ts, st, task, GT_ARGTOKS))
+					GenericsExpander.tset(ts, st, it, GT_MANGLED, GenericsExpander.tget(ts, st, task, GT_MANGLED))
+				}
+			}
+			return
+		}
+		if kind == GK_IMPL_INST{
+			? GenericsExpander.beginImplInstantiation(ts, st, node, GenericsExpander.tget(ts, st, task, GT_ARGNAMES), GenericsExpander.tget(ts, st, task, GT_ARGTOKS), GenericsExpander.tget(ts, st, task, GT_MANGLED))
+			return
+		}
+		if kind == GK_IMPL_ADD{
+			let wl = mut ? GenericsExpander.wrapAsLine(ts, node)
+			? TokStore.listAdd(ts, TokStore.listGet(ts, st, GS_OUT), wl)
+			let w3 = mut ? GenericsExpander.emit(ts, st, GK_WALK, node)
+			return
+		}
+		if kind == GK_SPAN{
+			? GenericsExpander.stepSpan(ts, st, task)
+			return
+		}
+		if kind == GK_SPAN_ANGLE_POST{
+			let groups = mut GenericsExpander.tget(ts, st, task, GT_GROUPS)
+			TokStore.setGenericArgs(ts, node, groups)
+			let list = mut GenericsExpander.tget(ts, st, task, GT_LIST)
+			let off = mut GenericsExpander.tget(ts, st, task, GT_OFF)
+			let index = mut GenericsExpander.tget(ts, st, task, GT_INDEX)
+			let closeIdx = mut GenericsExpander.tget(ts, st, task, GT_CLOSE)
+			let cnt = mut (closeIdx - index)
+			for kk in 0..cnt{
+				let k = mut (closeIdx - kk)
+				TokStore.listRemoveAt(ts, list, off + k)
+			}
+			return
+		}
+		if kind == GK_SPAN_PAREN_POST{
+			let groups2 = mut GenericsExpander.tget(ts, st, task, GT_GROUPS)
+			let rebuilt = mut ? TokStore.newList(ts)
+			let ng = mut TokStore.listSize(ts, groups2)
+			let commaSid = mut ? TokStore.addLit(ts, ",")
+			for g in 0..ng{
+				if g > 0{
+					let comma = mut ? TokStore.newToken(ts, TT_OPERATOR, commaSid, TokStore.line(ts, node), TokStore.fileId(ts, node))
+					? TokStore.listAdd(ts, rebuilt, comma)
+				}
+				? TokStore.listAddAll(ts, rebuilt, TokStore.listGet(ts, groups2, g))
+			}
+			let pc = mut TokStore.childs(ts, node)
+			TokStore.listClear(ts, pc)
+			? TokStore.listAddAll(ts, pc, rebuilt)
+			return
+		}
+		throw "[type error] unknown generics task"
+	}
+
+	// ---- registration and the entry point -----------------------------------------------------------------------------------
+
+	@throws
+	static func registerTemplate(ts: ref mut TokStore, m: mut u64, entry: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut TokStore.text(ts, TokStore.listGet(ts, TokStore.sub(ts, entry), 0))
+		if StrMap.has(ts, m, name){
+			throw "[type error] generic template is already declared (overloading generic templates is not supported)"
+		}
+		? StrMap.put(ts, m, name, entry)
+	}
+
+	@throws
+	static func registerImplTemplate(ts: ref mut TokStore, st: mut u64, implEntry: mut u64, concreteNameTok: mut u64) void{
+		?catch(e){ throw e }
+		let tps = mut TokStore.typeParams(ts, implEntry)
+		if tps == TOK_NONE{
+			throw "[type error] an 'impl' targeting a generic type must itself be generic"
+		}
+		let ga = mut TokStore.genericArgs(ts, concreteNameTok)
+		let ng = mut TokStore.listSize(ts, ga)
+		for i in 0..ng{
+			let group = mut TokStore.listGet(ts, ga, i)
+			let ok = mut false
+			if TokStore.listSize(ts, group) == 1{
+				let g0 = mut TokStore.listGet(ts, group, 0)
+				if TokStore.kind(ts, g0) == TT_VARREF && GenericsExpander.listHasText(ts, tps, TokStore.text(ts, g0)){
+					ok = true
+				}
+			}
+			if ok == false{
+				throw "[type error] impl's type arguments must be exactly its own declared type parameters"
+			}
+		}
+		let target = mut TokStore.text(ts, concreteNameTok)
+		let implT = mut TokStore.listGet(ts, st, GS_IMPLT)
+		let l = mut StrMap.get(ts, implT, target)
+		if l == TOK_NONE{
+			l = ? TokStore.newList(ts)
+			? StrMap.put(ts, implT, target, l)
+		}
+		? TokStore.listAdd(ts, l, implEntry)
+	}
+
+	/** Monomorphizes the import-resolved, dup-expanded root list; returns the new root list (LINE tokens, templates removed, instantiations added). */
+	@pub
+	@throws
+	static func expand(ts: ref mut TokStore, rootEntries: mut u64) mut u64{
+		?catch(e){ throw e }
+		let st = mut ? GenericsExpander.newState(ts)
+		let output = mut TokStore.listGet(ts, st, GS_OUT)
+		let n = mut TokStore.listSize(ts, rootEntries)
+		// Step A
+		for i in 0..n{
+			let lineEntry = mut TokStore.listGet(ts, rootEntries, i)
+			? GenericsExpander.scanAnnotationContexts(ts, st, TokStore.listGet(ts, TokStore.childs(ts, lineEntry), 0))
+		}
+		// Step B
+		for j in 0..n{
+			let lineEntry2 = mut TokStore.listGet(ts, rootEntries, j)
+			let entry = mut TokStore.listGet(ts, TokStore.childs(ts, lineEntry2), 0)
+			if TokStore.kind(ts, entry) != TT_KEYWORD{
+				? TokStore.listAdd(ts, output, lineEntry2)
+				continue
+			}
+			let hasTp = mut (TokStore.typeParams(ts, entry) != TOK_NONE)
+			if TokStore.textEq(ts, entry, "struct"){
+				if hasTp{
+					? GenericsExpander.registerTemplate(ts, TokStore.listGet(ts, st, GS_STRUCT), entry)
+				} else {
+					? TokStore.listAdd(ts, output, lineEntry2)
+				}
+			} else if TokStore.textEq(ts, entry, "func"){
+				if hasTp{
+					? GenericsExpander.registerTemplate(ts, TokStore.listGet(ts, st, GS_FUNC), entry)
+				} else {
+					? TokStore.listAdd(ts, output, lineEntry2)
+				}
+			} else if TokStore.textEq(ts, entry, "interface"){
+				if hasTp{
+					? GenericsExpander.registerTemplate(ts, TokStore.listGet(ts, st, GS_IFACE), entry)
+				} else {
+					? TokStore.listAdd(ts, output, lineEntry2)
+				}
+			} else if TokStore.textEq(ts, entry, "library"){
+				if hasTp{
+					? GenericsExpander.registerTemplate(ts, TokStore.listGet(ts, st, GS_LIB), entry)
+				} else {
+					? TokStore.listAdd(ts, output, lineEntry2)
+				}
+			} else if TokStore.textEq(ts, entry, "impl"){
+				let isub = mut TokStore.sub(ts, entry)
+				let concreteNameTok = mut TokStore.listGet(ts, isub, TokStore.listSize(ts, isub) - 1)
+				let targetGeneric = mut (TokStore.genericArgs(ts, concreteNameTok) != TOK_NONE)
+				if hasTp || targetGeneric{
+					if hasTp && targetGeneric == false{
+						let empty = mut ? TokStore.newList(ts)
+						? GenericsExpander.tagResidualGenericMethods(ts, st, entry, entry, empty)
+						? TokStore.listAdd(ts, output, lineEntry2)
+						? GenericsExpander.walkAndProcess(ts, st, entry)
+					} else {
+						? GenericsExpander.registerImplTemplate(ts, st, entry, concreteNameTok)
+					}
+				} else {
+					? TokStore.listAdd(ts, output, lineEntry2)
+				}
+			} else {
+				? TokStore.listAdd(ts, output, lineEntry2)
+			}
+		}
+		// Step C: index based, the list grows while it is walked
+		let oi = mut 0
+		for lp1 in 0..1000000000{
+			if oi >= TokStore.listSize(ts, output){
+				break
+			}
+			let lineTok = mut TokStore.listGet(ts, output, oi)
+			? GenericsExpander.walkAndProcess(ts, st, lineTok)
+			oi = oi + 1
+		}
+		return output
+	}
+}

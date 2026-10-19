@@ -1,0 +1,167 @@
+import "stdlib/string.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokStore.caspien"
+
+/**
+ * The deep copier for token trees (port of caspien.token.TokenCloner.syntax): copies a gathered, tree-built, not yet type-checked tree. Flags and lists the
+ * parser set travel along, `decorators`/`unsafeTags`/`pinned` are shared with the original, the checker's marks (`chk`, `staticApproved`) and the generic-instance
+ * bookkeeping (`fromGenericInstance`, `pendingBounds`) start fresh. A shared sub-tree stays shared inside the copy. `cmap` is a scratch list of
+ * TOK_NONE entries (one per token; extended on demand) that holds the source-to-copy map while a copy is made and is reset before returning.
+ */
+@pub
+struct TokClone{@pub{
+}}
+
+@pub
+impl TokClone{
+	/** The copy of `src`, created (and queued to be filled) on first sight; TOK_NONE stays TOK_NONE. */
+	@throws
+	static func shell(ts: ref mut TokStore, cmap: mut u64, pending: mut u64, touched: mut u64, src: mut u64) mut u64{
+		?catch(e){ throw e }
+		if src == TOK_NONE{
+			return TOK_NONE
+		}
+		let c = mut TokStore.listGet(ts, cmap, src)
+		if c == TOK_NONE{
+			c = ? TokStore.newToken(ts, TokStore.kind(ts, src), TokStore.text(ts, src), TokStore.line(ts, src), TokStore.fileId(ts, src))
+			TokStore.listSet(ts, cmap, src, c)
+			? TokStore.listAdd(ts, pending, src)
+			? TokStore.listAdd(ts, touched, src)
+		}
+		return c
+	}
+
+	/** A new list of the copies of the tokens of `l` (TOK_NONE when `l` is TOK_NONE). */
+	@throws
+	static func tl(ts: ref mut TokStore, cmap: mut u64, pending: mut u64, touched: mut u64, l: mut u64) mut u64{
+		?catch(e){ throw e }
+		if l == TOK_NONE{
+			return TOK_NONE
+		}
+		let out = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			let c = mut ? TokClone.shell(ts, cmap, pending, touched, TokStore.listGet(ts, l, i))
+			? TokStore.listAdd(ts, out, c)
+		}
+		return out
+	}
+
+	@throws
+	static func copyList(ts: ref mut TokStore, l: mut u64) mut u64{
+		?catch(e){ throw e }
+		if l == TOK_NONE{
+			return TOK_NONE
+		}
+		let c = mut ? TokStore.listCopy(ts, l)
+		return c
+	}
+
+	@throws
+	static func fill(ts: ref mut TokStore, cmap: mut u64, pending: mut u64, touched: mut u64, s: mut u64, d: mut u64) void{
+		?catch(e){ throw e }
+		TokStore.setLiteralValue(ts, d, TokStore.literalValue(ts, s))
+		TokStore.setUnary(ts, d, TokStore.unary(ts, s))
+		let l1 = mut ? TokClone.shell(ts, cmap, pending, touched, TokStore.left(ts, s))
+		TokStore.setLeft(ts, d, l1)
+		let r1 = mut ? TokClone.shell(ts, cmap, pending, touched, TokStore.right(ts, s))
+		TokStore.setRight(ts, d, r1)
+		let n1 = mut ? TokClone.shell(ts, cmap, pending, touched, TokStore.next(ts, s))
+		TokStore.setNext(ts, d, n1)
+		let ch = mut TokStore.childs(ts, s)
+		if ch == TOK_NONE{
+			let e1 = mut ? TokStore.newList(ts)
+			TokStore.setChilds(ts, d, e1)
+		} else {
+			let c1 = mut ? TokClone.tl(ts, cmap, pending, touched, ch)
+			TokStore.setChilds(ts, d, c1)
+		}
+		let sb = mut TokStore.sub(ts, s)
+		if sb == TOK_NONE{
+			let e2 = mut ? TokStore.newList(ts)
+			TokStore.setSub(ts, d, e2)
+		} else {
+			let c2 = mut ? TokClone.tl(ts, cmap, pending, touched, sb)
+			TokStore.setSub(ts, d, c2)
+		}
+		let tb = mut ? TokClone.tl(ts, cmap, pending, touched, TokStore.typeBound(ts, s))
+		TokStore.setTypeBound(ts, d, tb)
+		let ga = mut TokStore.genericArgs(ts, s)
+		if ga == TOK_NONE{
+			TokStore.setGenericArgs(ts, d, TOK_NONE)
+		} else {
+			let nga = mut ? TokStore.newList(ts)
+			let ng = mut TokStore.listSize(ts, ga)
+			for gi in 0..ng{
+				let grp = mut ? TokClone.tl(ts, cmap, pending, touched, TokStore.listGet(ts, ga, gi))
+				? TokStore.listAdd(ts, nga, grp)
+			}
+			TokStore.setGenericArgs(ts, d, nga)
+		}
+		let a1 = mut ? TokClone.copyList(ts, TokStore.typeParams(ts, s))
+		TokStore.setTypeParams(ts, d, a1)
+		let a2 = mut ? TokClone.copyList(ts, TokStore.typeParamBounds(ts, s))
+		TokStore.setTypeParamBounds(ts, d, a2)
+		let a3 = mut ? TokClone.copyList(ts, TokStore.extendsNames(ts, s))
+		TokStore.setExtendsNames(ts, d, a3)
+		let a4 = mut ? TokClone.copyList(ts, TokStore.implementsNames(ts, s))
+		TokStore.setImplementsNames(ts, d, a4)
+		let a5 = mut ? TokClone.copyList(ts, TokStore.assumeVariants(ts, s))
+		TokStore.setAssumeVariants(ts, d, a5)
+		TokStore.setIsStatic(ts, d, TokStore.isStatic(ts, s))
+		TokStore.setIsConst(ts, d, TokStore.isConst(ts, s))
+		TokStore.setIsStaticMethod(ts, d, TokStore.isStaticMethod(ts, s))
+		TokStore.setIsCaseMatch(ts, d, TokStore.isCaseMatch(ts, s))
+		TokStore.setIsForMatch(ts, d, TokStore.isForMatch(ts, s))
+		TokStore.setCatchParamName(ts, d, TokStore.catchParamName(ts, s))
+		TokStore.setIsTryBlock(ts, d, TokStore.isTryBlock(ts, s))
+		TokStore.setHasBlock(ts, d, TokStore.hasBlock(ts, s))
+		TokStore.setHasEnumValue(ts, d, TokStore.hasEnumValue(ts, s))
+		TokStore.setEnumValue(ts, d, TokStore.enumValue(ts, s))
+		TokStore.setHasRangeStart(ts, d, TokStore.hasRangeStart(ts, s))
+		TokStore.setRangeStart(ts, d, TokStore.rangeStart(ts, s))
+		TokStore.setHasRangeEnd(ts, d, TokStore.hasRangeEnd(ts, s))
+		TokStore.setRangeEnd(ts, d, TokStore.rangeEnd(ts, s))
+		TokStore.setIsConstructorDecl(ts, d, TokStore.isConstructorDecl(ts, s))
+		TokStore.setConstructorConcreteName(ts, d, TokStore.constructorConcreteName(ts, s))
+		TokStore.setForcedLiteralType(ts, d, TokStore.forcedLiteralType(ts, s))
+		TokStore.setIsPubBlockMember(ts, d, TokStore.isPubBlockMember(ts, s))
+		TokStore.setAsmBlockText(ts, d, TokStore.asmBlockText(ts, s))
+		TokStore.setAsmFilePath(ts, d, TokStore.asmFilePath(ts, s))
+		TokStore.setRadix(ts, d, TokStore.radix(ts, s))
+		TokStore.setPinned(ts, d, TokStore.pinned(ts, s))
+		TokStore.setDecorators(ts, d, TokStore.decorators(ts, s))
+		TokStore.setUnsafeTags(ts, d, TokStore.unsafeTags(ts, s))
+	}
+
+	/** Deep copy of the tree rooted at `root` (see the class comment). `cmap`, `pending` and `touched` are scratch lists owned by the caller. */
+	@pub
+	@throws
+	static func syntax(ts: ref mut TokStore, cmap: mut u64, pending: mut u64, touched: mut u64, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		let total = mut TokStore.tokenCount(ts)
+		for lp0 in 0..1000000000{
+			if TokStore.listSize(ts, cmap) >= total{
+				break
+			}
+			? TokStore.listAdd(ts, cmap, TOK_NONE)
+		}
+		TokStore.listClear(ts, pending)
+		TokStore.listClear(ts, touched)
+		let result = mut ? TokClone.shell(ts, cmap, pending, touched, root)
+		let head = mut 0
+		for lp1 in 0..1000000000{
+			if head >= TokStore.listSize(ts, pending){
+				break
+			}
+			let s = mut TokStore.listGet(ts, pending, head)
+			head = head + 1
+			? TokClone.fill(ts, cmap, pending, touched, s, TokStore.listGet(ts, cmap, s))
+		}
+		let nt = mut TokStore.listSize(ts, touched)
+		for ti in 0..nt{
+			TokStore.listSet(ts, cmap, TokStore.listGet(ts, touched, ti), TOK_NONE)
+		}
+		return result
+	}
+}
