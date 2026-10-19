@@ -2636,36 +2636,36 @@ switch overrides of `benchmarks/harness/specific.json`); today the only override
 identical except where that program enters the mean, and the tuned bar is never worse.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_time_s_vs_c-dark.svg">
-  <img alt="Execution time, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_time_s_vs_c.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_time_s_vs_c-dark.svg">
+  <img alt="Execution time, geometric mean relative to C -O2, every language" src="ReferenceImplementation/benchmarks/img/summary_time_s_vs_c.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_time_s_safe_vs_rust-dark.svg">
-  <img alt="Execution time, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_time_s_safe_vs_rust.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_time_s_safe_vs_rust-dark.svg">
+  <img alt="Execution time, geometric mean relative to Rust (free build), memory-safe implementations only" src="ReferenceImplementation/benchmarks/img/summary_time_s_safe_vs_rust.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_rss_kb_vs_c-dark.svg">
-  <img alt="Peak memory, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_rss_kb_vs_c.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_rss_kb_vs_c-dark.svg">
+  <img alt="Peak memory, geometric mean relative to C -O2, every language" src="ReferenceImplementation/benchmarks/img/summary_rss_kb_vs_c.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_rss_kb_safe_vs_rust-dark.svg">
-  <img alt="Peak memory, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_rss_kb_safe_vs_rust.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_rss_kb_safe_vs_rust-dark.svg">
+  <img alt="Peak memory, geometric mean relative to Rust (free build), memory-safe implementations only" src="ReferenceImplementation/benchmarks/img/summary_rss_kb_safe_vs_rust.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_compile_s_vs_c-dark.svg">
-  <img alt="Compile time, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_compile_s_vs_c.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_compile_s_vs_c-dark.svg">
+  <img alt="Compile time, geometric mean relative to C -O2, every language" src="ReferenceImplementation/benchmarks/img/summary_compile_s_vs_c.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_compile_s_safe_vs_rust-dark.svg">
-  <img alt="Compile time, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_compile_s_safe_vs_rust.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_compile_s_safe_vs_rust-dark.svg">
+  <img alt="Compile time, geometric mean relative to Rust (free build), memory-safe implementations only" src="ReferenceImplementation/benchmarks/img/summary_compile_s_safe_vs_rust.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_size_bytes_vs_c-dark.svg">
-  <img alt="Executable size, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_size_bytes_vs_c.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_size_bytes_vs_c-dark.svg">
+  <img alt="Executable size, geometric mean relative to C -O2, every language" src="ReferenceImplementation/benchmarks/img/summary_size_bytes_vs_c.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_size_bytes_safe_vs_rust-dark.svg">
-  <img alt="Executable size, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_size_bytes_safe_vs_rust.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/summary_size_bytes_safe_vs_rust-dark.svg">
+  <img alt="Executable size, geometric mean relative to Rust (free build), memory-safe implementations only" src="ReferenceImplementation/benchmarks/img/summary_size_bytes_safe_vs_rust.svg">
 </picture>
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
@@ -2692,22 +2692,22 @@ versions (thirteen programs, Mandelbrot has none), 4.03x with optimisations off.
 below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
 all-optimisations-on variant to C -O2, and show the program with the lowest ratio, the median, and the highest.
 `node benchmarks/tools/export_svgs.mjs` prints the ratios and the selection and rewrites the per-program and the summary images. All 15 programs have a chart in
-[`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
+[`benchmarks/img/`](ReferenceImplementation/benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
 [`benchmarks/site/`](https://SeanJackson247.github.io/Caspien/benchmarks/site/).
 
 Best for Caspien (binary trees, 0.52x of C), the median (k-nucleotide, 1.13x), and the worst (LRU cache, 1.33x):
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_binarytrees-dark.svg">
-  <img alt="Execution time: binary trees" src="benchmarks/img/time_binarytrees.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/time_binarytrees-dark.svg">
+  <img alt="Execution time: binary trees" src="ReferenceImplementation/benchmarks/img/time_binarytrees.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_knucleotide-dark.svg">
-  <img alt="Execution time: k-nucleotide" src="benchmarks/img/time_knucleotide.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/time_knucleotide-dark.svg">
+  <img alt="Execution time: k-nucleotide" src="ReferenceImplementation/benchmarks/img/time_knucleotide.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_lru-dark.svg">
-  <img alt="Execution time: LRU cache" src="benchmarks/img/time_lru.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="ReferenceImplementation/benchmarks/img/time_lru-dark.svg">
+  <img alt="Execution time: LRU cache" src="ReferenceImplementation/benchmarks/img/time_lru.svg">
 </picture>
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
@@ -2773,7 +2773,7 @@ structs and arrays as C does. The exception is the `ref` variants (below): they 
 Planned work, in order of expected payoff: ship the optimiser on by default (the inliner already has
 bounded growth budgets); make the standard library classes as fast as hand-written array code; native
 32-bit and 8-bit arithmetic in register form. The benchmark harness (`python3 -m harness run`, in `benchmarks/`) rebuilds and re-times everything, and
-[`benchmarks/docs/RESULTS.md`](benchmarks/docs/RESULTS.md) holds the earlier, more detailed measurements.
+[`benchmarks/docs/RESULTS.md`](ReferenceImplementation/benchmarks/docs/RESULTS.md) holds the earlier, more detailed measurements.
 
 ## Appendices
 
