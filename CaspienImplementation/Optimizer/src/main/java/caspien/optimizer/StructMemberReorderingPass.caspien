@@ -1,0 +1,1380 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/**
+ * Largest alignment first (port of StructMemberReorderingPass.java and its helper classes). Everything positional is kept as statement INDICES of the
+ * program being rewritten (Java kept the statements themselves); the output is built by taking/copying statements by index.
+ * `run` forgets the STRUCT_PIN names after the call; the outer loop of the optimizer must use `runWith` with one StringSet kept across rounds (Java: `pinnedEver`).
+ */
+
+/** One entry of a struct declaration after ___type: a member line or a padding line. `stmt` = index of the declaration line. */
+@pub
+struct StructMemberReorderingEntry{@pub{
+	pad: mut bool
+	padBytes: mut s64
+	stmt: mut u64
+	size: mut u64
+}}
+
+@pub
+impl constructor for StructMemberReorderingEntry(pad: mut bool, padBytes: mut s64, stmt: mut u64, size: mut u64) self{
+	return StructMemberReorderingEntry{pad= pad, padBytes= padBytes, stmt= stmt, size= size}
+}
+
+/** A struct declaration. head = statement indices of STRUCT_START, STRUCT_DECORATE..., ___type (in line order); members = indices into entries. newOrder = entry indices of the new layout (members), newPad = trailing padding bytes (0 = none). */
+@pub
+struct StructMemberReorderingDecl{@pub{
+	start: mut u64
+	end: mut u64
+	head: owns some mut Vec
+	entries: owns some mut ObjectList<StructMemberReorderingEntry>
+	members: owns some mut Vec
+	hasType: mut bool
+	typeFirst: mut bool
+	plain: mut bool
+	blocked: mut bool
+	dead: mut bool
+	hasNew: mut bool
+	classId: mut s64
+	newOrder: owns some mut Vec
+	newUnit: owns some mut Vec
+	newPad: mut s64
+}}
+
+@pub
+@throws
+impl constructor for StructMemberReorderingDecl(start: mut u64) self{
+	?catch(e){ throw e }
+	let h = mut ? new Vec()
+	let en = mut ? new ObjectList:<StructMemberReorderingEntry>()
+	let mem = mut ? new Vec()
+	let no = mut ? new Vec()
+	let nu = mut ? new Vec()
+	return StructMemberReorderingDecl{start= start, end= 0, head= h, entries= en, members= mem, hasType= false, typeFirst= false, plain= true, blocked= false, dead= true, hasNew= false, classId= -1, newOrder= no, newUnit= nu, newPad= 0}
+}
+
+/** A construction site: statements [start, end); units = start,end pairs (one per member, in old declaration order) of statement indices. */
+@pub
+struct StructMemberReorderingSite{@pub{
+	start: mut u64
+	end: mut u64
+	decl: mut u64
+	units: owns some mut Vec
+}}
+
+@pub
+impl constructor for StructMemberReorderingSite(start: mut u64, end: mut u64, decl: mut u64, units: owns some mut Vec) self{
+	return StructMemberReorderingSite{start= start, end= end, decl= decl, units= units}
+}
+
+/** One choice point of the walk. rel = depth - membersDone; p = next line of the value-unit scan; the unit is [j, p). */
+@pub
+struct StructMemberReorderingFrame{@pub{
+	j: mut u64
+	idx: mut u64
+	membersDone: mut u64
+	entered: mut bool
+	rel: mut u64
+	p: mut u64
+	acc: owns some mut Vec
+}}
+
+@pub
+impl constructor for StructMemberReorderingFrame(j: mut u64, idx: mut u64, membersDone: mut u64, acc: owns some mut Vec) self{
+	return StructMemberReorderingFrame{j= j, idx= idx, membersDone= membersDone, entered= false, rel= 0, p= j, acc= acc}
+}
+
+@pub
+struct StructMemberReorderingPass{@pub{
+}}
+
+@pub
+impl constructor for StructMemberReorderingPass() self{
+	return StructMemberReorderingPass{}
+}
+
+@pub
+impl StructMemberReorderingPass{
+	/** Without memory of earlier rounds (test mode `--pass structreorder`). */
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		let pins = mut ? new StringSet()
+		let r = mut false
+		r = ? StructMemberReorderingPass.runWith(program, enabled, pins)
+		return r
+	}
+
+	/** `pinned` = the STRUCT_PIN names seen in earlier rounds (Java `pinnedEver`); this round's are added. */
+	@pub
+	@throws
+	static func runWith(program: ref mut BytecodeProgram, enabled: mut bool, pinned: ref mut StringSet) mut bool{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let nPins = mut 0
+		match Some(program){
+			for i in 0..n{
+				if VarAnalysis.isMn(program, i, "STRUCT_PIN"){ nPins += 1 }
+			}
+		}
+		let stripped = mut false
+		if nPins > 0{
+			stripped = true
+			let out = mut ? new BytecodeProgram()
+			for i in 0..n{
+				let isPin = mut false
+				match Some(program){ isPin = VarAnalysis.isMn(program, i, "STRUCT_PIN") }
+				if isPin{
+					let key = mut ? new String()
+					let have = mut false
+					match Some(program){
+						let st = mut ? program.items.getSome(program.items, i)
+						if st.size(st) >= 2{
+							let t = mut ? st.items.getSome(st.items, 1)
+							key = ? t.text.sub(t.text, 0, t.text.length(t.text))
+							have = true
+						}
+					}
+					if have{
+						match Some(pinned){
+							let added = mut ? pinned.add(pinned, key)
+						}
+					}
+				} else {
+					match Some(program){
+						let moved = mut program.items.take(program.items, i)
+						match Some(out){ ? out.items.add(out.items, moved) }
+					}
+				}
+			}
+			match Some(program){ program.items = out.items }
+		}
+		if enabled == false{
+			return stripped
+		}
+		let r = mut false
+		r = ? StructMemberReorderingPass.reorder(program, pinned)
+		if r{
+			return true
+		}
+		return stripped
+	}
+
+	// ------------------------------------------------------------ small readers (never allocate)
+
+	/** 1 STRUCT_START(2 tokens), 2 STRUCT_DECORATE @pub, 3 other STRUCT_DECORATE, 4 STRUCT_MEMBER ___type, 5 STRUCT_MEMBER (3 tokens), 6 STRUCT_PADDING (2), 7 STRUCT_END, 8 anything else. */
+	static func lineKind(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 8 }
+		let st = mut ? program.items.getSome(program.items, i)
+		let sz = mut st.size(st)
+		if VarAnalysis.stmtIs(st, "STRUCT_START") && sz == 2{
+			return 1
+		}
+		if VarAnalysis.stmtIs(st, "STRUCT_DECORATE"){
+			if sz == 2{
+				let t = mut ? st.items.getSome(st.items, 1)
+				if t.text.equals(t.text, "@pub"){
+					return 2
+				}
+			}
+			return 3
+		}
+		if VarAnalysis.stmtIs(st, "STRUCT_MEMBER") && sz == 3{
+			let t = mut ? st.items.getSome(st.items, 1)
+			if t.text.equals(t.text, "___type"){
+				return 4
+			}
+			return 5
+		}
+		if VarAnalysis.stmtIs(st, "STRUCT_PADDING") && sz == 2{
+			return 6
+		}
+		if VarAnalysis.stmtIs(st, "STRUCT_END"){
+			return 7
+		}
+		return 8
+	}
+
+	static func litAtOk(text: ref some imut String, off: mut u64, lit: static imut string, ln: mut u64) bool{
+		if off + ln > text.length(text){
+			return false
+		}
+		return text.litAt(text, lit, ln, off)
+	}
+
+	/** text[off..] equals the literal exactly. */
+	static func tailIs(text: ref some imut String, off: mut u64, lit: static imut string, ln: mut u64) bool{
+		if text.length(text) != off + ln{
+			return false
+		}
+		return text.litAt(text, lit, ln, off)
+	}
+
+	/** Length of the mut_/imut_/indeterminate_ prefix (Java stripMut), 0 if none. */
+	static func mutPrefix(text: ref some imut String) mut u64{
+		if text.startsWith(text, "mut_"){
+			return 4
+		}
+		if text.startsWith(text, "imut_"){
+			return 5
+		}
+		if text.startsWith(text, "indeterminate_"){
+			return 14
+		}
+		return 0
+	}
+
+	/** Byte size of the plain scalar type at token ti of statement si, or 0 when it is anything else. */
+	static func scalarSizeAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let off = mut StructMemberReorderingPass.mutPrefix(t.text)
+		if StructMemberReorderingPass.tailIs(t.text, off, "u8", 2) || StructMemberReorderingPass.tailIs(t.text, off, "s8", 2) || StructMemberReorderingPass.tailIs(t.text, off, "bool", 4) || StructMemberReorderingPass.tailIs(t.text, off, "char", 4){
+			return 1
+		}
+		if StructMemberReorderingPass.tailIs(t.text, off, "u16", 3) || StructMemberReorderingPass.tailIs(t.text, off, "s16", 3){
+			return 2
+		}
+		if StructMemberReorderingPass.tailIs(t.text, off, "u32", 3) || StructMemberReorderingPass.tailIs(t.text, off, "s32", 3) || StructMemberReorderingPass.tailIs(t.text, off, "f32", 3){
+			return 4
+		}
+		if StructMemberReorderingPass.tailIs(t.text, off, "u64", 3) || StructMemberReorderingPass.tailIs(t.text, off, "s64", 3) || StructMemberReorderingPass.tailIs(t.text, off, "f64", 3){
+			return 8
+		}
+		return 0
+	}
+
+	/** Java Long.parseLong succeeds on token ti of statement si. */
+	static func longOkAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let v = mut ? t.text.parseS64(t.text)
+		return true
+	}
+
+	/** The parsed value, 0 when it does not parse. */
+	static func longValAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) mut s64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let v = mut ? t.text.parseS64(t.text)
+		return v
+	}
+
+	/** Number of decimal characters of the canonical text of v (with the minus sign). */
+	static func decLen(v: mut s64) mut u64{
+		let cnt = mut 0
+		let mag = mut 0
+		if v < 0{
+			cnt = 1
+			mag = bits_not(wrap:<u64>(v)) + 1
+		} else {
+			mag = wrap:<u64>(v)
+		}
+		if mag == 0{
+			return cnt + 1
+		}
+		for k in 0..21{
+			if mag == 0{
+				break
+			}
+			cnt += 1
+			mag = mag / 10
+		}
+		return cnt
+	}
+
+	/** Token ti of statement si is exactly Long.toString(v). */
+	static func tokenIsLong(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64, v: mut s64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		if t.text.length(t.text) != StructMemberReorderingPass.decLen(v){
+			return false
+		}
+		let ok = mut ? t.text.parseS64(t.text)
+		return ok == v
+	}
+
+	/** Class id of a `PUSH <digits> imut_u64` line, -1 when the line is anything else or the number is negative/unparsable. */
+	static func classIdAt(program: ref some imut BytecodeProgram, i: mut u64) mut s64{
+		?catch(e){ return -1 }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) != 3 || VarAnalysis.stmtIs(st, "PUSH") == false{
+			return -1
+		}
+		let t2 = mut ? st.items.getSome(st.items, 2)
+		if t2.text.equals(t2.text, "imut_u64") == false{
+			return -1
+		}
+		let t1 = mut ? st.items.getSome(st.items, 1)
+		let v = mut ? t1.text.parseS64(t1.text)
+		if v < 0{
+			return -1
+		}
+		return v
+	}
+
+	/** Decl index + 1 of the (last) live struct with this class id, 0 if none. */
+	static func declForId(decls: ref some imut ObjectList<StructMemberReorderingDecl>, id: mut s64) mut u64{
+		?catch(e){ return 0 }
+		let found = mut 0
+		let nd = mut decls.size(decls)
+		for k in 0..nd{
+			let d = mut ? decls.getSome(decls, k)
+			if d.dead == false && d.classId >= 0 && d.classId == id{
+				found = k + 1
+			}
+		}
+		return found
+	}
+
+	/** Statement j is an ASSIGN, a NEW or the class-id push of a struct. */
+	static func terminalAt(program: ref some imut BytecodeProgram, decls: ref some imut ObjectList<StructMemberReorderingDecl>, j: mut u64) bool{
+		if VarAnalysis.isMn(program, j, "ASSIGN") || VarAnalysis.isMn(program, j, "NEW"){
+			return true
+		}
+		let id = mut StructMemberReorderingPass.classIdAt(program, j)
+		if id >= 0 && StructMemberReorderingPass.declForId(decls, id) > 0{
+			return true
+		}
+		return false
+	}
+
+	static func isBinaryText(t: ref some imut String) bool{
+		return t.equals(t, "ADD") || t.equals(t, "SUB") || t.equals(t, "MUL") || t.equals(t, "DIV") || t.equals(t, "MOD") || t.equals(t, "SHL") || t.equals(t, "SHR") || t.equals(t, "SAR") || t.equals(t, "ROTL") || t.equals(t, "ROTR") || t.equals(t, "BITS_OR") || t.equals(t, "BITS_AND") || t.equals(t, "BITS_XOR") || t.equals(t, "AND") || t.equals(t, "OR") || t.equals(t, "EQ") || t.equals(t, "NEQ") || t.equals(t, "LT") || t.equals(t, "LT_EQ") || t.equals(t, "GT") || t.equals(t, "GT_EQ")
+	}
+
+	static func isUnaryText(t: ref some imut String) bool{
+		return t.equals(t, "NEG") || t.equals(t, "NOT") || t.equals(t, "BITS_NOT") || t.equals(t, "TRUNC") || t.equals(t, "SEXT") || t.equals(t, "ZEXT") || t.equals(t, "FCONV") || t.equals(t, "NEG_FLOAT")
+	}
+
+	/** Stack effect of a member-expression line: 1 push, 2 binary (-1), 0 unary, 9 not allowed. */
+	static func effectAt(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 9 }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) == 0{
+			return 9
+		}
+		let t0 = mut ? st.items.getSome(st.items, 0)
+		if t0.kind != BytecodeTokenKind.CODE{
+			return 9
+		}
+		if t0.text.equals(t0.text, "PUSH"){
+			if st.size(st) == 3{
+				return 1
+			}
+			return 9
+		}
+		if StructMemberReorderingPass.isBinaryText(t0.text) && st.size(st) == 4{
+			return 2
+		}
+		if StructMemberReorderingPass.isUnaryText(t0.text){
+			return 0
+		}
+		return 9
+	}
+
+	/** typeMatches(last token of statement a, token 2 of statement b): equal after stripping one mut_/imut_/indeterminate_ prefix. */
+	static func typeMatchAt(program: ref some imut BytecodeProgram, a: mut u64, b: mut u64) bool{
+		?catch(e){ return false }
+		let sa = mut ? program.items.getSome(program.items, a)
+		let sb = mut ? program.items.getSome(program.items, b)
+		let ta = mut ? sa.items.getSome(sa.items, sa.size(sa) - 1)
+		let tb = mut ? sb.items.getSome(sb.items, 2)
+		let oa = mut StructMemberReorderingPass.mutPrefix(ta.text)
+		let ob = mut StructMemberReorderingPass.mutPrefix(tb.text)
+		let la = mut ta.text.length(ta.text)
+		let lb = mut tb.text.length(tb.text)
+		if la - oa != lb - ob{
+			return false
+		}
+		let m = mut (la - oa)
+		for q in 0..m{
+			if ta.text.charAt(ta.text, oa + q) != tb.text.charAt(tb.text, ob + q){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Token ti of statement si has exactly the text of token tj of statement sj. */
+	static func sameTokAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64, sj: mut u64, tj: mut u64) bool{
+		?catch(e){ return false }
+		let sa = mut ? program.items.getSome(program.items, si)
+		let sb = mut ? program.items.getSome(program.items, sj)
+		let ta = mut ? sa.items.getSome(sa.items, ti)
+		let tb = mut ? sb.items.getSome(sb.items, tj)
+		return ta.text.equals(ta.text, tb.text)
+	}
+
+	/** Length of the storage/mutability prefix of Java namesStruct's cut loop at `off` (0 = none). */
+	static func nsPrefix(text: ref some imut String, off: mut u64) mut u64{
+		if StructMemberReorderingPass.litAtOk(text, off, "owns_", 5){ return 5 }
+		if StructMemberReorderingPass.litAtOk(text, off, "ref_", 4){ return 4 }
+		if StructMemberReorderingPass.litAtOk(text, off, "raw_", 4){ return 4 }
+		if StructMemberReorderingPass.litAtOk(text, off, "auto_", 5){ return 5 }
+		if StructMemberReorderingPass.litAtOk(text, off, "static_", 7){ return 7 }
+		if StructMemberReorderingPass.litAtOk(text, off, "some_", 5){ return 5 }
+		if StructMemberReorderingPass.litAtOk(text, off, "mut_", 4){ return 4 }
+		if StructMemberReorderingPass.litAtOk(text, off, "imut_", 5){ return 5 }
+		if StructMemberReorderingPass.litAtOk(text, off, "indeterminate_", 14){ return 14 }
+		if StructMemberReorderingPass.litAtOk(text, off, "atomic_", 7){ return 7 }
+		return 0
+	}
+
+	/** Java namesStruct(token ti of statement si, name of the struct declared at statement di). */
+	static func namesStructAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64, di: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let ds = mut ? program.items.getSome(program.items, di)
+		let dn = mut ? ds.items.getSome(ds.items, 1)
+		let len = mut t.text.length(t.text)
+		let off = mut 0
+		for g in 0..len{
+			let cut = mut StructMemberReorderingPass.nsPrefix(t.text, off)
+			if cut == 0{
+				break
+			}
+			off += cut
+		}
+		let end = mut len
+		let br = mut t.text.indexOf(t.text, '[', off)
+		if br >= 0{
+			let brU = mut wrap:<u64>(br)
+			if brU > off{
+				end = brU
+			}
+		}
+		let nl = mut dn.text.length(dn.text)
+		if end - off != nl{
+			return false
+		}
+		for q in 0..nl{
+			if t.text.charAt(t.text, off + q) != dn.text.charAt(dn.text, q){
+				return false
+			}
+		}
+		return true
+	}
+
+	static func startsRaw(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		return t.text.startsWith(t.text, "raw_")
+	}
+
+	static func hasBracket(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		return t.text.indexOf(t.text, '[') > 0
+	}
+
+	/** Bit 1 ALLOC_STATIC, 2 GLOBAL, 4 some operand token starts with raw_; 0 when the statement cannot block anything (also non-CODE or STRUCT_ lines). */
+	static func useFlags(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		if VarAnalysis.hasMnemonic1(st) == false{
+			return 0
+		}
+		let t0 = mut ? st.items.getSome(st.items, 0)
+		if t0.text.startsWith(t0.text, "STRUCT_"){
+			return 0
+		}
+		let flags = mut 0
+		if t0.text.equals(t0.text, "ALLOC_STATIC"){
+			flags = 1
+		}
+		if t0.text.equals(t0.text, "GLOBAL"){
+			flags = 2
+		}
+		let sz = mut st.size(st)
+		for k in 1..sz{
+			if StructMemberReorderingPass.startsRaw(program, i, k){
+				flags = flags + 4
+				break
+			}
+		}
+		return flags
+	}
+
+	/** Any operand token (k >= 1) of statement i names struct di (arrayOnly: only through an array suffix). */
+	static func lineNamesAt(program: ref some imut BytecodeProgram, i: mut u64, di: mut u64, arrayOnly: imut bool) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		let sz = mut st.size(st)
+		for k in 1..sz{
+			if StructMemberReorderingPass.namesStructAt(program, i, k, di){
+				if arrayOnly == false || StructMemberReorderingPass.hasBracket(program, i, k){
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	/** Any operand token of statement i is a raw pointer to struct di. */
+	static func rawToAt(program: ref some imut BytecodeProgram, i: mut u64, di: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		let sz = mut st.size(st)
+		for k in 1..sz{
+			if StructMemberReorderingPass.startsRaw(program, i, k) && StructMemberReorderingPass.namesStructAt(program, i, k, di){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** 1 FUNC_START with a name, 2 `ARG $ret_dest x`, else 0. */
+	static func rvoKind(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		if VarAnalysis.stmtIs(st, "FUNC_START") && st.size(st) >= 2{
+			return 1
+		}
+		if VarAnalysis.stmtIs(st, "ARG") && st.size(st) == 3{
+			let t = mut ? st.items.getSome(st.items, 1)
+			if t.text.equals(t.text, "$ret_dest"){
+				return 2
+			}
+		}
+		return 0
+	}
+
+	/** token 1 of statement i exists and equals $ret_dest. */
+	static func firstIsRetDest(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) < 2{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 1)
+		return t.text.equals(t.text, "$ret_dest")
+	}
+
+	static func firstIsArg0(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) < 2{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 1)
+		return t.text.equals(t.text, "ARG0")
+	}
+
+	/** Token 1 of statement i is in the rvo set (a CALL's callee). */
+	static func calleeIn(program: ref some imut BytecodeProgram, i: mut u64, rvo: ref some imut StringSet) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		let t = mut ? st.items.getSome(st.items, 1)
+		return rvo.contains(rvo, t.text)
+	}
+
+	static func pinContains(program: ref some imut BytecodeProgram, si: mut u64, pinned: ref some imut StringSet) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, 1)
+		return pinned.contains(pinned, t.text)
+	}
+
+	// ------------------------------------------------------------ vectors
+
+	@throws
+	static func copyVec(src: ref imut Vec) owns some mut Vec{
+		?catch(e){ throw e }
+		let out = mut ? new Vec()
+		let n = mut 0
+		match Some(src){ n = src.size(src) }
+		for q in 0..n{
+			let v = mut 0
+			match Some(src){ v = src.get(src, q) }
+			? out.push(out, v)
+		}
+		return out
+	}
+
+	// ------------------------------------------------------------ the pass
+
+	@throws
+	static func reorder(program: ref mut BytecodeProgram, pinned: ref mut StringSet) mut bool{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let decls = mut ? new ObjectList:<StructMemberReorderingDecl>()
+		let byName = mut ? new StringScalarMap:<u64>()
+		let curIdx = mut 0
+		let inCur = mut false
+		// ---- readDecls
+		for i in 0..n{
+			let kind = mut 0
+			match Some(program){ kind = StructMemberReorderingPass.lineKind(program, i) }
+			if kind == 1{
+				let nd0 = mut ? new StructMemberReorderingDecl(i)
+				? decls.add(decls, nd0)
+				curIdx = decls.size(decls) - 1
+				inCur = true
+				let dh = mut ? decls.getSome(decls, curIdx)
+				? dh.head.push(dh.head, i)
+			} else if inCur{
+				if kind == 2 || kind == 3 || kind == 4{
+					let dd = mut ? decls.getSome(decls, curIdx)
+					if kind == 3{
+						dd.plain = false
+					}
+					if kind == 4{
+						dd.hasType = true
+						dd.typeFirst = (dd.entries.size(dd.entries) == 0)
+					}
+					? dd.head.push(dd.head, i)
+				} else if kind == 5{
+					let sz = mut 0
+					match Some(program){ sz = StructMemberReorderingPass.scalarSizeAt(program, i, 2) }
+					let dd = mut ? decls.getSome(decls, curIdx)
+					if sz == 0{
+						dd.plain = false
+					}
+					let ei = mut dd.entries.size(dd.entries)
+					let ent = mut ? new StructMemberReorderingEntry(false, 0, i, sz)
+					? dd.entries.add(dd.entries, ent)
+					let d2 = mut ? decls.getSome(decls, curIdx)
+					? d2.members.push(d2.members, ei)
+				} else if kind == 6{
+					let ok = mut false
+					let:<mut s64> padv = mut 0
+					match Some(program){
+						ok = StructMemberReorderingPass.longOkAt(program, i, 1)
+						if ok{
+							padv = StructMemberReorderingPass.longValAt(program, i, 1)
+						}
+					}
+					let dd = mut ? decls.getSome(decls, curIdx)
+					if ok == false{
+						dd.plain = false
+					}
+					let ent = mut ? new StructMemberReorderingEntry(true, padv, i, 0)
+					? dd.entries.add(dd.entries, ent)
+				} else if kind == 7{
+					let dd = mut ? decls.getSome(decls, curIdx)
+					let startI = mut dd.start
+					dd.end = i
+					dd.dead = false
+					let key = mut ? new String()
+					match Some(program){
+						let st = mut ? program.items.getSome(program.items, startI)
+						let t = mut ? st.items.getSome(st.items, 1)
+						key = ? t.text.sub(t.text, 0, t.text.length(t.text))
+					}
+					let hasOld = mut byName.containsKey(byName, key)
+					let oldIdx = mut 0
+					if hasOld{
+						oldIdx = byName.getOrDefault(byName, key, 0)
+					}
+					? byName.put(byName, key, curIdx)
+					if hasOld{
+						let od = mut ? decls.getSome(decls, oldIdx)
+						od.dead = true
+					}
+					inCur = false
+				} else {
+					let dd = mut ? decls.getSome(decls, curIdx)
+					dd.plain = false
+				}
+			}
+		}
+		let nd = mut decls.size(decls)
+		let live = mut 0
+		for k in 0..nd{
+			let dd = mut ? decls.getSome(decls, k)
+			if dd.dead == false{
+				live += 1
+			}
+		}
+		if live == 0{
+			return false
+		}
+		// ---- readClassIds
+		match Some(program){
+			? StructMemberReorderingPass.readClassIds(program, byName, decls)
+		}
+		// ---- structural eligibility
+		for k in 0..nd{
+			let startK = mut 0
+			let blockIt = mut false
+			let isDead = mut false
+			let dd = mut ? decls.getSome(decls, k)
+			isDead = dd.dead
+			startK = dd.start
+			if dd.plain == false || dd.hasType == false || dd.typeFirst == false || dd.members.size(dd.members) < 2 || dd.classId < 0{
+				blockIt = true
+			}
+			if isDead == false && blockIt == false{
+				match Some(program){ match Some(pinned){
+					if StructMemberReorderingPass.pinContains(program, startK, pinned){
+						blockIt = true
+					}
+				} }
+			}
+			if blockIt{
+				let d3 = mut ? decls.getSome(decls, k)
+				d3.blocked = true
+			}
+		}
+		? StructMemberReorderingPass.blockByUses(program, decls)
+		// ---- the new layout
+		for k in 0..nd{
+			let skip = mut false
+			let dd = mut ? decls.getSome(decls, k)
+			if dd.dead || dd.blocked{
+				skip = true
+			}
+			if skip == false{
+				let ne = mut dd.entries.size(dd.entries)
+				let nm = mut dd.members.size(dd.members)
+				let:<mut s64> oldSize = mut 8
+				for q in 0..ne{
+					let ent = mut ? dd.entries.getSome(dd.entries, q)
+					if ent.pad{
+						oldSize += ent.padBytes
+					} else {
+						oldSize += wrap:<s64>(ent.size)
+					}
+				}
+				let ord = mut ? new Vec()
+				let szs = mut ? new Vec()
+				for q in 0..nm{
+					let ei = mut dd.members.get(dd.members, q)
+					let ent = mut ? dd.entries.getSome(dd.entries, ei)
+					let es = mut ent.size
+					? ord.push(ord, ei)
+					? szs.push(szs, es)
+				}
+				// stable insertion sort, size descending
+				for i1 in 1..nm{
+					let xe = mut ord.get(ord, i1)
+					let xs = mut szs.get(szs, i1)
+					let j1 = mut i1
+					for g in 0..nm{
+						if j1 == 0{
+							break
+						}
+						let pj = mut szs.get(szs, j1 - 1)
+						if pj >= xs{
+							break
+						}
+						ord.set(ord, j1, ord.get(ord, j1 - 1))
+						szs.set(szs, j1, pj)
+						j1 -= 1
+					}
+					ord.set(ord, j1, xe)
+					szs.set(szs, j1, xs)
+				}
+				let:<mut s64> sum = mut 8
+				for q in 0..nm{
+					sum += wrap:<s64>(szs.get(szs, q))
+				}
+				let:<mut s64> total = mut ((sum + 7) / 8 * 8)
+				if total >= oldSize{
+					let d4 = mut ? decls.getSome(decls, k)
+					d4.blocked = true
+				} else {
+					for q in 0..nm{
+						let d5 = mut ? decls.getSome(decls, k)
+						? d5.newOrder.push(d5.newOrder, ord.get(ord, q))
+					}
+					let d6 = mut ? decls.getSome(decls, k)
+					d6.newPad = total - sum
+					d6.hasNew = true
+					for q in 0..nm{
+						let ei2 = mut ord.get(ord, q)
+						let ku = mut 0
+						match Some(program){ ku = StructMemberReorderingPass.unitOrdinal(program, decls, k, ei2) }
+						let d8 = mut ? decls.getSome(decls, k)
+						? d8.newUnit.push(d8.newUnit, ku)
+					}
+				}
+			}
+		}
+		// ---- construction sites: every class-id push of a still-eligible struct must parse
+		let sites = mut ? new ObjectList:<StructMemberReorderingSite>()
+		for i in 0..n{
+			let:<mut s64> id = mut 0
+			match Some(program){ id = StructMemberReorderingPass.classIdAt(program, i) }
+			if id >= 0{
+				let di = mut StructMemberReorderingPass.declForId(decls, id)
+				if di > 0{
+					let d0 = mut (di - 1)
+					let dd = mut ? decls.getSome(decls, d0)
+					let isBlocked = mut dd.blocked
+					if isBlocked == false{
+						let res = mut ? new Vec()
+						? StructMemberReorderingPass.walk(program, decls, d0, i, res)
+						if res.get(res, 0) == 1{
+							let units = mut ? new Vec()
+							let rs = mut res.size(res)
+							for q in 2..rs{
+								? units.push(units, res.get(res, q))
+							}
+							let site = mut ? new StructMemberReorderingSite(i, res.get(res, 1), d0, units)
+							? sites.add(sites, site)
+						} else {
+							let d7 = mut ? decls.getSome(decls, d0)
+							d7.blocked = true
+						}
+					}
+				}
+			}
+		}
+		let any = mut false
+		for k in 0..nd{
+			let dd = mut ? decls.getSome(decls, k)
+			if dd.dead == false && dd.blocked == false && dd.hasNew{
+				any = true
+			}
+		}
+		if any == false{
+			return false
+		}
+		// ---- rewrite
+		let declAt = mut ? new Vec()
+		? declAt.zero(declAt, n)
+		let siteAt = mut ? new Vec()
+		? siteAt.zero(siteAt, n)
+		for k in 0..nd{
+			let dd = mut ? decls.getSome(decls, k)
+			if dd.dead == false && dd.blocked == false && dd.hasNew{
+				declAt.set(declAt, dd.start, k + 1)
+			}
+		}
+		let nsite = mut sites.size(sites)
+		for q in 0..nsite{
+			let s = mut ? sites.getSome(sites, q)
+			let dd = mut ? decls.getSome(decls, s.decl)
+			if dd.blocked == false{
+				siteAt.set(siteAt, s.start, q + 1)
+			}
+		}
+		let out = mut ? new BytecodeProgram()
+		let i = mut 0
+		let bound = mut (n + 1)
+		for guard in 0..bound{
+			if i >= n{
+				break
+			}
+			let da = mut declAt.get(declAt, i)
+			let sa = mut siteAt.get(siteAt, i)
+			if da > 0{
+				let dd = mut ? decls.getSome(decls, da - 1)
+				let endI = mut dd.end
+				? StructMemberReorderingPass.emitDecl(program, out, decls, da - 1)
+				i = endI + 1
+			} else if sa > 0{
+				let s = mut ? sites.getSome(sites, sa - 1)
+				let endS = mut s.end
+				? StructMemberReorderingPass.emitSite(program, out, decls, sites, sa - 1)
+				i = endS
+			} else {
+				? StructMemberReorderingPass.moveStmt(program, out, i)
+				i += 1
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+
+	@throws
+	static func readClassIds(program: ref some imut BytecodeProgram, byName: ref some imut StringScalarMap<u64>, decls: ref some mut ObjectList<StructMemberReorderingDecl>) void{
+		?catch(e){ throw e }
+		let n = mut program.size(program)
+		for i in 0..n{
+			if VarAnalysis.isMn(program, i, "ENUM"){
+				let st = mut ? program.items.getSome(program.items, i)
+				let sz = mut st.size(st)
+				let t1 = mut ? st.items.getSome(st.items, 1)
+				if sz >= 3 && t1.text.equals(t1.text, "Class"){
+					let q = mut 2
+					for g in 0..sz{
+						if q + 1 >= sz{
+							break
+						}
+						let tn = mut ? st.items.getSome(st.items, q)
+						if byName.containsKey(byName, tn.text){
+							let di = mut byName.getOrDefault(byName, tn.text, 0)
+							let id = mut StructMemberReorderingPass.classIdValue(program, i, q + 1)
+							let d = mut ? decls.getSome(decls, di)
+							d.classId = id
+						}
+						q += 2
+					}
+				}
+			}
+		}
+	}
+
+	/** Long.parseLong of the token, -1 when it fails or is negative (a negative class id behaves like "none"). */
+	static func classIdValue(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) mut s64{
+		?catch(e){ return -1 }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let v = mut ? t.text.parseS64(t.text)
+		if v < 0{
+			return -1
+		}
+		return v
+	}
+
+	@throws
+	static func blockByUses(program: ref mut BytecodeProgram, decls: ref mut ObjectList<StructMemberReorderingDecl>) void{
+		?catch(e){ throw e }
+		let nd = mut 0
+		match Some(decls){ nd = decls.size(decls) }
+		// a struct used as the type of a member of any struct
+		match Some(program){ match Some(decls){
+			for a in 0..nd{
+				let da = mut ? decls.getSome(decls, a)
+				if da.dead == false{
+					let nm = mut da.members.size(da.members)
+					for q in 0..nm{
+						let ei = mut da.members.get(da.members, q)
+						let ent = mut ? da.entries.getSome(da.entries, ei)
+						let es = mut ent.stmt
+						for o in 0..nd{
+							let dob = mut ? decls.getSome(decls, o)
+							if dob.dead == false && StructMemberReorderingPass.namesStructAt(program, es, 2, dob.start){
+								dob.blocked = true
+							}
+						}
+					}
+				}
+			}
+		} }
+		// functions that declare a hidden destination pointer
+		let rvo = mut ? new StringSet()
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let haveFn = mut false
+		let curFn = mut 0
+		for i in 0..n{
+			let rk = mut 0
+			match Some(program){ rk = StructMemberReorderingPass.rvoKind(program, i) }
+			if rk == 1{
+				curFn = i
+				haveFn = true
+			} else if rk == 2 && haveFn{
+				let key = mut ? new String()
+				match Some(program){
+					let st = mut ? program.items.getSome(program.items, curFn)
+					let t = mut ? st.items.getSome(st.items, 1)
+					key = ? t.text.sub(t.text, 0, t.text.length(t.text))
+				}
+				let added = mut ? rvo.add(rvo, key)
+			}
+		}
+		for i in 0..n{
+			let flags = mut 0
+			match Some(program){ flags = StructMemberReorderingPass.useFlags(program, i) }
+			if flags != 0{
+				match Some(program){ match Some(decls){
+					let isRet = mut false
+					let isPush = mut false
+					let isRetDest = mut false
+					let isAddrOf = mut false
+					let isPop = mut false
+					let isCall = mut false
+					isRetDest = StructMemberReorderingPass.firstIsRetDest(program, i)
+					isRet = VarAnalysis.isMn(program, i, "RET")
+					isPush = VarAnalysis.isMn(program, i, "ARG") || VarAnalysis.isMn(program, i, "PUSH")
+					isAddrOf = VarAnalysis.isMn(program, i, "ADDR_OF")
+					isPop = VarAnalysis.isMn(program, i, "POP") && StructMemberReorderingPass.firstIsArg0(program, i)
+					for k in 0..nd{
+						let dk = mut ? decls.getSome(decls, k)
+						if dk.dead == false && dk.blocked == false{
+							let ds = mut dk.start
+							if (flags == 1 || flags == 5) && StructMemberReorderingPass.lineNamesAt(program, i, ds, false){
+								dk.blocked = true
+							} else if (flags == 1 || flags == 5 || flags == 2 || flags == 6) && StructMemberReorderingPass.lineNamesAt(program, i, ds, true){
+								dk.blocked = true
+							} else if flags >= 4 && StructMemberReorderingPass.rawToAt(program, i, ds){
+								let ok = mut false
+								if isPush && isRetDest{
+									ok = true
+								} else if isRet{
+									ok = true
+								} else if isAddrOf || isPop{
+									let lim = mut (i + 12)
+									if lim > n{
+										lim = n
+									}
+									let span = mut 0
+									if lim > i + 1{
+										span = lim - i - 1
+									}
+									for q in 0..span{
+										let j = mut (i + 1 + q)
+										if VarAnalysis.isMn(program, j, "CC_END"){
+											break
+										}
+										let jst = mut ? program.items.getSome(program.items, j)
+										if VarAnalysis.stmtIs(jst, "CALL") && jst.size(jst) >= 2{
+											ok = StructMemberReorderingPass.calleeIn(program, j, rvo)
+											break
+										}
+									}
+								}
+								if ok == false{
+									dk.blocked = true
+								}
+							}
+						}
+					}
+				} }
+			}
+		}
+	}
+
+	/** Backtracking search for the ways the pushed values after the class-id push at `start` can be cut into the old entries of decl dIdx.
+	 * res = [number found (stops at 2), end of the first found, then its unit ranges (start,end per member)]. */
+	@throws
+	static func walk(program: ref imut BytecodeProgram, decls: ref imut ObjectList<StructMemberReorderingDecl>, dIdx: mut u64, start: mut u64, res: ref mut Vec) void{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let nEnt = mut 0
+		match Some(decls){
+			let d0 = mut ? decls.getSome(decls, dIdx)
+			nEnt = d0.entries.size(d0.entries)
+		}
+		let ePad = mut ? new Vec()
+		let eBytes = mut ? new Vec()
+		let eStmt = mut ? new Vec()
+		for q in 0..nEnt{
+			let pad = mut 0
+			let bytes = mut 0
+			let stmt = mut 0
+			match Some(decls){
+				let d1 = mut ? decls.getSome(decls, dIdx)
+				let ent = mut ? d1.entries.getSome(d1.entries, q)
+				if ent.pad{
+					pad = 1
+				}
+				bytes = wrap:<u64>(ent.padBytes)
+				stmt = ent.stmt
+			}
+			? ePad.push(ePad, pad)
+			? eBytes.push(eBytes, bytes)
+			? eStmt.push(eStmt, stmt)
+		}
+		match Some(res){ ? res.zero(res, 2) }
+		let stack = mut ? new ObjectList:<StructMemberReorderingFrame>()
+		let acc0 = mut ? new Vec()
+		let f0 = mut ? new StructMemberReorderingFrame(start + 1, 0, 0, acc0)
+		? stack.add(stack, f0)
+		for guard in 0..2000000000{
+			let sz = mut stack.size(stack)
+			if sz == 0{
+				break
+			}
+			let cnt = mut 0
+			match Some(res){ cnt = res.get(res, 0) }
+			if cnt > 1{
+				break
+			}
+			let f = mut ? stack.getSome(stack, sz - 1)
+			let fj = mut f.j
+			let fidx = mut f.idx
+			let fmd = mut f.membersDone
+			let entered = mut f.entered
+			let p = mut f.p
+			let rel = mut f.rel
+			// mode: 0 pop, 1 scan this frame, 2 pad frame (pop, then maybe push the next one), 3 terminal
+			let mode = mut 1
+			if entered == false{
+				f.entered = true
+				if fidx == nEnt{
+					mode = 3
+				} else if ePad.get(ePad, fidx) == 1{
+					mode = 2
+				} else {
+					f.p = fj
+					f.rel = 0
+					p = fj
+					rel = 0
+				}
+			}
+			if mode == 3{
+				let ok = mut false
+				if fj < n{
+					match Some(program){ match Some(decls){ ok = StructMemberReorderingPass.terminalAt(program, decls, fj) } }
+				}
+				if ok{
+					if cnt == 0{
+						match Some(res){
+							res.set(res, 1, fj)
+						}
+						let nacc = mut 0
+						let f2 = mut ? stack.getSome(stack, sz - 1)
+						nacc = f2.acc.size(f2.acc)
+						for q in 0..nacc{
+							let f3 = mut ? stack.getSome(stack, sz - 1)
+							let v = mut f3.acc.get(f3.acc, q)
+							match Some(res){ ? res.push(res, v) }
+						}
+					}
+					match Some(res){ res.set(res, 0, cnt + 1) }
+				}
+				? stack.removeLast(stack)
+			} else if mode == 2{
+				let na = mut ? StructMemberReorderingPass.copyVec(f.acc)
+				? stack.removeLast(stack)
+				let padBytes = mut wrap:<s64>(eBytes.get(eBytes, fidx))
+				let ok = mut false
+				if fj < n{
+					match Some(program){
+						if VarAnalysis.isMn(program, fj, "STACK_LOCK"){
+							let sl = mut ? program.items.getSome(program.items, fj)
+							if sl.size(sl) == 2 && StructMemberReorderingPass.tokenIsLong(program, fj, 1, padBytes){
+								ok = true
+							}
+						}
+					}
+				}
+				if ok{
+					let nf = mut ? new StructMemberReorderingFrame(fj + 1, fidx + 1, fmd, na)
+					? stack.add(stack, nf)
+				}
+			} else {
+				let es = mut eStmt.get(eStmt, fidx)
+				let descend = mut false
+				let bound = mut 70
+				for g2 in 0..bound{
+					if p >= n || p - fj >= 64{
+						break
+					}
+					let ef = mut 9
+					match Some(program){ ef = StructMemberReorderingPass.effectAt(program, p) }
+					if ef == 9{
+						break
+					}
+					if ef == 2 && rel < 2{
+						break
+					}
+					if ef == 1{
+						rel += 1
+					} else if ef == 2{
+						rel -= 1
+					}
+					if rel < 1{
+						break
+					}
+					p += 1
+					if rel == 1{
+						let tm = mut false
+						match Some(program){ tm = StructMemberReorderingPass.typeMatchAt(program, p - 1, es) }
+						if tm{
+							descend = true
+							break
+						}
+					}
+				}
+				let fr = mut ? stack.getSome(stack, sz - 1)
+				fr.p = p
+				fr.rel = rel
+				if descend{
+					let na = mut ? StructMemberReorderingPass.copyVec(fr.acc)
+					? na.push(na, fj)
+					? na.push(na, p)
+					let nf = mut ? new StructMemberReorderingFrame(p, fidx + 1, fmd + 1, na)
+					? stack.add(stack, nf)
+				} else {
+					? stack.removeLast(stack)
+				}
+			}
+		}
+	}
+
+	// ------------------------------------------------------------ output
+
+	/** Moves statement idx of program to the end of out. */
+	@throws
+	static func moveStmt(program: ref mut BytecodeProgram, out: ref mut BytecodeProgram, idx: mut u64) void{
+		?catch(e){ throw e }
+		match Some(program){
+			let moved = mut program.items.take(program.items, idx)
+			match Some(out){ ? out.items.add(out.items, moved) }
+		}
+	}
+
+	/** Appends a copy of statement idx of program to out. */
+	@throws
+	static func copyStmt(program: ref mut BytecodeProgram, out: ref mut BytecodeProgram, idx: mut u64) void{
+		?catch(e){ throw e }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, idx)
+			let c = mut ? BytecodeStatement.copyOf(st)
+			match Some(out){ ? out.items.add(out.items, c) }
+		}
+	}
+
+	/** A new two-token line `mn num` whose tokens take file/line from the first token of statement near (Java `tok(near, text)`). */
+	@throws
+	static func mkStmt2(program: ref imut BytecodeProgram, near: mut u64, mn: static imut string, num: mut s64) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let:<mut s32> line = mut 0
+		let fileCopy = mut ? new String()
+		let hasFile = mut false
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, near)
+			let t = mut ? st.items.getSome(st.items, 0)
+			line = t.line + 0
+			match Some(t.file){
+				fileCopy = ? t.file.sub(t.file, 0, t.file.length(t.file))
+				hasFile = true
+			}
+		}
+		let a = mut ? String.from(mn)
+		let b = mut ? String.fromS64(num)
+		let st2 = mut ? new BytecodeStatement()
+		let:<owns mut String> f1 = mut null
+		if hasFile{
+			f1 = fileCopy
+		}
+		let t1 = mut ? new BytecodeToken(a, f1, line, BytecodeTokenKind.CODE)
+		let:<owns mut String> f2 = mut null
+		let t2 = mut ? new BytecodeToken(b, f2, line, BytecodeTokenKind.CODE)
+		? st2.add(st2, t1)
+		? st2.add(st2, t2)
+		return st2
+	}
+
+	@throws
+	static func emitDecl(program: ref mut BytecodeProgram, out: ref mut BytecodeProgram, decls: ref imut ObjectList<StructMemberReorderingDecl>, di: mut u64) void{
+		?catch(e){ throw e }
+		let nh = mut 0
+		let no = mut 0
+		let endI = mut 0
+		let:<mut s64> pad = mut 0
+		let first = mut 0
+		match Some(decls){
+			let dd = mut ? decls.getSome(decls, di)
+			nh = dd.head.size(dd.head)
+			no = dd.newOrder.size(dd.newOrder)
+			endI = dd.end
+			pad = dd.newPad
+			first = dd.head.get(dd.head, 0)
+		}
+		// the padding line first: it copies file/line from the (still present) STRUCT_START
+		let:<owns mut BytecodeStatement> padStmt = mut null
+		if pad > 0{
+			match Some(program){
+				padStmt = ? StructMemberReorderingPass.mkStmt2(program, first, "STRUCT_PADDING", pad)
+			}
+		}
+		for q in 0..nh{
+			let idx = mut 0
+			match Some(decls){
+				let dd = mut ? decls.getSome(decls, di)
+				idx = dd.head.get(dd.head, q)
+			}
+			? StructMemberReorderingPass.moveStmt(program, out, idx)
+		}
+		for q in 0..no{
+			let idx = mut 0
+			match Some(decls){
+				let dd = mut ? decls.getSome(decls, di)
+				let ei = mut dd.newOrder.get(dd.newOrder, q)
+				let ent = mut ? dd.entries.getSome(dd.entries, ei)
+				idx = ent.stmt
+			}
+			? StructMemberReorderingPass.moveStmt(program, out, idx)
+		}
+		if pad > 0{
+			match Some(out){ ? out.items.add(out.items, padStmt) }
+		}
+		? StructMemberReorderingPass.moveStmt(program, out, endI)
+	}
+
+	/** Unit ordinal (index into the old member list) used for new member entry ei: the last member with the same name (Java units map keyed by name). */
+	static func unitOrdinal(program: ref some imut BytecodeProgram, decls: ref some imut ObjectList<StructMemberReorderingDecl>, di: mut u64, ei: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let dd = mut ? decls.getSome(decls, di)
+		let ent = mut ? dd.entries.getSome(dd.entries, ei)
+		let es = mut ent.stmt
+		let nm = mut dd.members.size(dd.members)
+		for r in 0..nm{
+			let k = mut (nm - 1 - r)
+			let mi = mut dd.members.get(dd.members, k)
+			let me = mut ? dd.entries.getSome(dd.entries, mi)
+			if StructMemberReorderingPass.sameTokAt(program, es, 1, me.stmt, 1){
+				return k
+			}
+		}
+		return 0
+	}
+
+	@throws
+	static func emitSite(program: ref mut BytecodeProgram, out: ref mut BytecodeProgram, decls: ref imut ObjectList<StructMemberReorderingDecl>, sites: ref imut ObjectList<StructMemberReorderingSite>, si: mut u64) void{
+		?catch(e){ throw e }
+		let start = mut 0
+		let di = mut 0
+		match Some(sites){
+			let s = mut ? sites.getSome(sites, si)
+			start = s.start
+			di = s.decl
+		}
+		let no = mut 0
+		let:<mut s64> pad = mut 0
+		match Some(decls){
+			let dd = mut ? decls.getSome(decls, di)
+			no = dd.newOrder.size(dd.newOrder)
+			pad = dd.newPad
+		}
+		let:<owns mut BytecodeStatement> padStmt = mut null
+		if pad > 0{
+			match Some(program){
+				padStmt = ? StructMemberReorderingPass.mkStmt2(program, start, "STACK_LOCK", pad)
+			}
+		}
+		? StructMemberReorderingPass.moveStmt(program, out, start)
+		for q in 0..no{
+			let ei = mut 0
+			match Some(decls){
+				let dd = mut ? decls.getSome(decls, di)
+				ei = dd.newOrder.get(dd.newOrder, q)
+			}
+			let k = mut 0
+			match Some(decls){
+				let dd = mut ? decls.getSome(decls, di)
+				k = dd.newUnit.get(dd.newUnit, q)
+			}
+			let ua = mut 0
+			let ub = mut 0
+			match Some(sites){
+				let s = mut ? sites.getSome(sites, si)
+				ua = s.units.get(s.units, 2 * k)
+				ub = s.units.get(s.units, 2 * k + 1)
+			}
+			let cntU = mut 0
+			if ub > ua{
+				cntU = ub - ua
+			}
+			for u in 0..cntU{
+				? StructMemberReorderingPass.copyStmt(program, out, ua + u)
+			}
+		}
+		if pad > 0{
+			match Some(out){ ? out.items.add(out.items, padStmt) }
+		}
+	}
+}

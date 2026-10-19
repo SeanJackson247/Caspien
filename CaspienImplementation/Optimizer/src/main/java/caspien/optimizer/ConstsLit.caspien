@@ -1,0 +1,855 @@
+import "stdlib/string.caspien"
+import "stdlib/jdk_double.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/FloatText.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "NumText.caspien"
+
+/**
+ * Port of ConstantFoldingLit + the literal/fold helpers of ConstantFoldingPass.java. A literal is held as plain scalars (no BigInteger):
+ *   kind 1 = integer: `iv` is the value as a 64-bit pattern (sign-extended for signed types), `bi` the NumText base index (1..8 = u8 u16 u32 u64 s8 s16 s32 s64);
+ *   kind 2 = float (bi 9 = f32, 10 = f64): `fb` the IEEE bits (f32 in the low 32 bits); kind 3 = bool (`bv`).
+ * 64-bit patterns reproduce the exact BigInteger semantics of the Java (wrap, fits, compare) because every fold only combines literals of ONE base type.
+ */
+@pub
+struct ConstsLit{@pub{
+	ok: mut bool
+	kind: mut u64
+	bi: mut u64
+	iv: mut u64
+	fb: mut u64
+	bv: mut bool
+}}
+
+@pub
+impl constructor for ConstsLit() self{
+	return ConstsLit{ok= false, kind= 0, bi= 0, iv= 0, fb= 0, bv= false}
+}
+
+/** What `classify` found out about an operator line: op id (0 = not foldable shape) and the base indices of tokens 1..3 (0 = Java null). */
+@pub
+struct ConstsOp{@pub{
+	op: mut u64
+	b1: mut u64
+	b2: mut u64
+	b3: mut u64
+}}
+
+@pub
+impl constructor for ConstsOp() self{
+	return ConstsOp{op= 0, b1= 0, b2= 0, b3= 0}
+}
+
+@pub
+impl ConstsLit{
+	// ---- base-type helpers (base index 1..11 = u8 u16 u32 u64 s8 s16 s32 s64 f32 f64 bool) ----
+	@pub
+	static func isIntB(bi: mut u64) bool{
+		return bi >= 1 && bi <= 8
+	}
+
+	@pub
+	static func isFloatB(bi: mut u64) bool{
+		return bi == 9 || bi == 10
+	}
+
+	@pub
+	static func signedB(bi: mut u64) bool{
+		return bi >= 5 && bi <= 8
+	}
+
+	/** Java `width(b)` of an integer base (8/16/32/64) or float base (32/64). */
+	@pub
+	static func widthB(bi: mut u64) mut u64{
+		if bi == 1 || bi == 5{ return 8 }
+		if bi == 2 || bi == 6{ return 16 }
+		if bi == 3 || bi == 7 || bi == 9{ return 32 }
+		if bi == 4 || bi == 8 || bi == 10{ return 64 }
+		return 0
+	}
+
+	/** 2^w - 1 as a pattern (w in 1..64). */
+	@pub
+	static func maskW(w: mut u64) mut u64{
+		if w >= 64{
+			return 18446744073709551615
+		}
+		return bits_left(1, w) - 1
+	}
+
+	/** Java `wrap(v, b)` for the pattern `p` (any 64-bit pattern): reduced to the width, sign-extended again for a signed base. */
+	@pub
+	static func wrapTo(p: mut u64, bi: mut u64) mut u64{
+		let w = mut ConstsLit.widthB(bi)
+		let mk = mut ConstsLit.maskW(w)
+		let r = mut bits_and(p, mk)
+		if ConstsLit.signedB(bi) && w < 64 && w > 0{
+			if bits_and(r, bits_left(1, w - 1)) != 0{
+				r = bits_or(r, bits_not(mk))
+			}
+		}
+		return r
+	}
+
+	/** Two's complement negation of a 64-bit pattern. */
+	@pub
+	static func neg64(x: mut u64) mut u64{
+		return bits_not(x) + 1
+	}
+
+	// ---- literal parsing ----
+
+	/** Java isIntText + new BigInteger + fits: sets out.iv; false when the text is not an integer literal of base `bi`. */
+	@pub
+	static func parseInt(tx: ref some imut String, bi: mut u64, out: ref some mut ConstsLit) bool{
+		let n = mut tx.length(tx)
+		let i = mut 0
+		let neg = mut false
+		if n > 0{
+			if tx.charAt(tx, 0) == '-'{
+				neg = true
+				i = 1
+			}
+		}
+		if i >= n{
+			return false
+		}
+		let:<mut u64> mag = mut 0
+		for k in i..n{
+			let code = mut String.charCode(tx.charAt(tx, k))
+			if code < 48 || code > 57{
+				return false
+			}
+			let d = mut (code - 48)
+			if mag > 1844674407370955161{
+				return false
+			}
+			if mag == 1844674407370955161 && d > 5{
+				return false
+			}
+			mag = mag * 10 + d
+		}
+		let w = mut ConstsLit.widthB(bi)
+		if mag != 0{
+			if ConstsLit.signedB(bi){
+				let lim = mut bits_left(1, w - 1)
+				if neg{
+					if mag > lim{
+						return false
+					}
+				} else{
+					if mag >= lim{
+						return false
+					}
+				}
+			} else{
+				if neg{
+					return false
+				}
+				if w < 64{
+					if mag >= bits_left(1, w){
+						return false
+					}
+				}
+			}
+		}
+		if neg && mag != 0{
+			out.iv = ConstsLit.neg64(mag)
+		} else{
+			out.iv = mag
+		}
+		return true
+	}
+
+	/** Java isFloatText: -?digits.digits. Also reports in `big` whether the integer part has more digits than can possibly stay finite (then the exact parse is needed to see an overflow). */
+	@pub
+	static func isFloatText(tx: ref some imut String, bi: mut u64) mut u64{
+		let n = mut tx.length(tx)
+		let i = mut 0
+		if n > 0{
+			if tx.charAt(tx, 0) == '-'{
+				i = 1
+			}
+		}
+		let dot = mut tx.indexOf(tx, mut '.')
+		if dot < 0{
+			return 0
+		}
+		let du = mut wrap:<u64>(dot)
+		if du <= i{
+			return 0
+		}
+		if du + 1 == n{
+			return 0
+		}
+		for k in i..n{
+			if k != du{
+				let code = mut String.charCode(tx.charAt(tx, k))
+				if code < 48 || code > 57{
+					return 0
+				}
+			}
+		}
+		let digits = mut (du - i)
+		let lim = mut 38
+		if bi == 10{
+			lim = 308
+		}
+		if digits > lim{
+			return 2
+		}
+		return 1
+	}
+
+	/**
+	 * Java `lit(line)`: a literal PUSH "PUSH <literal> <type>" whose literal really is one of the type's kind (out.ok false otherwise).
+	 * `full` = the float bits are wanted (always computed when an overflow to infinity is possible, to decide validity).
+	 * `out` is a nullable reference because the exact float parse frees memory (a `ref some` would die across it).
+	 */
+	@pub
+	static func lit(st: ref some imut BytecodeStatement, out: ref mut ConstsLit, full: mut bool) void{
+		?catch(e){ return }
+		match Some(out){ out.ok = false }
+		if st.size(st) != 3{
+			return
+		}
+		let t0 = mut ? st.items.getSome(st.items, 0)
+		if t0.kind != BytecodeTokenKind.CODE{
+			return
+		}
+		if t0.text.equals(t0.text, "PUSH") == false{
+			return
+		}
+		let t2 = mut ? st.items.getSome(st.items, 2)
+		let bi = mut NumText.baseIndex(t2.text)
+		if bi == 0{
+			return
+		}
+		let t1 = mut ? st.items.getSome(st.items, 1)
+		if bi <= 8{
+			match Some(out){
+				if ConstsLit.parseInt(t1.text, bi, out){
+					out.ok = true
+					out.kind = 1
+					out.bi = bi
+				}
+			}
+			return
+		}
+		if bi == 11{
+			let isTrue = mut t1.text.equals(t1.text, "true")
+			let isFalse = mut t1.text.equals(t1.text, "false")
+			match Some(out){
+				if isTrue || isFalse{
+					out.bv = isTrue
+					out.ok = true
+					out.kind = 3
+					out.bi = 11
+				}
+			}
+			return
+		}
+		let fk = mut ConstsLit.isFloatText(t1.text, bi)
+		if fk == 0{
+			return
+		}
+		let bits = mut 0
+		if full || fk == 2{
+			let cp = mut ? t1.text.sub(t1.text, 0, t1.text.length(t1.text))
+			let isD = mut (bi == 10)
+			bits = ? FloatText.bits(cp, isD)
+			if isD{
+				if bits_and(bits_right(bits, 52), 2047) == 2047{
+					return
+				}
+			} else{
+				if bits_and(bits_right(bits, 23), 255) == 255{
+					return
+				}
+			}
+		}
+		match Some(out){
+			out.fb = bits
+			out.ok = true
+			out.kind = 2
+			out.bi = bi
+		}
+	}
+
+	/** `lit` of statement `idx` of `prog`. */
+	@pub
+	static func litAt(prog: ref some imut BytecodeProgram, idx: mut u64, out: ref mut ConstsLit) void{
+		?catch(e){ return }
+		let st = mut ? prog.items.getSome(prog.items, idx)
+		ConstsLit.lit(st, out, true)
+	}
+
+	// ---- operators ----
+
+	/** Operator mnemonic -> id (0 = none): 1 NOT 2 NEG 3 TRUNC 4 SEXT 5 ZEXT 6 BITS_NOT | 7 ADD 8 SUB 9 MUL 10 DIV 11 MOD 12 SHL 13 SHR 14 ROTL 15 ROTR 16 BITS_OR 17 BITS_AND 18 BITS_XOR 19 LT 20 LT_EQ 21 GT 22 GT_EQ 23 EQ 24 NEQ 25 AND 26 OR | 27 IN. */
+	@pub
+	static func opId(t: ref some imut String) mut u64{
+		let n = mut t.length(t)
+		if n < 2 || n > 8{
+			return 0
+		}
+		if t.equals(t, "ADD"){ return 7 }
+		if t.equals(t, "SUB"){ return 8 }
+		if t.equals(t, "MUL"){ return 9 }
+		if t.equals(t, "DIV"){ return 10 }
+		if t.equals(t, "MOD"){ return 11 }
+		if t.equals(t, "EQ"){ return 23 }
+		if t.equals(t, "NEQ"){ return 24 }
+		if t.equals(t, "LT"){ return 19 }
+		if t.equals(t, "GT"){ return 21 }
+		if t.equals(t, "LT_EQ"){ return 20 }
+		if t.equals(t, "GT_EQ"){ return 22 }
+		if t.equals(t, "AND"){ return 25 }
+		if t.equals(t, "OR"){ return 26 }
+		if t.equals(t, "NOT"){ return 1 }
+		if t.equals(t, "NEG"){ return 2 }
+		if t.equals(t, "TRUNC"){ return 3 }
+		if t.equals(t, "SEXT"){ return 4 }
+		if t.equals(t, "ZEXT"){ return 5 }
+		if t.equals(t, "BITS_NOT"){ return 6 }
+		if t.equals(t, "SHL"){ return 12 }
+		if t.equals(t, "SHR"){ return 13 }
+		if t.equals(t, "ROTL"){ return 14 }
+		if t.equals(t, "ROTR"){ return 15 }
+		if t.equals(t, "BITS_OR"){ return 16 }
+		if t.equals(t, "BITS_AND"){ return 17 }
+		if t.equals(t, "BITS_XOR"){ return 18 }
+		if t.equals(t, "IN"){ return 27 }
+		return 0
+	}
+
+	/** Reads statement `i` of `program`: `info.op` is 0 unless it has the exact shape tryFold looks at (all tokens CODE, size 3 for unary ops, 4 otherwise). */
+	@pub
+	static func classify(program: ref some imut BytecodeProgram, i: mut u64, info: ref some mut ConstsOp) void{
+		?catch(e){
+			info.op = 0
+			return
+		}
+		info.op = 0
+		let st = mut ? program.items.getSome(program.items, i)
+		let m = mut st.size(st)
+		if m != 3 && m != 4{
+			return
+		}
+		for k in 0..m{
+			let tk = mut ? st.items.getSome(st.items, k)
+			if tk.kind != BytecodeTokenKind.CODE{
+				return
+			}
+		}
+		let t0 = mut ? st.items.getSome(st.items, 0)
+		let op = mut ConstsLit.opId(t0.text)
+		if op == 0{
+			return
+		}
+		if op <= 6{
+			if m != 3{
+				return
+			}
+		} else{
+			if m != 4{
+				return
+			}
+		}
+		let t1 = mut ? st.items.getSome(st.items, 1)
+		let t2 = mut ? st.items.getSome(st.items, 2)
+		info.b1 = NumText.baseIndex(t1.text)
+		info.b2 = NumText.baseIndex(t2.text)
+		info.b3 = 0
+		if m == 4{
+			let t3 = mut ? st.items.getSome(st.items, 3)
+			info.b3 = NumText.baseIndex(t3.text)
+		}
+		if op == 27{
+			if t2.text.contains(t2.text, "range(") == false{
+				return
+			}
+			if info.b3 != 11 || info.b1 != 4{
+				return
+			}
+		}
+		info.op = op
+	}
+
+	/** Java foldBits: the bitwise group on two in-range literals of integer base `bi`; returns the result pattern. */
+	@pub
+	static func foldBits(op: mut u64, bi: mut u64, x: mut u64, y: mut u64) mut u64{
+		let w = mut ConstsLit.widthB(bi)
+		let mk = mut ConstsLit.maskW(w)
+		let ux = mut bits_and(x, mk)
+		let uy = mut bits_and(y, mk)
+		let r = mut 0
+		if op == 17{
+			r = bits_and(ux, uy)
+		} else if op == 16{
+			r = bits_or(ux, uy)
+		} else if op == 18{
+			r = bits_xor(ux, uy)
+		} else if op == 14 || op == 15{
+			match w != 0{
+				let c = mut (uy % w)
+				if op == 15{
+					c = (w - c) % w
+				}
+				r = bits_and(bits_or(bits_left(ux, c), bits_right(ux, w - c)), mk)
+			}
+		} else if op == 12{
+			if uy >= w{
+				r = 0
+			} else{
+				r = bits_and(bits_left(ux, uy), mk)
+			}
+		} else{
+			// SHR
+			let wide = mut (uy >= w)
+			if ConstsLit.signedB(bi){
+				let negv = mut (bits_and(x, bits_left(1, 63)) != 0)
+				if wide{
+					if negv{
+						r = 18446744073709551615
+					} else{
+						r = 0
+					}
+				} else{
+					if negv{
+						r = bits_not(bits_right(bits_not(x), uy))
+					} else{
+						r = bits_right(x, uy)
+					}
+				}
+			} else{
+				if wide{
+					r = 0
+				} else{
+					r = bits_right(ux, uy)
+				}
+			}
+		}
+		return ConstsLit.wrapTo(r, bi)
+	}
+
+	/** Java float result test: NaN, infinite or negative zero (by bits). */
+	@pub
+	static func badFloat(bi: mut u64, fb: mut u64) bool{
+		if bi == 10{
+			if bits_and(bits_right(fb, 52), 2047) == 2047{
+				return true
+			}
+			return fb == bits_left(1, 63)
+		}
+		if bits_and(bits_right(fb, 23), 255) == 255{
+			return true
+		}
+		return fb == bits_left(1, 31)
+	}
+
+	/** a (op) b on floats of one precision, op 7 ADD 8 SUB 9 MUL 10 DIV; returns the result bits. */
+	@pub
+	static func fArith(isD: mut bool, op: mut u64, a: mut u64, b: mut u64) mut u64{
+		if isD{
+			let x = mut Double.longBitsToDouble(a)
+			let y = mut Double.longBitsToDouble(b)
+			let r = mut x
+			unsafe assume{
+				assume match x : finite
+				assume match y : finite
+				if op == 7{
+					assume match x + y : finite
+					r = x + y
+				} else if op == 8{
+					assume match x - y : finite
+					r = x - y
+				} else if op == 9{
+					assume match x * y : finite
+					r = x * y
+				} else{
+					assume match x / y : finite
+					r = x / y
+				}
+			}
+			return Double.doubleToRawLongBits(r)
+		}
+		let x = mut Float.intBitsToFloat(wrap:<u32>(a))
+		let y = mut Float.intBitsToFloat(wrap:<u32>(b))
+		let r = mut x
+		unsafe assume{
+			assume match x : finite
+			assume match y : finite
+			if op == 7{
+				assume match x + y : finite
+				r = x + y
+			} else if op == 8{
+				assume match x - y : finite
+				r = x - y
+			} else if op == 9{
+				assume match x * y : finite
+				r = x * y
+			} else{
+				assume match x / y : finite
+				r = x / y
+			}
+		}
+		let rb = mut Float.floatToRawIntBits(r)
+		return rb as u64
+	}
+
+	/** 0 = equal, 1 = a < b, 2 = a > b (literals are never NaN). */
+	@pub
+	static func fCmp(isD: mut bool, a: mut u64, b: mut u64) mut u64{
+		let res = mut 0
+		if isD{
+			let x = mut Double.longBitsToDouble(a)
+			let y = mut Double.longBitsToDouble(b)
+			unsafe assume{
+				assume match x : finite
+				assume match y : finite
+				if x < y{
+					res = 1
+				} else if x > y{
+					res = 2
+				}
+			}
+			return res
+		}
+		let x = mut Float.intBitsToFloat(wrap:<u32>(a))
+		let y = mut Float.intBitsToFloat(wrap:<u32>(b))
+		unsafe assume{
+			assume match x : finite
+			assume match y : finite
+			if x < y{
+				res = 1
+			} else if x > y{
+				res = 2
+			}
+		}
+		return res
+	}
+
+	static func setBool(r: ref some mut ConstsLit, v: mut bool) void{
+		r.kind = 3
+		r.bi = 11
+		r.bv = v
+	}
+
+	static func setInt(r: ref some mut ConstsLit, bi: mut u64, p: mut u64) void{
+		r.kind = 1
+		r.bi = bi
+		r.iv = p
+	}
+
+	/** Java `unary`: folds a unary operator on literal `a`; b1/b2 = base indices of the operator's type tokens. False = leave alone. */
+	@pub
+	static func unary(op: mut u64, a: ref some imut ConstsLit, b1: mut u64, b2: mut u64, r: ref some mut ConstsLit) bool{
+		if op == 1{
+			if a.bi != 11 || b1 != 11 || b2 != 11{
+				return false
+			}
+			ConstsLit.setBool(r, a.bv == false)
+			return true
+		}
+		if op == 6{
+			if ConstsLit.isIntB(b1) == false || b1 != a.bi || b1 != b2{
+				return false
+			}
+			let mk = mut ConstsLit.maskW(ConstsLit.widthB(b1))
+			let p = mut bits_xor(bits_and(a.iv, mk), mk)
+			ConstsLit.setInt(r, b2, ConstsLit.wrapTo(p, b1))
+			return true
+		}
+		if op == 2{
+			if ConstsLit.isFloatB(a.bi) == false || a.bi != b1 || a.bi != b2{
+				return false
+			}
+			let sb = mut bits_left(1, 31)
+			if a.bi == 10{
+				sb = bits_left(1, 63)
+			}
+			let nb = mut bits_xor(a.fb, sb)
+			if ConstsLit.badFloat(a.bi, nb){
+				return false
+			}
+			r.kind = 2
+			r.bi = b2
+			r.fb = nb
+			return true
+		}
+		if op == 3{
+			if ConstsLit.isIntB(b1) == false || ConstsLit.isIntB(b2) == false || b1 != a.bi{
+				return false
+			}
+			if ConstsLit.widthB(b2) >= ConstsLit.widthB(b1){
+				return false
+			}
+			let p = mut ConstsLit.wrapTo(a.iv, b2)
+			if ConstsLit.signedB(b2){
+				if bits_and(p, bits_left(1, 63)) != 0{
+					return false
+				}
+			}
+			ConstsLit.setInt(r, b2, p)
+			return true
+		}
+		if op == 4 || op == 5{
+			if ConstsLit.isIntB(b1) == false || ConstsLit.isIntB(b2) == false || b1 != a.bi{
+				return false
+			}
+			if ConstsLit.widthB(b2) != 64 || ConstsLit.widthB(b1) >= 64{
+				return false
+			}
+			let sx = mut ConstsLit.signedB(b1)
+			if (op == 4) != sx{
+				return false
+			}
+			if sx != ConstsLit.signedB(b2){
+				return false
+			}
+			ConstsLit.setInt(r, b2, a.iv)
+			return true
+		}
+		return false
+	}
+
+	/** Java `binary`: folds a binary operator; lb/rb/resB = base indices of the three type tokens. False = leave alone. */
+	@pub
+	static func binary(op: mut u64, a: ref some imut ConstsLit, b: ref some imut ConstsLit, lb: mut u64, rb: mut u64, resB: mut u64, r: ref some mut ConstsLit) bool{
+		if lb == 0 || resB == 0 || lb != rb || lb != a.bi || lb != b.bi{
+			return false
+		}
+		if op == 25 || op == 26{
+			if lb != 11 || resB != 11{
+				return false
+			}
+			if op == 25{
+				ConstsLit.setBool(r, a.bv && b.bv)
+			} else{
+				ConstsLit.setBool(r, a.bv || b.bv)
+			}
+			return true
+		}
+		if op >= 19 && op <= 24{
+			if resB != 11 || lb == 11{
+				return false
+			}
+			let lt = mut false
+			let gt = mut false
+			if ConstsLit.isIntB(lb){
+				if ConstsLit.signedB(lb){
+					let x = mut wrap:<s64>(a.iv)
+					let y = mut wrap:<s64>(b.iv)
+					lt = x < y
+					gt = x > y
+				} else{
+					lt = a.iv < b.iv
+					gt = a.iv > b.iv
+				}
+			} else{
+				let c = mut ConstsLit.fCmp(lb == 10, a.fb, b.fb)
+				lt = c == 1
+				gt = c == 2
+			}
+			let v = mut false
+			if op == 19{ v = lt }
+			else if op == 20{ v = gt == false }
+			else if op == 21{ v = gt }
+			else if op == 22{ v = lt == false }
+			else if op == 23{ v = lt == false && gt == false }
+			else{ v = lt || gt }
+			ConstsLit.setBool(r, v)
+			return true
+		}
+		if lb != resB{
+			return false
+		}
+		if ConstsLit.isFloatB(lb){
+			if op < 7 || op > 10{
+				return false
+			}
+			let rbits = mut ConstsLit.fArith(lb == 10, op, a.fb, b.fb)
+			if ConstsLit.badFloat(lb, rbits){
+				return false
+			}
+			r.kind = 2
+			r.bi = resB
+			r.fb = rbits
+			return true
+		}
+		if ConstsLit.isIntB(lb) == false{
+			return false
+		}
+		if op == 16 || op == 17 || op == 18 || op == 12 || op == 13 || op == 14 || op == 15{
+			ConstsLit.setInt(r, resB, ConstsLit.foldBits(op, lb, a.iv, b.iv))
+			return true
+		}
+		if ConstsLit.widthB(lb) != 64{
+			return false
+		}
+		let x = mut a.iv
+		let y = mut b.iv
+		if op == 7{
+			ConstsLit.setInt(r, resB, x + y)
+			return true
+		}
+		if op == 8{
+			ConstsLit.setInt(r, resB, x - y)
+			return true
+		}
+		if op == 9{
+			ConstsLit.setInt(r, resB, x * y)
+			return true
+		}
+		if op == 10 || op == 11{
+			if y == 0{
+				return false
+			}
+			let sg = mut ConstsLit.signedB(lb)
+			let top = mut bits_left(1, 63)
+			if sg && y == 18446744073709551615 && x == top{
+				return false
+			}
+			let xn = mut (sg && bits_and(x, top) != 0)
+			let yn = mut (sg && bits_and(y, top) != 0)
+			let mx = mut x
+			let my = mut y
+			if xn{
+				mx = ConstsLit.neg64(x)
+			}
+			if yn{
+				my = ConstsLit.neg64(y)
+			}
+			let q = mut 0
+			let rm = mut 0
+			match my != 0{
+				q = mx / my
+				rm = mx % my
+			}
+			if op == 10{
+				if xn != yn{
+					q = ConstsLit.neg64(q)
+				}
+				ConstsLit.setInt(r, resB, q)
+			} else{
+				if xn{
+					rm = ConstsLit.neg64(rm)
+				}
+				ConstsLit.setInt(r, resB, rm)
+			}
+			return true
+		}
+		return false
+	}
+
+	/** Java IN fold: x in lo..hi (half open) on three non-negative integer literals. */
+	@pub
+	static func inRange(x: ref some imut ConstsLit, lo: ref some imut ConstsLit, hi: ref some imut ConstsLit, r: ref some mut ConstsLit) bool{
+		if ConstsLit.isIntB(x.bi) == false || ConstsLit.isIntB(lo.bi) == false || ConstsLit.isIntB(hi.bi) == false{
+			return false
+		}
+		let top = mut bits_left(1, 63)
+		if ConstsLit.signedB(x.bi) && bits_and(x.iv, top) != 0{
+			return false
+		}
+		if ConstsLit.signedB(lo.bi) && bits_and(lo.iv, top) != 0{
+			return false
+		}
+		if ConstsLit.signedB(hi.bi) && bits_and(hi.iv, top) != 0{
+			return false
+		}
+		let inside = mut (x.iv >= lo.iv && x.iv < hi.iv)
+		ConstsLit.setBool(r, inside)
+		return true
+	}
+
+	/** Dispatch for a classified operator over the operand literals a (b, c). */
+	@pub
+	static func fold(info: ref some imut ConstsOp, a: ref some imut ConstsLit, b: ref some imut ConstsLit, c: ref some imut ConstsLit, r: ref some mut ConstsLit) bool{
+		let op = mut info.op
+		if op >= 1 && op <= 6{
+			return ConstsLit.unary(op, a, info.b1, info.b2, r)
+		}
+		if op == 27{
+			return ConstsLit.inRange(a, b, c, r)
+		}
+		if op >= 7 && op <= 26{
+			return ConstsLit.binary(op, a, b, info.b1, info.b2, info.b3, r)
+		}
+		return false
+	}
+
+	// ---- printing ----
+
+	/** Java floatText: shortest-repr Float/Double.toString, BigDecimal.toPlainString, ".0" appended when there is no point. */
+	@pub
+	@throws
+	static func floatText(bi: mut u64, fb: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let s = mut ? new String()
+		if bi == 9{
+			s = ? Float.toString(Float.intBitsToFloat(wrap:<u32>(fb)))
+		} else{
+			s = ? Double.toString(Double.longBitsToDouble(fb))
+		}
+		let p = mut ? BigDecimalText.toPlainString(s)
+		if p.indexOf(p, mut '.') < 0{
+			? p.append(p, ".0")
+		}
+		return p
+	}
+
+	/** The literal text of a fold result (what Java's `BigInteger.toString()` / "true" / floatText give). */
+	@pub
+	@throws
+	static func render(r: ref some imut ConstsLit) owns some mut String{
+		?catch(e){ throw e }
+		let kind = mut r.kind
+		let bv = mut r.bv
+		let bi = mut r.bi
+		let iv = mut r.iv
+		let fb = mut r.fb
+		let out = mut ? new String()
+		if kind == 3{
+			if bv{
+				out = ? String.from("true")
+			} else{
+				out = ? String.from("false")
+			}
+		} else if kind == 2{
+			out = ? ConstsLit.floatText(bi, fb)
+		} else if ConstsLit.signedB(bi){
+			out = ? String.fromS64(wrap:<s64>(iv))
+		} else{
+			out = ? String.fromU64(iv)
+		}
+		return out
+	}
+
+	/** Java `push(at, value, type)`: PUSH value type, positioned like token 0 of statement `i`; the type text is token `typeIdx` of that statement. */
+	@pub
+	@throws
+	static func pushFrom(program: ref some imut BytecodeProgram, i: mut u64, typeIdx: mut u64, value: ref some imut String) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let st = mut ? program.items.getSome(program.items, i)
+		let t0 = mut ? st.items.getSome(st.items, 0)
+		let tt = mut ? st.items.getSome(st.items, typeIdx)
+		let ln = mut (t0.line + 0)
+		let ty = mut ? tt.text.sub(tt.text, 0, tt.text.length(tt.text))
+		let vv = mut ? value.sub(value, 0, value.length(value))
+		let:<owns mut String> file = mut null
+		match Some(t0.file){ file = mut ? t0.file.sub(t0.file, 0, t0.file.length(t0.file)) }
+		let pu = mut ? String.from("PUSH")
+		let k0 = mut ? new BytecodeToken(pu, file, ln, BytecodeTokenKind.CODE)
+		let:<owns mut String> nofile1 = mut null
+		let k1 = mut ? new BytecodeToken(vv, nofile1, ln, BytecodeTokenKind.CODE)
+		let:<owns mut String> nofile2 = mut null
+		let k2 = mut ? new BytecodeToken(ty, nofile2, ln, BytecodeTokenKind.CODE)
+		let res = mut ? new BytecodeStatement()
+		? res.add(res, k0)
+		? res.add(res, k1)
+		? res.add(res, k2)
+		return res
+	}
+}

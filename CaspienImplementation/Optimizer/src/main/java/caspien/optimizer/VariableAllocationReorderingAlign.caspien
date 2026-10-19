@@ -1,0 +1,261 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/** Result slot of one `ofNoRecurse` call (Java kept `missing` in a field). */
+@pub
+struct AlignStep{@pub{
+	val: mut u64
+	missing: mut bool
+	name: owns some mut String
+}}
+
+@pub
+@throws
+impl constructor for AlignStep() self{
+	?catch(e){ throw e }
+	let n = mut ? new String()
+	return AlignStep{val= 0, missing= false, name= n}
+}
+
+/** Alignment of a canonical type text (port of VariableAllocationReorderingAlign.java); struct declarations are ranges of one flat member table. */
+@pub
+struct VariableAllocationReorderingAlign{@pub{
+	declIds: owns some mut StringScalarMap<u64>
+	memTexts: owns some mut ObjectList<String>
+	declStart: owns some mut Vec
+	declCount: owns some mut Vec
+	cache: owns some mut StringScalarMap<u64>
+}}
+
+@pub
+@throws
+impl constructor for VariableAllocationReorderingAlign() self{
+	?catch(e){ throw e }
+	let a = mut ? new StringScalarMap:<u64>()
+	let b = mut ? new ObjectList:<String>()
+	let c = mut ? new Vec()
+	let d = mut ? new Vec()
+	let g = mut ? new StringScalarMap:<u64>()
+	return VariableAllocationReorderingAlign{declIds= a, memTexts= b, declStart= c, declCount= d, cache= g}
+}
+
+@pub
+impl VariableAllocationReorderingAlign{
+	@pub
+	@throws
+	static func build(program: ref mut BytecodeProgram) owns some mut VariableAllocationReorderingAlign {
+		?catch(e){ throw e }
+		let al = mut ? new VariableAllocationReorderingAlign()
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let cur = mut 0
+		let have = mut false
+		for i in 0..n{
+			let code = mut 0
+			let t1 = mut ? new String()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, i)
+				let sz1 = mut st.size(st)
+				if VarAnalysis.stmtIs(st, "STRUCT_START") && sz1 >= 2{
+					code = 1
+					let a = mut ? st.items.getSome(st.items, 1)
+					t1 = ? a.text.sub(a.text, 0, a.text.length(a.text))
+				} else if VarAnalysis.stmtIs(st, "STRUCT_MEMBER") && sz1 >= 3{
+					code = 2
+					let b = mut ? st.items.getSome(st.items, 2)
+					t1 = ? b.text.sub(b.text, 0, b.text.length(b.text))
+				} else if VarAnalysis.stmtIs(st, "STRUCT_END"){
+					code = 4
+				}
+			}
+			match Some(al){
+				if code == 1{
+					let id = mut al.declStart.size(al.declStart)
+					let startAt = mut al.memTexts.size(al.memTexts)
+					? al.declStart.push(al.declStart, startAt)
+					? al.declCount.push(al.declCount, 0)
+					? al.declIds.put(al.declIds, t1, id)
+					cur = id
+					have = true
+				} else if code == 2 && have{
+					? al.memTexts.add(al.memTexts, t1)
+					al.declCount.set(al.declCount, cur, al.declCount.get(al.declCount, cur) + 1)
+				} else if code == 4{
+					have = false
+				}
+			}
+		}
+		return al
+	}
+
+	/** Java `of(canonical)`. */
+	@pub
+	@throws
+	static func of(aligns: ref mut VariableAllocationReorderingAlign, canonical: ref some imut String) mut u64 {
+		?catch(e){ throw e }
+		let canon = mut ? canonical.sub(canonical, 0, canonical.length(canonical))
+		let res = mut ? new AlignStep()
+		match Some(aligns){ ? VariableAllocationReorderingAlign.ofNoRecurse(aligns, canon, res) }
+		if res.missing == false{
+			return res.val
+		}
+		let root = mut ? res.name.sub(res.name, 0, res.name.length(res.name))
+		? VariableAllocationReorderingAlign.resolveStructs(aligns, root)
+		let res2 = mut ? new AlignStep()
+		match Some(aligns){ ? VariableAllocationReorderingAlign.ofNoRecurse(aligns, canon, res2) }
+		return res2.val
+	}
+
+	/** Java ofNoRecurse: alignment given the cached struct alignments; an uncached struct sets res.missing and res.name (and the value is 1). */
+	@throws
+	static func ofNoRecurse(aligns: ref some imut VariableAllocationReorderingAlign, canonical: ref some imut String, res: ref some mut AlignStep) void {
+		?catch(e){ throw e }
+		res.missing = false
+		let cur = mut ? canonical.sub(canonical, 0, canonical.length(canonical))
+		let guard = mut (canonical.length(canonical) + 2)
+		for g in 0..guard{
+			let u = mut cur.indexOf(cur, '_')
+			let isSome = mut false
+			if u > 0{
+				let c = mut ? cur.sub(cur, 0, wrap:<u64>(u))
+				if c.equals(c, "owns") || c.equals(c, "ref") || c.equals(c, "raw") || c.equals(c, "auto") || c.equals(c, "static"){
+					res.val = 8
+					return
+				}
+				isSome = c.equals(c, "some")
+			}
+			let rest = mut ? cur.sub(cur, 0, cur.length(cur))
+			if isSome{
+				rest = ? cur.substring(cur, wrap:<u64>(u) + 1)
+			}
+			let u2 = mut rest.indexOf(rest, '_')
+			let base = mut ? rest.sub(rest, 0, rest.length(rest))
+			if u2 > 0{
+				base = ? rest.substring(rest, wrap:<u64>(u2) + 1)
+			}
+			if base.startsWith(base, "atomic_"){
+				base = ? base.substring(base, 7)
+			}
+			if base.equals(base, "u8") || base.equals(base, "s8") || base.equals(base, "bool") || base.equals(base, "char") || base.equals(base, "void"){
+				res.val = 1
+				return
+			}
+			if base.equals(base, "u16") || base.equals(base, "s16"){
+				res.val = 2
+				return
+			}
+			if base.equals(base, "u32") || base.equals(base, "s32") || base.equals(base, "f32"){
+				res.val = 4
+				return
+			}
+			if base.equals(base, "u64") || base.equals(base, "s64") || base.equals(base, "f64") || base.equals(base, "code_addr") || base.equals(base, "string"){
+				res.val = 8
+				return
+			}
+			let bl = mut base.length(base)
+			if base.startsWith(base, "dynarray(") && base.endsWith(base, ")"){
+				res.val = 8
+				return
+			}
+			if bl > 0 && base.endsWith(base, "]"){
+				let open = mut 0
+				let found = mut false
+				for q in 0..bl{
+					let k = mut (bl - 1 - q)
+					if found == false && base.charAt(base, k) == '['{
+						open = k
+						found = true
+					}
+				}
+				if found && open > 0{
+					cur = ? base.sub(base, 0, open)
+					continue
+				}
+			}
+			if base.equals(base, "range") || base.startsWith(base, "range("){
+				res.val = 8
+				return
+			}
+			if aligns.declIds.containsKey(aligns.declIds, base){
+				if aligns.cache.containsKey(aligns.cache, base){
+					res.val = aligns.cache.getOrDefault(aligns.cache, base, 0)
+					return
+				}
+				res.missing = true
+				res.val = 1
+				res.name = ? base.sub(base, 0, bl)
+				return
+			}
+			res.val = 8
+			return
+		}
+	}
+
+	/** Java resolveStructs: fills the cache for `root` and every struct below it (max over member alignments, a struct seeded 1 while on the stack). */
+	@throws
+	static func resolveStructs(aligns: ref mut VariableAllocationReorderingAlign, root: ref some imut String) void {
+		?catch(e){ throw e }
+		let names = mut ? new ObjectList:<String>()
+		let ids = mut ? new Vec()
+		let res = mut ? new AlignStep()
+		let rootId = mut 0
+		let ndecl = mut 0
+		let rootCopy = mut ? root.sub(root, 0, root.length(root))
+		let rootCopy2 = mut ? root.sub(root, 0, root.length(root))
+		match Some(aligns){
+			rootId = aligns.declIds.getOrDefault(aligns.declIds, root, 0)
+			ndecl = aligns.declStart.size(aligns.declStart)
+			? aligns.cache.put(aligns.cache, rootCopy, 1)
+		}
+		? names.add(names, rootCopy2)
+		? ids.push(ids, rootId)
+		let outer = mut (ndecl * 2 + 4)
+		for og in 0..outer{
+			let top = mut names.size(names)
+			if top == 0{
+				break
+			}
+			top = top - 1
+			let id = mut ids.get(ids, top)
+			let cnt = mut 0
+			let base = mut 0
+			match Some(aligns){
+				cnt = aligns.declCount.get(aligns.declCount, id)
+				base = aligns.declStart.get(aligns.declStart, id)
+			}
+			let mx = mut 1
+			let blocked = mut false
+			for q in 0..cnt{
+				if blocked{
+					break
+				}
+				let cid = mut 0
+				match Some(aligns){
+					let mt = mut ? aligns.memTexts.getSome(aligns.memTexts, base + q)
+					? VariableAllocationReorderingAlign.ofNoRecurse(aligns, mt, res)
+				}
+				if res.missing{
+					match Some(aligns){ cid = aligns.declIds.getOrDefault(aligns.declIds, res.name, 0) }
+					let k1 = mut ? res.name.sub(res.name, 0, res.name.length(res.name))
+					match Some(aligns){ ? aligns.cache.put(aligns.cache, k1, 1) }
+					let k2 = mut ? res.name.sub(res.name, 0, res.name.length(res.name))
+					? names.add(names, k2)
+					? ids.push(ids, cid)
+					blocked = true
+				} else if res.val > mx{
+					mx = res.val
+				}
+			}
+			if blocked == false{
+				let key = mut ? names.getSome(names, top)
+				let kc = mut ? key.sub(key, 0, key.length(key))
+				match Some(aligns){ ? aligns.cache.put(aligns.cache, kc, mx) }
+				? names.removeLast(names)
+				let dummy = mut ids.pop(ids)
+			}
+		}
+	}
+}

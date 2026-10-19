@@ -1,0 +1,277 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/**
+ * Drops unreferenced EXTERN / GLOBAL / ALLOC_STATIC / STRING declarations (port of UnusedDeclarationRemovalPass.java). The Java keyed one map by
+ * "KIND:name"; here every kind has its own name -> declaration-id map (same lookups, no string concatenation). Which lines are removed does not
+ * depend on the Java HashMap order.
+ */
+@pub
+struct UnusedDeclarationRemovalPass{@pub{
+}}
+
+@pub
+impl constructor for UnusedDeclarationRemovalPass() self{
+	return UnusedDeclarationRemovalPass{}
+}
+
+@pub
+impl UnusedDeclarationRemovalPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let hasMain = mut false
+		let hasAsm = mut false
+		match Some(program){
+			for i in 0..n{
+				if VarAnalysis.isMn(program, i, "ASM_START"){
+					hasAsm = true
+				}
+				if hasMain == false && VarAnalysis.isMn(program, i, "FUNC_START"){
+					if UnusedDeclarationRemovalPass.isMainStart(program, i){
+						hasMain = true
+					}
+				}
+			}
+		}
+		if hasAsm || hasMain == false{
+			return false
+		}
+		let externs = mut ? new StringScalarMap:<u64>()
+		let strings = mut ? new StringScalarMap:<u64>()
+		let globals = mut ? new StringScalarMap:<u64>()
+		let statics = mut ? new StringScalarMap:<u64>()
+		let declKind = mut ? new Vec()     // 1 EXTERN 2 STRING 3 GLOBAL 4 ALLOC_STATIC
+		let declUsed = mut ? new Vec()
+		let declStatic = mut ? new Vec()   // dot-less ALLOC_STATIC lines of the name
+		let declName = mut ? new ObjectList:<String>()
+		let lineDecl = mut ? new Vec()     // statement -> declaration id + 1 (0 = none)
+		? lineDecl.zero(lineDecl, n)
+		for i in 0..n{
+			let kind = mut 0
+			let dotted = mut false
+			let name = mut ? new String()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, i)
+				if st.size(st) >= 2{
+					if VarAnalysis.stmtIs(st, "EXTERN"){
+						kind = 1
+					} else if VarAnalysis.stmtIs(st, "STRING"){
+						kind = 2
+					} else if VarAnalysis.stmtIs(st, "GLOBAL"){
+						kind = 3
+					} else if VarAnalysis.stmtIs(st, "ALLOC_STATIC"){
+						kind = 4
+					}
+					if kind != 0{
+						let t1 = mut ? st.items.getSome(st.items, 1)
+						let d = mut t1.text.indexOf(t1.text, '.')
+						if kind >= 3 && d >= 0{
+							dotted = true
+							name = ? t1.text.sub(t1.text, 0, wrap:<u64>(d))
+						} else {
+							name = ? t1.text.sub(t1.text, 0, t1.text.length(t1.text))
+						}
+					}
+				}
+			}
+			if kind != 0{
+				let id = mut declKind.size(declKind)
+				let isNew = mut false
+				if kind == 1{
+					if externs.containsKey(externs, name){
+						id = externs.getOrDefault(externs, name, 0)
+					} else {
+						isNew = true
+					}
+				} else if kind == 2{
+					if strings.containsKey(strings, name){
+						id = strings.getOrDefault(strings, name, 0)
+					} else {
+						isNew = true
+					}
+				} else if kind == 3{
+					if globals.containsKey(globals, name){
+						id = globals.getOrDefault(globals, name, 0)
+					} else {
+						isNew = true
+					}
+				} else {
+					if statics.containsKey(statics, name){
+						id = statics.getOrDefault(statics, name, 0)
+					} else {
+						isNew = true
+					}
+				}
+				if isNew{
+					let keep = mut ? name.sub(name, 0, name.length(name))
+					? declName.add(declName, keep)
+					? declKind.push(declKind, kind)
+					? declUsed.push(declUsed, 0)
+					? declStatic.push(declStatic, 0)
+					if kind == 1{
+						? externs.put(externs, name, id)
+					} else if kind == 2{
+						? strings.put(strings, name, id)
+					} else if kind == 3{
+						? globals.put(globals, name, id)
+					} else {
+						? statics.put(statics, name, id)
+					}
+				}
+				lineDecl.set(lineDecl, i, id + 1)
+				if kind == 4 && dotted == false{
+					declStatic.set(declStatic, id, declStatic.get(declStatic, id) + 1)
+				}
+			}
+		}
+		let nd = mut declKind.size(declKind)
+		if nd == 0{
+			return false
+		}
+		// uses
+		for i in 0..n{
+			let ownId = mut lineDecl.get(lineDecl, i)    // id + 1 of the declaration this line makes, 0 = none
+			let dots = mut ? new Vec()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, i)
+				let sz = mut st.size(st)
+				for k in 0..sz{
+					let tk = mut ? st.items.getSome(st.items, k)
+					if tk.kind != BytecodeTokenKind.CODE{
+						continue
+					}
+					if k == 0 && ownId != 0{
+						continue
+					}
+					if externs.containsKey(externs, tk.text){
+						let id = mut externs.getOrDefault(externs, tk.text, 0)
+						if id + 1 != ownId{
+							declUsed.set(declUsed, id, 1)
+						}
+					}
+					if strings.containsKey(strings, tk.text){
+						let id = mut strings.getOrDefault(strings, tk.text, 0)
+						if id + 1 != ownId{
+							declUsed.set(declUsed, id, 1)
+						}
+					}
+					if tk.text.indexOf(tk.text, '.') >= 0{
+						? dots.push(dots, k)
+					} else {
+						if globals.containsKey(globals, tk.text){
+							let id = mut globals.getOrDefault(globals, tk.text, 0)
+							if id + 1 != ownId{
+								declUsed.set(declUsed, id, 1)
+							}
+						}
+						if statics.containsKey(statics, tk.text){
+							let id = mut statics.getOrDefault(statics, tk.text, 0)
+							if id + 1 != ownId{
+								declUsed.set(declUsed, id, 1)
+							}
+						}
+					}
+				}
+			}
+			let nDots = mut dots.size(dots)
+			for q in 0..nDots{
+				let k = mut dots.get(dots, q)
+				let b = mut ? new String()
+				match Some(program){
+					let st = mut ? program.items.getSome(program.items, i)
+					let tk = mut ? st.items.getSome(st.items, k)
+					let d = mut tk.text.indexOf(tk.text, '.')
+					b = ? tk.text.sub(tk.text, 0, wrap:<u64>(d))
+				}
+				if globals.containsKey(globals, b){
+					let id = mut globals.getOrDefault(globals, b, 0)
+					if id + 1 != ownId{
+						declUsed.set(declUsed, id, 1)
+					}
+				}
+				if statics.containsKey(statics, b){
+					let id = mut statics.getOrDefault(statics, b, 0)
+					if id + 1 != ownId{
+						declUsed.set(declUsed, id, 1)
+					}
+				}
+			}
+		}
+		// removal set
+		let removeDecl = mut ? new Vec()
+		? removeDecl.zero(removeDecl, nd)
+		let anyRemove = mut false
+		for id in 0..nd{
+			if declUsed.get(declUsed, id) == 1{
+				continue
+			}
+			let kind = mut declKind.get(declKind, id)
+			let nm = mut ? declName.getSome(declName, id)
+			if kind == 1{
+				if nm.equals(nm, "malloc") || nm.equals(nm, "realloc") || nm.equals(nm, "free") || nm.equals(nm, "strlen") || nm.equals(nm, "exit") || nm.equals(nm, "pthread_exit") || nm.equals(nm, "sched_yield"){
+					continue
+				}
+			}
+			if kind == 3 && nm.equals(nm, "ghost_table"){
+				continue
+			}
+			if kind == 4 && declStatic.get(declStatic, id) != 1{
+				continue
+			}
+			removeDecl.set(removeDecl, id, 1)
+			anyRemove = true
+		}
+		if anyRemove == false{
+			return false
+		}
+		let any = mut false
+		for i in 0..n{
+			let d = mut lineDecl.get(lineDecl, i)
+			if d != 0 && removeDecl.get(removeDecl, d - 1) == 1{
+				any = true
+			}
+		}
+		if any == false{
+			return false
+		}
+		let out = mut ? new BytecodeProgram()
+		for i in 0..n{
+			let d = mut lineDecl.get(lineDecl, i)
+			let drop = mut false
+			if d != 0 && removeDecl.get(removeDecl, d - 1) == 1{
+				drop = true
+			}
+			if drop == false{
+				match Some(program){
+					let moved = mut program.items.take(program.items, i)
+					? out.items.add(out.items, moved)
+				}
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+
+	/** FUNC_START with exactly two tokens, the second being "main". */
+	static func isMainStart(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) != 2{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 1)
+		return t.text.equals(t.text, "main")
+	}
+}

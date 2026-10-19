@@ -1,0 +1,1372 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+
+/**
+ * Support of FunctionInliningPass (worker `inline`). Everything here is NUMERIC (no String is held), so a reference to any of these structs
+ * survives every call the pass makes: every token text is interned once to a small id (0 = Java null) and the pass compares and copies
+ * tokens as plain integers. A program is a `Ls` (flat token ids + line starts + "original statement" marks).
+ */
+
+/** Growable-table helpers on top of Vec. */
+@pub
+struct VX{@pub{
+}}
+
+@pub
+impl VX{
+	/** Makes `v` at least `size` long, new entries zero. */
+	@pub
+	@throws
+	static func ensure(v: ref some mut Vec, size: mut u64) void{
+		?catch(e){ throw e }
+		if size > len(v.a){
+			let nc = mut (size * 2 + 16)
+			v.a = ? resize(v.a, nc, 0)
+		}
+		if size > v.n{
+			let from = mut v.n
+			for q in from..size{
+				match q into v.a{ v.a[q] = 0 }
+			}
+			v.n = size
+		}
+	}
+
+	/** Sets entry `i`, growing the table when needed. */
+	@pub
+	@throws
+	static func setG(v: ref some mut Vec, i: mut u64, x: mut u64) void{
+		?catch(e){ throw e }
+		if i >= v.n{
+			? VX.ensure(v, i + 1)
+		}
+		match i into v.a{ v.a[i] = x }
+	}
+
+	/** Adds `d` to entry `i`. */
+	@pub
+	@throws
+	static func addG(v: ref some mut Vec, i: mut u64, d: mut u64) void{
+		?catch(e){ throw e }
+		let old = mut v.get(v, i)
+		? VX.setG(v, i, old + d)
+	}
+
+	/** Entries 0..m become zero (the table is m long). */
+	@pub
+	@throws
+	static func zeroTo(v: ref some mut Vec, m: mut u64) void{
+		?catch(e){ throw e }
+		if m > len(v.a){
+			let nc = mut (m * 2 + 16)
+			v.a = ? resize(v.a, nc, 0)
+		}
+		for q in 0..m{
+			match q into v.a{ v.a[q] = 0 }
+		}
+		v.n = m
+	}
+
+	@pub
+	static func min(a: mut u64, b: mut u64) mut u64{
+		if a < b{
+			return a
+		}
+		return b
+	}
+
+	@pub
+	static func max(a: mut u64, b: mut u64) mut u64{
+		if a > b{
+			return a
+		}
+		return b
+	}
+
+	/** A char for a byte value. */
+	@pub
+	static func codeChar(code: mut u64) mut char{
+		let b = mut wrap:<u8>(code)
+		let c = mut '\0'
+		unsafe memcopy raw{
+			memcopy(raw c, mut 1, raw b)
+		}
+		return c
+	}
+}
+
+/** A map from ids to ids that is "cleared" in O(1) by starting a new stamp. */
+@pub
+struct IdMap{@pub{
+	mk: owns some mut Vec
+	to: owns some mut Vec
+	stamp: mut u64
+}}
+
+@throws
+impl constructor for IdMap() self{
+	?catch(e){ throw e }
+	let a = mut ? new Vec()
+	let b = mut ? new Vec()
+	return IdMap{mk= a, to= b, stamp= 1}
+}
+
+@pub
+impl IdMap{
+	@pub
+	func begin(_self: ref some mut self) void{
+		_self.stamp += 1
+	}
+
+	@pub
+	@throws
+	func put(_self: ref some mut self, id: mut u64, v: mut u64) void{
+		?catch(e){ throw e }
+		? VX.setG(_self.mk, id, _self.stamp)
+		? VX.setG(_self.to, id, v)
+	}
+
+	@pub
+	func has(_self: ref some imut self, id: mut u64) bool{
+		return _self.mk.get(_self.mk, id) == _self.stamp
+	}
+
+	@pub
+	func get(_self: ref some imut self, id: mut u64) mut u64{
+		return _self.to.get(_self.to, id)
+	}
+}
+
+/** Lines of token ids: `toks` holds all tokens, `starts[i]` is the first token of line i, `orig[i]` is 1 + the index of the statement of the input program this line still is (0 = a new or changed line). */
+@pub
+struct Ls{@pub{
+	toks: owns some mut Vec
+	starts: owns some mut Vec
+	orig: owns some mut Vec
+}}
+
+@throws
+impl constructor for Ls() self{
+	?catch(e){ throw e }
+	let a = mut ? new Vec()
+	let b = mut ? new Vec()
+	let c = mut ? new Vec()
+	return Ls{toks= a, starts= b, orig= c}
+}
+
+@pub
+impl Ls{
+	@pub
+	func n(_self: ref some imut self) mut u64{
+		return _self.starts.n
+	}
+
+	@pub
+	func lineStart(_self: ref some imut self, i: mut u64) mut u64{
+		return _self.starts.get(_self.starts, i)
+	}
+
+	@pub
+	func lineEnd(_self: ref some imut self, i: mut u64) mut u64{
+		if i + 1 < _self.starts.n{
+			return _self.starts.get(_self.starts, i + 1)
+		}
+		return _self.toks.n
+	}
+
+	/** Number of tokens of line i. */
+	@pub
+	func ntok(_self: ref some imut self, i: mut u64) mut u64{
+		return _self.lineEnd(_self, i) - _self.lineStart(_self, i)
+	}
+
+	/** Id of token k of line i (0 when the line is shorter). */
+	@pub
+	func tok(_self: ref some imut self, i: mut u64, k: mut u64) mut u64{
+		let s = mut _self.lineStart(_self, i)
+		let e = mut _self.lineEnd(_self, i)
+		if s + k < e{
+			return _self.toks.get(_self.toks, s + k)
+		}
+		return 0
+	}
+
+	@pub
+	func origOf(_self: ref some imut self, i: mut u64) mut u64{
+		return _self.orig.get(_self.orig, i)
+	}
+
+	/** Starts a new (empty) line. */
+	@pub
+	@throws
+	func addLine(_self: ref some mut self, origMark: mut u64) void{
+		?catch(e){ throw e }
+		? _self.starts.push(_self.starts, _self.toks.n)
+		? _self.orig.push(_self.orig, origMark)
+	}
+
+	@pub
+	@throws
+	func addTok(_self: ref some mut self, id: mut u64) void{
+		?catch(e){ throw e }
+		? _self.toks.push(_self.toks, id)
+	}
+
+	/** A new line of up to five tokens (a 0 token ends the line). */
+	@pub
+	@throws
+	func add5(_self: ref some mut self, a: mut u64, b: mut u64, c: mut u64, d: mut u64, e: mut u64) void{
+		?catch(e0){ throw e0 }
+		? _self.addLine(_self, 0)
+		? _self.addTok(_self, a)
+		if b != 0{ ? _self.addTok(_self, b) }
+		if b != 0 &&then c != 0{ ? _self.addTok(_self, c) }
+		if b != 0 &&then c != 0 &&then d != 0{ ? _self.addTok(_self, d) }
+		if b != 0 &&then c != 0 &&then d != 0 &&then e != 0{ ? _self.addTok(_self, e) }
+	}
+
+	/** Copies line i of `from` (keeping its "original" mark when `keep`). */
+	@pub
+	@throws
+	func copyLine(_self: ref some mut self, from: ref some imut Ls, i: mut u64, keep: mut bool) void{
+		?catch(e){ throw e }
+		let mark = mut 0
+		if keep{
+			mark = from.origOf(from, i)
+		}
+		? _self.addLine(_self, mark)
+		let s = mut from.lineStart(from, i)
+		let z = mut from.lineEnd(from, i)
+		for q in s..z{
+			? _self.addTok(_self, from.toks.get(from.toks, q))
+		}
+	}
+
+	/** Copies lines [a, b) of `from`. */
+	@pub
+	@throws
+	func copyRange(_self: ref some mut self, from: ref some imut Ls, a: mut u64, b: mut u64, keep: mut bool) void{
+		?catch(e){ throw e }
+		for i in a..b{
+			? _self.copyLine(_self, from, i, keep)
+		}
+	}
+
+	/** Drops every line from index m on. */
+	@pub
+	func truncate(_self: ref some mut self, m: mut u64) void{
+		if m < _self.starts.n{
+			_self.toks.n = _self.starts.get(_self.starts, m)
+			_self.starts.n = m
+			_self.orig.n = m
+		}
+	}
+
+	@pub
+	func clear(_self: ref some mut self) void{
+		_self.toks.n = 0
+		_self.starts.n = 0
+		_self.orig.n = 0
+	}
+}
+
+/** The token interner and the per-id facts the pass asks for. Id 0 is "no token". Texts are chars (as numbers) in one pool. */
+@pub
+struct Hb{@pub{
+	pool: owns some mut Vec
+	off: owns some mut Vec
+	ln: owns some mut Vec
+	hs: owns some mut Vec
+	slots: owns some mut Vec
+	fl: owns some mut Vec
+	root: owns some mut Vec
+	base: owns some mut Vec
+	num: owns some mut Vec
+	tmp: owns some mut Vec
+	cap: mut u64
+	cnt: mut u64
+	FUNC_START: mut u64
+	FUNC_END: mut u64
+	FUNC_DECORATE: mut u64
+	RETURNS: mut u64
+	ARG: mut u64
+	ALLOC: mut u64
+	ALLOC_STATIC: mut u64
+	THROW: mut u64
+	GT_UNWIND: mut u64
+	PUSH_LABEL: mut u64
+	CALL: mut u64
+	EXTERN_CALL: mut u64
+	CC_START: mut u64
+	CC_END: mut u64
+	PUSH_RET: mut u64
+	JMP: mut u64
+	CMP: mut u64
+	POP: mut u64
+	RET: mut u64
+	ASSIGN: mut u64
+	ATOMIC_ASSIGN: mut u64
+	ADDR: mut u64
+	PUSH: mut u64
+	GT_DESTRUCT: mut u64
+	PUSH_FIELDNAME: mut u64
+	VARARGS_XMM_COUNT: mut u64
+	DUP_TOP: mut u64
+	INVOKE: mut u64
+	INC: mut u64
+	DEC: mut u64
+	MSG: mut u64
+	ATOMIC_PUSH: mut u64
+	gtAddr: mut u64
+	gtMsg: mut u64
+	imutVoid: mut u64
+	imutRange: mut u64
+	mutRange: mut u64
+	atInline: mut u64
+	atDont: mut u64
+	mainFn: mut u64
+	nullT: mut u64
+	forRange: mut u64
+	sufI: mut u64
+	sufLabI: mut u64
+	under: mut u64
+	inlEnd: mut u64
+	retPre: mut u64
+	colon: mut u64
+	atSign: mut u64
+}}
+
+@throws
+impl constructor for Hb() self{
+	?catch(e){ throw e }
+	let a = mut ? new Vec()
+	let b = mut ? new Vec()
+	let c = mut ? new Vec()
+	let d = mut ? new Vec()
+	let e1 = mut ? new Vec()
+	let f = mut ? new Vec()
+	let g = mut ? new Vec()
+	let h = mut ? new Vec()
+	let i = mut ? new Vec()
+	let j = mut ? new Vec()
+	? VX.zeroTo(e1, 1024)
+	? b.push(b, 0)
+	? c.push(c, 0)
+	? d.push(d, 0)
+	? f.push(f, 0)
+	? g.push(g, 0)
+	? h.push(h, 0)
+	? i.push(i, 0)
+	return Hb{pool= a, off= b, ln= c, hs= d, slots= e1, fl= f, root= g, base= h, num= i, tmp= j, cap= 1024, cnt= 0, FUNC_START= 0, FUNC_END= 0, FUNC_DECORATE= 0, RETURNS= 0, ARG= 0, ALLOC= 0, ALLOC_STATIC= 0, THROW= 0, GT_UNWIND= 0, PUSH_LABEL= 0, CALL= 0, EXTERN_CALL= 0, CC_START= 0, CC_END= 0, PUSH_RET= 0, JMP= 0, CMP= 0, POP= 0, RET= 0, ASSIGN= 0, ATOMIC_ASSIGN= 0, ADDR= 0, PUSH= 0, GT_DESTRUCT= 0, PUSH_FIELDNAME= 0, VARARGS_XMM_COUNT= 0, DUP_TOP= 0, INVOKE= 0, INC= 0, DEC= 0, MSG= 0, ATOMIC_PUSH= 0, gtAddr= 0, gtMsg= 0, imutVoid= 0, imutRange= 0, mutRange= 0, atInline= 0, atDont= 0, mainFn= 0, nullT= 0, forRange= 0, sufI= 0, sufLabI= 0, under= 0, inlEnd= 0, retPre= 0, colon= 0, atSign= 0}
+}
+
+@pub
+impl Hb{
+	/** Sets the flag bits `bit` on `id`. */
+	@pub
+	@throws
+	func orFlag(_self: ref some mut self, id: mut u64, bit: mut u64) void{
+		?catch(e){ throw e }
+		let f = mut _self.fl.get(_self.fl, id)
+		? VX.setG(_self.fl, id, bits_or(f, bit))
+	}
+
+	/** Recomputes the text-derived flags of every id (the set-membership bits are kept). */
+	@pub
+	@throws
+	func recomputeAll(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let all = mut _self.cnt
+		let hiAll = mut (all + 1)
+		for q in 1..hiAll{
+			let old = mut _self.fl.get(_self.fl, q)
+			let keepBits = mut bits_and(old, 260096)
+			? VX.setG(_self.fl, q, bits_or(keepBits, _self.computeFlags(_self, q)))
+		}
+	}
+
+	/** Interns the text of a String. */
+	@pub
+	@throws
+	func internString(_self: ref some mut self, s: ref some imut String) mut u64{
+		?catch(e){ throw e }
+		_self.tmp.n = 0
+		let cn = mut s.length(s)
+		for q in 0..cn{
+			? _self.tmp.push(_self.tmp, String.charCode(s.charAt(s, q)))
+		}
+		let id = mut ? _self.internTmp(_self)
+		return id
+	}
+
+	@pub
+	func flagsOf(_self: ref some imut self, id: mut u64) mut u64{
+		return _self.fl.get(_self.fl, id)
+	}
+
+	@pub
+	func isStr(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 1) != 0
+	}
+
+	@pub
+	func isAt(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 2) != 0
+	}
+
+	@pub
+	func isColon(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 4) != 0
+	}
+
+	@pub
+	func isScalar(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 8) != 0
+	}
+
+	@pub
+	func isHasrange(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 16) != 0
+	}
+
+	@pub
+	func isLiteralish(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 32) != 0
+	}
+
+	@pub
+	func isForrange(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 64) != 0
+	}
+
+	@pub
+	func isHasdot(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 128) != 0
+	}
+
+	@pub
+	func isArgpop(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 256) != 0
+	}
+
+	@pub
+	func isCatchp(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 512) != 0
+	}
+
+	@pub
+	func isCallsitep(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 1024) != 0
+	}
+
+	@pub
+	func isDecok(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 2048) != 0
+	}
+
+	@pub
+	func isExcl(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 4096) != 0
+	}
+
+	@pub
+	func isBinary(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 8192) != 0
+	}
+
+	@pub
+	func isUnary(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 16384) != 0
+	}
+
+	@pub
+	func isPush1(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 32768) != 0
+	}
+
+	@pub
+	func isBoundary(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 65536) != 0
+	}
+
+	@pub
+	func isNamepos(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 131072) != 0
+	}
+
+	@pub
+	func isDigits(_self: ref some imut self, id: mut u64) bool{
+		return bits_and(_self.flagsOf(_self, id), 262144) != 0
+	}
+
+
+	/** Id of the colon-less name of a label token, or the token itself. */
+	@pub
+	func nameOfLabel(_self: ref some imut self, id: mut u64) mut u64{
+		if _self.isColon(_self, id){
+			let b = mut _self.base.get(_self.base, id)
+			if b != 0{
+				return b
+			}
+		}
+		return id
+	}
+
+	/** The part before the first '.' of a dotted name (the name itself when there is none). */
+	@pub
+	func rootOf(_self: ref some imut self, id: mut u64) mut u64{
+		let r = mut _self.root.get(_self.root, id)
+		if r != 0{
+			return r
+		}
+		return id
+	}
+
+	/** Trailing number of a label/`$for_range_` token (after the last '_', colon dropped) + 1, or 0. */
+	@pub
+	func numOf(_self: ref some imut self, id: mut u64) mut u64{
+		return _self.num.get(_self.num, id)
+	}
+
+	// ---- characters of an id
+	@pub
+	func length(_self: ref some imut self, id: mut u64) mut u64{
+		return _self.ln.get(_self.ln, id)
+	}
+
+	/** Char code `i` of the text (0 beyond the end). */
+	@pub
+	func ch(_self: ref some imut self, id: mut u64, i: mut u64) mut u64{
+		if i >= _self.ln.get(_self.ln, id){
+			return 0
+		}
+		return _self.pool.get(_self.pool, _self.off.get(_self.off, id) + i)
+	}
+
+	/** Chars [from, from+cnt) packed little-endian into a number (cnt <= 8); all ones when they are not all there. */
+	@pub
+	func pk(_self: ref some imut self, id: mut u64, from: mut u64, cnt: mut u64) mut u64{
+		if from + cnt > _self.ln.get(_self.ln, id){
+			return 18446744073709551615
+		}
+		let o = mut (_self.off.get(_self.off, id) + from)
+		let v = mut 0
+		for q in 0..cnt{
+			let c = mut _self.pool.get(_self.pool, o + q)
+			v = v + c * bits_left(1, q * 8)
+		}
+		return v
+	}
+
+	/** Index + 1 of the first char `c` at or after `from`, or 0. */
+	@pub
+	func indexOf1(_self: ref some imut self, id: mut u64, c: mut u64, from: mut u64) mut u64{
+		let n = mut _self.ln.get(_self.ln, id)
+		let o = mut _self.off.get(_self.off, id)
+		for q in from..n{
+			if _self.pool.get(_self.pool, o + q) == c{
+				return q + 1
+			}
+		}
+		return 0
+	}
+
+	/** Index + 1 of the last char `c`, or 0. */
+	@pub
+	func lastIndexOf1(_self: ref some imut self, id: mut u64, c: mut u64) mut u64{
+		let n = mut _self.ln.get(_self.ln, id)
+		let o = mut _self.off.get(_self.off, id)
+		for d in 0..n{
+			let q = mut (n - 1 - d)
+			if _self.pool.get(_self.pool, o + q) == c{
+				return q + 1
+			}
+		}
+		return 0
+	}
+
+	/** Index + 1 of the first "range(" at or after `from`, or 0. */
+	@pub
+	func indexOfRange1(_self: ref some imut self, id: mut u64, from: mut u64) mut u64{
+		let n = mut _self.ln.get(_self.ln, id)
+		if n < 6{
+			return 0
+		}
+		let hiN = mut (n - 5)
+		for q in from..hiN{
+			if _self.pk(_self, id, q, 6) == 44415992095090{
+				return q + 1
+			}
+		}
+		return 0
+	}
+
+	/** All chars in [a, z) are digits '0'..'9', at most 12 of them and at least one (Java allDigits). */
+	@pub
+	func digitsIn(_self: ref some imut self, id: mut u64, a: mut u64, z: mut u64) bool{
+		if z <= a || z - a > 12{
+			return false
+		}
+		for q in a..z{
+			let c = mut _self.ch(_self, id, q)
+			if c < 48 || c > 57{
+				return false
+			}
+		}
+		return true
+	}
+
+	@pub
+	func digitsValue(_self: ref some imut self, id: mut u64, a: mut u64, z: mut u64) mut u64{
+		let v = mut 0
+		for q in a..z{
+			v = v * 10 + (_self.ch(_self, id, q) - 48)
+		}
+		if v > 1000000000{
+			return 1000000000
+		}
+		return v
+	}
+
+	/** Java String.hashCode of the text. */
+	@pub
+	func javaHash(_self: ref some imut self, id: mut u64) mut u64{
+		let n = mut _self.ln.get(_self.ln, id)
+		let h = mut 0
+		for q in 0..n{
+			h = bits_and(h * 31 + _self.ch(_self, id, q), 4294967295)
+		}
+		return h
+	}
+
+	// ---- scratch text
+	@pub
+	func tmpClear(_self: ref some mut self) void{
+		_self.tmp.n = 0
+	}
+
+	@pub
+	@throws
+	func tmpPush(_self: ref some mut self, c: mut u64) void{
+		?catch(e){ throw e }
+		? _self.tmp.push(_self.tmp, c)
+	}
+
+	/** Appends the chars [a, z) of an id to the scratch text. */
+	@pub
+	@throws
+	func tmpAppRange(_self: ref some mut self, id: mut u64, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut _self.ln.get(_self.ln, id)
+		let zz = mut z
+		if zz > n{
+			zz = n
+		}
+		let o = mut _self.off.get(_self.off, id)
+		for q in a..zz{
+			? _self.tmp.push(_self.tmp, _self.pool.get(_self.pool, o + q))
+		}
+	}
+
+	@pub
+	@throws
+	func tmpApp(_self: ref some mut self, id: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut _self.ln.get(_self.ln, id)
+		? _self.tmpAppRange(_self, id, 0, n)
+	}
+
+	/** Appends the decimal digits of v. */
+	@pub
+	@throws
+	func tmpAppNum(_self: ref some mut self, v: mut u64) void{
+		?catch(e){ throw e }
+		let start = mut _self.tmp.n
+		let rest = mut v
+		for q in 0..20{
+			let d = mut (rest % 10)
+			? _self.tmp.push(_self.tmp, 48 + d)
+			rest = rest / 10
+			if rest == 0{
+				break
+			}
+		}
+		let lo = mut start
+		let hi = mut _self.tmp.n
+		for q in 0..20{
+			if hi <= lo + 1{
+				break
+			}
+			hi -= 1
+			let x = mut _self.tmp.get(_self.tmp, lo)
+			let y = mut _self.tmp.get(_self.tmp, hi)
+			_self.tmp.set(_self.tmp, lo, y)
+			_self.tmp.set(_self.tmp, hi, x)
+			lo += 1
+		}
+	}
+
+	func hashTmp(_self: ref some imut self) mut u64{
+		let hh = mut 14695981039346656037
+		let n = mut _self.tmp.n
+		for q in 0..n{
+			hh = bits_xor(hh, _self.tmp.get(_self.tmp, q))
+			hh = hh * 1099511628211
+		}
+		return hh
+	}
+
+	/** Id of the scratch text if it is interned (hash `hh`), else 0. */
+	func findTmp(_self: ref some imut self, hh: mut u64) mut u64{
+		let mask = mut (_self.cap - 1)
+		let pos = mut bits_and(hh, mask)
+		let n = mut _self.tmp.n
+		let capN = mut _self.cap
+		for step in 0..capN{
+			let id = mut _self.slots.get(_self.slots, pos)
+			if id == 0{
+				return 0
+			}
+			if _self.hs.get(_self.hs, id) == hh &&then _self.ln.get(_self.ln, id) == n{
+				let o = mut _self.off.get(_self.off, id)
+				let same = mut true
+				for q in 0..n{
+					if _self.pool.get(_self.pool, o + q) != _self.tmp.get(_self.tmp, q){
+						same = false
+						break
+					}
+				}
+				if same{
+					return id
+				}
+			}
+			pos = bits_and(pos + 1, mask)
+		}
+		return 0
+	}
+
+	@throws
+	func place(_self: ref some mut self, id: mut u64, hh: mut u64) void{
+		?catch(e){ throw e }
+		let mask = mut (_self.cap - 1)
+		let pos = mut bits_and(hh, mask)
+		let capN = mut _self.cap
+		for step in 0..capN{
+			if _self.slots.get(_self.slots, pos) == 0{
+				? VX.setG(_self.slots, pos, id)
+				return
+			}
+			pos = bits_and(pos + 1, mask)
+		}
+	}
+
+	@throws
+	func growTable(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let nc = mut (_self.cap * 2)
+		? VX.zeroTo(_self.slots, nc)
+		_self.cap = nc
+		let all = mut _self.cnt
+		let hiAll = mut (all + 1)
+		for q in 1..hiAll{
+			? _self.place(_self, q, _self.hs.get(_self.hs, q))
+		}
+	}
+
+	/** Property bits of the text of `id`. */
+	@pub
+	func computeFlags(_self: ref some imut self, id: mut u64) mut u64{
+		let f = mut 0
+		let n = mut _self.ln.get(_self.ln, id)
+		let c0 = mut _self.ch(_self, id, 0)
+		let cl = mut 0
+		if n > 0{
+			cl = _self.ch(_self, id, n - 1)
+		}
+		if n > 0 &&then c0 == 34{ f = bits_or(f, 1) }
+		if n > 0 &&then c0 == 64{ f = bits_or(f, 2) }
+		if n > 0 &&then cl == 58{ f = bits_or(f, 4) }
+		// scalarType
+		let sc = mut false
+		if n > 0 &&then _self.indexOf1(_self, id, 40, 0) == 0 &&then _self.indexOf1(_self, id, 91, 0) == 0{
+			if _self.pk(_self, id, 0, 4) == 1601659250 || _self.pk(_self, id, 0, 5) == 409958512495 || _self.pk(_self, id, 0, 4) == 1600546162 || _self.pk(_self, id, 0, 5) == 409891796321 || _self.pk(_self, id, 0, 7) == 26849427362772083{
+				sc = true
+			} else {
+				let b = mut 0
+				if _self.pk(_self, id, 0, 4) == 1601467757{ b = 4 } else if _self.pk(_self, id, 0, 5) == 409975745897{ b = 5 } else if _self.pk(_self, id, 0, 8) == 7886477448070852201 &&then _self.pk(_self, id, (0 + 8), 6) == 104889348877929{ b = 14 }
+				let w = mut (n - b)
+				if w == 2 &&then (_self.pk(_self, id, b, 2) == 14453 || _self.pk(_self, id, b, 2) == 14451){ sc = true }
+				if w == 3 &&then (_self.pk(_self, id, b, 3) == 3551605 || _self.pk(_self, id, b, 3) == 3289973 || _self.pk(_self, id, b, 3) == 3421813 || _self.pk(_self, id, b, 3) == 3551603 || _self.pk(_self, id, b, 3) == 3289971 || _self.pk(_self, id, b, 3) == 3421811 || _self.pk(_self, id, b, 3) == 3289958 || _self.pk(_self, id, b, 3) == 3421798){ sc = true }
+				if w == 4 &&then (_self.pk(_self, id, b, 4) == 1819242338 || _self.pk(_self, id, b, 4) == 1918986339){ sc = true }
+			}
+		}
+		if sc{ f = bits_or(f, 8) }
+		if _self.indexOfRange1(_self, id, 0) != 0{ f = bits_or(f, 16) }
+		// literal-looking (never a global name)
+		let lit = mut false
+		if n == 0{ lit = true }
+		if (c0 >= 48 && c0 <= 57) || c0 == 39 || c0 == 34 || c0 == 45{ lit = true }
+		if n == 4 &&then _self.pk(_self, id, 0, 4) == 1702195828{ lit = true }
+		if n == 4 &&then _self.pk(_self, id, 0, 4) == 1819047278{ lit = true }
+		if n == 5 &&then _self.pk(_self, id, 0, 5) == 435728179558{ lit = true }
+		if lit{ f = bits_or(f, 32) }
+		if _self.pk(_self, id, 0, 8) == 7953764171180369444 &&then _self.pk(_self, id, (0 + 8), 3) == 6251879 &&then _self.digitsIn(_self, id, 11, n){ f = bits_or(f, 64) }
+		if _self.indexOf1(_self, id, 46, 0) > 1{ f = bits_or(f, 128) }
+		if _self.pk(_self, id, 0, 3) == 4674113 || _self.pk(_self, id, 0, 4) == 1196572998{ f = bits_or(f, 256) }
+		if _self.pk(_self, id, 0, 7) == 26854899151102784{ f = bits_or(f, 512) }
+		if _self.pk(_self, id, 0, 8) == 7812726533012088640 &&then _self.pk(_self, id, (0 + 8), 6) == 104863328659827{ f = bits_or(f, 1024) }
+		if _self.digitsIn(_self, id, 0, n){ f = bits_or(f, 262144) }
+		return f
+	}
+
+	/** Trailing-number fact: 1 + min(value, 1e9) for a code token starting with '@' or "$for_range_" whose text (colon dropped) ends in _digits. */
+	func computeNum(_self: ref some imut self, id: mut u64) mut u64{
+		let n = mut _self.ln.get(_self.ln, id)
+		if n == 0{
+			return 0
+		}
+		let c0 = mut _self.ch(_self, id, 0)
+		if c0 == 34{
+			return 0
+		}
+		let isFor = mut false
+		if _self.pk(_self, id, 0, 8) == 7953764171180369444 &&then _self.pk(_self, id, (0 + 8), 3) == 6251879{ isFor = true }
+		if c0 != 64 &&then isFor == false{
+			return 0
+		}
+		let e = mut n
+		if _self.ch(_self, id, n - 1) == 58{
+			e = n - 1
+		}
+		let us = mut 0
+		for q in 0..e{
+			if _self.ch(_self, id, q) == 95{
+				us = q + 1
+			}
+		}
+		if us == 0{
+			return 0
+		}
+		if _self.digitsIn(_self, id, us, e){
+			return _self.digitsValue(_self, id, us, e) + 1
+		}
+		return 0
+	}
+
+	/** Finds or adds the scratch text (a new id gets flags and num; root/base are set by `derive`). */
+	@throws
+	func lookupAdd(_self: ref some mut self) mut u64{
+		?catch(e){ throw e }
+		let hh = mut _self.hashTmp(_self)
+		let found = mut _self.findTmp(_self, hh)
+		if found != 0{
+			return found
+		}
+		if (_self.cnt + 1) * 2 > _self.cap{
+			? _self.growTable(_self)
+		}
+		let id = mut (_self.cnt + 1)
+		let n = mut _self.tmp.n
+		let o = mut _self.pool.n
+		for q in 0..n{
+			? _self.pool.push(_self.pool, _self.tmp.get(_self.tmp, q))
+		}
+		? VX.setG(_self.off, id, o)
+		? VX.setG(_self.ln, id, n)
+		? VX.setG(_self.hs, id, hh)
+		_self.cnt = id
+		? _self.place(_self, id, hh)
+		? VX.setG(_self.fl, id, _self.computeFlags(_self, id))
+		? VX.setG(_self.num, id, _self.computeNum(_self, id))
+		? VX.setG(_self.root, id, 0)
+		? VX.setG(_self.base, id, 0)
+		return id
+	}
+
+	/** Derived facts of a new id: the prefix before the first '.', and a label name without its colon. */
+	@throws
+	func derive(_self: ref some mut self, id: mut u64) void{
+		?catch(e){ throw e }
+		let f = mut _self.fl.get(_self.fl, id)
+		let dot1 = mut 0
+		if bits_and(f, 128) != 0{
+			dot1 = _self.indexOf1(_self, id, 46, 0)
+		}
+		if bits_and(f, 6) == 6{
+			let nn = mut _self.ln.get(_self.ln, id)
+			_self.tmp.n = 0
+			? _self.tmpAppRange(_self, id, 0, nn - 1)
+			let b = mut ? _self.lookupAdd(_self)
+			? VX.setG(_self.base, id, b)
+		}
+		if dot1 > 0{
+			_self.tmp.n = 0
+			? _self.tmpAppRange(_self, id, 0, dot1 - 1)
+			let r = mut ? _self.lookupAdd(_self)
+			? VX.setG(_self.root, id, r)
+		}
+	}
+
+	/** The scratch text becomes an id: an existing one, or a new one with its facts (and those of the texts it derives). */
+	@pub
+	@throws
+	func internTmp(_self: ref some mut self) mut u64{
+		?catch(e){ throw e }
+		let first = mut (_self.cnt + 1)
+		let id = mut ? _self.lookupAdd(_self)
+		let q = mut first
+		for guard in 0..64{
+			if q > _self.cnt{
+				break
+			}
+			? _self.derive(_self, q)
+			q += 1
+		}
+		return id
+	}
+
+	/** Interns the chars [a, z) of an id. */
+	@pub
+	@throws
+	func internRange(_self: ref some mut self, id: mut u64, a: mut u64, z: mut u64) mut u64{
+		?catch(e){ throw e }
+		_self.tmp.n = 0
+		? _self.tmpAppRange(_self, id, a, z)
+		let r = mut ? _self.internTmp(_self)
+		return r
+	}
+
+	/** Id of the chars [a, z) of `id` if that text is interned, else 0 (does not touch the scratch text). */
+	@pub
+	func findSub(_self: ref some imut self, id: mut u64, a: mut u64, z: mut u64) mut u64{
+		if z < a || z > _self.ln.get(_self.ln, id){
+			return 0
+		}
+		let n = mut (z - a)
+		let o = mut _self.off.get(_self.off, id)
+		let hh = mut 14695981039346656037
+		for q in 0..n{
+			hh = bits_xor(hh, _self.pool.get(_self.pool, o + a + q))
+			hh = hh * 1099511628211
+		}
+		let mask = mut (_self.cap - 1)
+		let pos = mut bits_and(hh, mask)
+		let capN = mut _self.cap
+		for step in 0..capN{
+			let cand = mut _self.slots.get(_self.slots, pos)
+			if cand == 0{
+				return 0
+			}
+			if _self.hs.get(_self.hs, cand) == hh &&then _self.ln.get(_self.ln, cand) == n{
+				let o2 = mut _self.off.get(_self.off, cand)
+				let same = mut true
+				for q in 0..n{
+					if _self.pool.get(_self.pool, o2 + q) != _self.pool.get(_self.pool, o + a + q){
+						same = false
+						break
+					}
+				}
+				if same{
+					return cand
+				}
+			}
+			pos = bits_and(pos + 1, mask)
+		}
+		return 0
+	}
+
+	/** Appends the text of `id` to a String. */
+	@pub
+	@throws
+	func appendTo(_self: ref some imut self, sb: ref some mut String, id: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut _self.ln.get(_self.ln, id)
+		for q in 0..n{
+			? sb.appendChar(sb, VX.codeChar(_self.ch(_self, id, q)))
+		}
+	}
+
+	/** Appends the chars [a, z) of `id` to a String. */
+	@pub
+	@throws
+	func appendRangeTo(_self: ref some imut self, sb: ref some mut String, id: mut u64, a: mut u64, z: mut u64) void{
+		?catch(e){ throw e }
+		for q in a..z{
+			? sb.appendChar(sb, VX.codeChar(_self.ch(_self, id, q)))
+		}
+	}
+}
+
+/** Program <-> Ls conversion. */
+@pub
+struct HbIO{@pub{
+}}
+
+@pub
+impl HbIO{
+	/** The id of a literal (the String is made first: building it ends the proofs on `h`). */
+	@pub
+	@throws
+	static func lit(h: ref mut Hb, text: static imut string) mut u64{
+		?catch(e){ throw e }
+		let s = mut ? String.from(text)
+		let id = mut 0
+		match Some(h){
+			match Some(s){ id = ? h.internString(h, s) }
+		}
+		return id
+	}
+
+	/** A fully set-up interner: the fixed mnemonics have their ids and set flags. */
+	@pub
+	@throws
+	static func make() owns some mut Hb{
+		?catch(e){ throw e }
+		let h = mut ? new Hb()
+		let id = mut 0
+		id = ? HbIO.lit(h, "FUNC_START")
+		match Some(h){ h.FUNC_START = id }
+		id = ? HbIO.lit(h, "FUNC_END")
+		match Some(h){ h.FUNC_END = id }
+		id = ? HbIO.lit(h, "FUNC_DECORATE")
+		match Some(h){ h.FUNC_DECORATE = id }
+		id = ? HbIO.lit(h, "RETURNS")
+		match Some(h){ h.RETURNS = id }
+		id = ? HbIO.lit(h, "ARG")
+		match Some(h){ h.ARG = id }
+		id = ? HbIO.lit(h, "ALLOC")
+		match Some(h){ h.ALLOC = id }
+		id = ? HbIO.lit(h, "ALLOC_STATIC")
+		match Some(h){ h.ALLOC_STATIC = id }
+		id = ? HbIO.lit(h, "THROW")
+		match Some(h){ h.THROW = id }
+		id = ? HbIO.lit(h, "GT_UNWIND")
+		match Some(h){ h.GT_UNWIND = id }
+		id = ? HbIO.lit(h, "PUSH_LABEL")
+		match Some(h){ h.PUSH_LABEL = id }
+		id = ? HbIO.lit(h, "CALL")
+		match Some(h){ h.CALL = id }
+		id = ? HbIO.lit(h, "EXTERN_CALL")
+		match Some(h){ h.EXTERN_CALL = id }
+		id = ? HbIO.lit(h, "CC_START")
+		match Some(h){ h.CC_START = id }
+		id = ? HbIO.lit(h, "CC_END")
+		match Some(h){ h.CC_END = id }
+		id = ? HbIO.lit(h, "PUSH_RET")
+		match Some(h){ h.PUSH_RET = id }
+		id = ? HbIO.lit(h, "JMP")
+		match Some(h){ h.JMP = id }
+		id = ? HbIO.lit(h, "CMP")
+		match Some(h){ h.CMP = id }
+		id = ? HbIO.lit(h, "POP")
+		match Some(h){ h.POP = id }
+		id = ? HbIO.lit(h, "RET")
+		match Some(h){ h.RET = id }
+		id = ? HbIO.lit(h, "ASSIGN")
+		match Some(h){ h.ASSIGN = id }
+		id = ? HbIO.lit(h, "ATOMIC_ASSIGN")
+		match Some(h){ h.ATOMIC_ASSIGN = id }
+		id = ? HbIO.lit(h, "ADDR")
+		match Some(h){ h.ADDR = id }
+		id = ? HbIO.lit(h, "PUSH")
+		match Some(h){ h.PUSH = id }
+		id = ? HbIO.lit(h, "GT_DESTRUCT")
+		match Some(h){ h.GT_DESTRUCT = id }
+		id = ? HbIO.lit(h, "PUSH_FIELDNAME")
+		match Some(h){ h.PUSH_FIELDNAME = id }
+		id = ? HbIO.lit(h, "VARARGS_XMM_COUNT")
+		match Some(h){ h.VARARGS_XMM_COUNT = id }
+		id = ? HbIO.lit(h, "DUP_TOP")
+		match Some(h){ h.DUP_TOP = id }
+		id = ? HbIO.lit(h, "INVOKE")
+		match Some(h){ h.INVOKE = id }
+		id = ? HbIO.lit(h, "INC")
+		match Some(h){ h.INC = id }
+		id = ? HbIO.lit(h, "DEC")
+		match Some(h){ h.DEC = id }
+		id = ? HbIO.lit(h, "MSG")
+		match Some(h){ h.MSG = id }
+		id = ? HbIO.lit(h, "ATOMIC_PUSH")
+		match Some(h){ h.ATOMIC_PUSH = id }
+		id = ? HbIO.lit(h, "gt_routine_address")
+		match Some(h){ h.gtAddr = id }
+		id = ? HbIO.lit(h, "gt_error_message")
+		match Some(h){ h.gtMsg = id }
+		id = ? HbIO.lit(h, "imut_void")
+		match Some(h){ h.imutVoid = id }
+		id = ? HbIO.lit(h, "imut_range")
+		match Some(h){ h.imutRange = id }
+		id = ? HbIO.lit(h, "mut_range")
+		match Some(h){ h.mutRange = id }
+		id = ? HbIO.lit(h, "@inline")
+		match Some(h){ h.atInline = id }
+		id = ? HbIO.lit(h, "@dont(inline)")
+		match Some(h){ h.atDont = id }
+		id = ? HbIO.lit(h, "main")
+		match Some(h){ h.mainFn = id }
+		id = ? HbIO.lit(h, "null")
+		match Some(h){ h.nullT = id }
+		id = ? HbIO.lit(h, "$for_range_")
+		match Some(h){ h.forRange = id }
+		id = ? HbIO.lit(h, "__i")
+		match Some(h){ h.sufI = id }
+		id = ? HbIO.lit(h, "_i")
+		match Some(h){ h.sufLabI = id }
+		id = ? HbIO.lit(h, "_")
+		match Some(h){ h.under = id }
+		id = ? HbIO.lit(h, "@inl_end_")
+		match Some(h){ h.inlEnd = id }
+		id = ? HbIO.lit(h, "__ret_i")
+		match Some(h){ h.retPre = id }
+		id = ? HbIO.lit(h, ":")
+		match Some(h){ h.colon = id }
+		id = ? HbIO.lit(h, "@")
+		match Some(h){ h.atSign = id }
+		id = ? HbIO.lit(h, "@pub")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@pure")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@pure(rt)")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@non(deterministic)")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@recursive")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@inline")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@throws")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "@lock")
+		match Some(h){ ? h.orFlag(h, id, 2048) }
+		id = ? HbIO.lit(h, "EXIT")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "EXIT_THREAD")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "ASM_START")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "ASM_END")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "RECURSIVE_CALL")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "ALLOC_STATIC")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "FUNC_START")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "FUNC_END")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "STRUCT_START")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "GLOBAL")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "REGVAR")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "STRING")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "EXTERN")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "ENUM")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "STRUCT_MEMBER")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "STRUCT_END")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "STRUCT_DECORATE")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "STRUCT_PADDING")
+		match Some(h){ ? h.orFlag(h, id, 4096) }
+		id = ? HbIO.lit(h, "ADD")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "SUB")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "MUL")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "DIV")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "MOD")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "AND")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "OR")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "EQ")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "NEQ")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "LT")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "GT")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "LT_EQ")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "GT_EQ")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "SHL")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "SHR")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "ROTL")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "ROTR")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "BITS_OR")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "BITS_AND")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "BITS_XOR")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "IN")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "WITHIN")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "LOOKUP")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "LOOKUP_LHS")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "DOT")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "DOT_LHS")
+		match Some(h){ ? h.orFlag(h, id, 8192) }
+		id = ? HbIO.lit(h, "NEG")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "NOT")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "BITS_NOT")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "SEXT")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "ZEXT")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "TRUNC")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "FCONV")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "DEREF")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "ADDR_OF")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "NEG_FLOAT")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "LEN")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "PROMOTE_F32_TO_F64")
+		match Some(h){ ? h.orFlag(h, id, 16384) }
+		id = ? HbIO.lit(h, "PUSH")
+		match Some(h){ ? h.orFlag(h, id, 32768) }
+		id = ? HbIO.lit(h, "ADDR")
+		match Some(h){ ? h.orFlag(h, id, 32768) }
+		id = ? HbIO.lit(h, "PUSH_FIELDNAME")
+		match Some(h){ ? h.orFlag(h, id, 32768) }
+		id = ? HbIO.lit(h, "ATOMIC_PUSH")
+		match Some(h){ ? h.orFlag(h, id, 32768) }
+		id = ? HbIO.lit(h, "ASSIGN")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "ATOMIC_ASSIGN")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "JMP")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "CMP")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "ALLOC")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "ARG")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "RETURNS")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "FUNC_DECORATE")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "FUNC_START")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "CC_END")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "CC_START")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "GT_DESTRUCT")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "RET")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "POP")
+		match Some(h){ ? h.orFlag(h, id, 65536) }
+		id = ? HbIO.lit(h, "PUSH")
+		match Some(h){ ? h.orFlag(h, id, 131072) }
+		id = ? HbIO.lit(h, "ADDR")
+		match Some(h){ ? h.orFlag(h, id, 131072) }
+		id = ? HbIO.lit(h, "GT_DESTRUCT")
+		match Some(h){ ? h.orFlag(h, id, 131072) }
+		id = ? HbIO.lit(h, "ATOMIC_PUSH")
+		match Some(h){ ? h.orFlag(h, id, 131072) }
+		match Some(h){ ? h.recomputeAll(h) }
+		return h
+	}
+
+	/** Every statement of `program` becomes a line of `ls` with its "original" mark (index + 1). */
+	@pub
+	@throws
+	static func load(h: ref some mut Hb, program: ref some imut BytecodeProgram, ls: ref some mut Ls) void{
+		?catch(e){ throw e }
+		let n = mut program.size(program)
+		for i in 0..n{
+			? ls.addLine(ls, i + 1)
+			let st = mut ? program.items.getSome(program.items, i)
+			let m = mut st.size(st)
+			for t in 0..m{
+				let tk = mut ? st.items.getSome(st.items, t)
+				h.tmpClear(h)
+				let cn = mut tk.text.length(tk.text)
+				for q in 0..cn{
+					? h.tmpPush(h, String.charCode(tk.text.charAt(tk.text, q)))
+				}
+				let id = mut ? h.internTmp(h)
+				? ls.addTok(ls, id)
+			}
+		}
+	}
+
+	/** The program for `ls`: lines still marked "original" are moved out of `program`, the others are scanned from their tokens. */
+	@pub
+	@throws
+	static func build(h: ref imut Hb, ls: ref imut Ls, program: ref mut BytecodeProgram) owns some mut BytecodeProgram{
+		?catch(e){ throw e }
+		let out = mut ? new BytecodeProgram()
+		let origin = mut ? new String()
+		match Some(program){
+			if program.size(program) > 0{
+				let st0 = mut ? program.items.getSome(program.items, 0)
+				let f0 = st0.fileOf(st0)
+				match Some(f0){ origin = ? f0.sub(f0, 0, f0.length(f0)) }
+			}
+		}
+		let n = mut 0
+		match Some(ls){ n = ls.n(ls) }
+		for i in 0..n{
+			let mark = mut 0
+			let s = mut 0
+			let z = mut 0
+			match Some(ls){
+				mark = ls.origOf(ls, i)
+				s = ls.lineStart(ls, i)
+				z = ls.lineEnd(ls, i)
+			}
+			if mark > 0{
+				match Some(program){
+					let moved = mut program.items.take(program.items, mark - 1)
+					? out.items.add(out.items, moved)
+				}
+			} else {
+				let sb = mut ? new String()
+				for q in s..z{
+					if q > s{
+						? sb.appendChar(sb, ' ')
+					}
+					let id = mut 0
+					match Some(ls){ id = ls.toks.get(ls.toks, q) }
+					match Some(h){ ? h.appendTo(h, sb, id) }
+				}
+				let stmt = mut ? BytecodeStatement.fromText(sb, origin)
+				? out.items.add(out.items, stmt)
+			}
+		}
+		return out
+	}
+}

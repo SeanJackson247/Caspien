@@ -1,0 +1,359 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/Text.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/**
+ * REGVAR hints (always on; port of RegVarHintPass.java): after the leading ALLOC run of a function, `REGVAR name weight [f]` for every plain scalar
+ * local that is only mentioned by ALLOC/PUSH/ADDR lines and is used inside a loop (weight >= 8). The Java HashMap/HashSet iteration order never
+ * reaches the output (the chosen names are sorted), so plain maps are used.
+ */
+@pub
+struct RegVarHintPass{@pub{
+}}
+
+@pub
+impl constructor for RegVarHintPass() self{
+	return RegVarHintPass{}
+}
+
+@pub
+impl RegVarHintPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram) mut bool{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let insAt = mut ? new Vec()       // program index after which the hints go, then the number of hints
+		let hints = mut ? new ObjectList:<BytecodeStatement>()
+		let i = mut 0
+		let nsteps = mut (n + 1)
+		for step in 0..nsteps{
+			if i >= n{
+				break
+			}
+			let isStart = mut false
+			match Some(program){ isStart = VarAnalysis.isMn(program, i, "FUNC_START") }
+			if isStart == false{
+				i += 1
+				continue
+			}
+			let end = mut i
+			let found = mut false
+			for q in i..n{
+				let isEnd = mut false
+				match Some(program){ isEnd = VarAnalysis.isMn(program, q, "FUNC_END") }
+				if isEnd{
+					end = q
+					found = true
+					break
+				}
+			}
+			if found == false{
+				end = n - 1
+			}
+			? RegVarHintPass.hintFunction(program, i, end, insAt, hints)
+			i = end + 1
+		}
+		let groups = mut (insAt.size(insAt) / 2)
+		if groups == 0{
+			return false
+		}
+		let out = mut ? new BytecodeProgram()
+		let g = mut 0
+		let h = mut 0
+		for k in 0..n{
+			match Some(program){
+				let moved = mut program.items.take(program.items, k)
+				? out.items.add(out.items, moved)
+			}
+			if g < groups && insAt.get(insAt, g * 2) == k{
+				let cnt = mut insAt.get(insAt, g * 2 + 1)
+				for q in 0..cnt{
+					let hs = mut hints.take(hints, h)
+					? out.items.add(out.items, hs)
+					h += 1
+				}
+				g += 1
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+
+	/** Java hintFunction over program[s..=e]: appends (index of last leading ALLOC, count) to insAt and the REGVAR statements to hints. */
+	@throws
+	static func hintFunction(program: ref mut BytecodeProgram, s: mut u64, e: mut u64, insAt: ref mut Vec, hints: ref mut ObjectList<BytecodeStatement>) void{
+		?catch(ex){ throw ex }
+		let cnt = mut (e + 1 - s)
+		let names = mut ? new StringScalarMap:<u64>()   // ALLOC name -> id (insertion order)
+		let types = mut ? new ObjectList:<String>()     // id -> type
+		let mixed = mut ? new Vec()
+		let lastLeading = mut 0
+		let haveLeading = mut false
+		let leading = mut true
+		for k in 0..cnt{
+			let code = mut 0
+			let t1 = mut ? new String()
+			let t2 = mut ? new String()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, s + k)
+				if VarAnalysis.stmtIs(st, "REGVAR"){
+					code = 9
+				} else if VarAnalysis.stmtIs(st, "ALLOC") && st.size(st) == 3{
+					code = 1
+					let a = mut ? st.items.getSome(st.items, 1)
+					t1 = ? a.text.sub(a.text, 0, a.text.length(a.text))
+					let b = mut ? st.items.getSome(st.items, 2)
+					t2 = ? b.text.sub(b.text, 0, b.text.length(b.text))
+				} else if VarAnalysis.stmtIs(st, "FUNC_START") || VarAnalysis.stmtIs(st, "FUNC_DECORATE") || VarAnalysis.stmtIs(st, "RETURNS") || VarAnalysis.stmtIs(st, "ARG") || VarAnalysis.stmtIs(st, "ALLOC_STATIC"){
+					code = 0
+				} else {
+					code = 2
+				}
+			}
+			if code == 9{
+				return
+			}
+			if code == 1{
+				if names.containsKey(names, t1){
+					let id = mut names.getOrDefault(names, t1, 0)
+					let differs = mut false
+					let old = mut ? types.getSome(types, id)
+					differs = old.equals(old, t2) == false
+					if differs{
+						mixed.set(mixed, id, 1)
+					}
+				} else {
+					let id = mut names.size(names)
+					? names.put(names, t1, id)
+					? types.add(types, t2)
+					? mixed.push(mixed, 0)
+				}
+				if leading{
+					lastLeading = k
+					haveLeading = true
+				}
+			} else if code == 2{
+				leading = false
+			}
+		}
+		if haveLeading == false{
+			return
+		}
+		let nn = mut names.size(names)
+		let cand = mut ? new Vec()
+		for id in 0..nn{
+			let ok = mut false
+			if mixed.get(mixed, id) == 0{
+				let nm = mut names.keyAt(names, id)
+				let ty = mut ? types.getSome(types, id)
+				match Some(nm){
+					if nm.startsWith(nm, "$") == false && nm.equals(nm, "gt_routine_address") == false && nm.equals(nm, "gt_error_message") == false && nm.startsWith(nm, "gt_trace_") == false{
+						ok = ? Text.isQualifiedScalar(ty, false)
+					}
+				}
+			}
+			if ok{
+				? cand.push(cand, 1)
+			} else {
+				? cand.push(cand, 0)
+			}
+		}
+		let anyCand = mut false
+		for id in 0..nn{
+			if cand.get(cand, id) == 1{
+				anyCand = true
+			}
+		}
+		if anyCand == false{
+			return
+		}
+		// loop depth per line
+		let delta = mut ? new Vec()
+		? delta.zero(delta, cnt + 1)
+		let labelAt = mut ? new StringScalarMap:<u64>()
+		for k in 0..cnt{
+			let lab = mut ? new String()
+			let isLabel = mut false
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, s + k)
+				if st.size(st) == 1{
+					let t0 = mut ? st.items.getSome(st.items, 0)
+					let tl = mut t0.text.length(t0.text)
+					if t0.text.startsWith(t0.text, "@") && t0.text.endsWith(t0.text, ":"){
+						lab = ? t0.text.sub(t0.text, 0, tl - 1)
+						isLabel = true
+					}
+				} else if VarAnalysis.stmtIs(st, "JMP") && st.size(st) >= 2{
+					let jt = mut ? st.items.getSome(st.items, 1)
+					if labelAt.containsKey(labelAt, jt.text){
+						let at = mut labelAt.getOrDefault(labelAt, jt.text, 0)
+						delta.set(delta, at, delta.get(delta, at) + 1)
+						delta.set(delta, k + 1, delta.get(delta, k + 1) - 1)
+					}
+				}
+			}
+			if isLabel{
+				? labelAt.put(labelAt, lab, k)
+			}
+		}
+		let depth = mut ? new Vec()
+		? depth.zero(depth, cnt)
+		let run = mut 0
+		for k in 0..cnt{
+			run = run + delta.get(delta, k)
+			depth.set(depth, k, run)
+		}
+		// weights
+		let wgt = mut ? new Vec()
+		? wgt.zero(wgt, nn)
+		let hasW = mut ? new Vec()
+		? hasW.zero(hasW, nn)
+		match Some(program){
+			for k in 0..cnt{
+				let st = mut ? program.items.getSome(program.items, s + k)
+				let isPA = mut (VarAnalysis.stmtIs(st, "PUSH") || VarAnalysis.stmtIs(st, "ADDR"))
+				let isAlloc = mut VarAnalysis.stmtIs(st, "ALLOC")
+				let nextAddrOf = mut false
+				if k + 1 < cnt{
+					nextAddrOf = VarAnalysis.isMn(program, s + k + 1, "ADDR_OF")
+				}
+				let sz = mut st.size(st)
+				for t in 1..sz{
+					let tk = mut ? st.items.getSome(st.items, t)
+					if tk.kind != BytecodeTokenKind.CODE{
+						continue
+					}
+					if names.containsKey(names, tk.text) == false{
+						continue
+					}
+					let id = mut names.getOrDefault(names, tk.text, 0)
+					if cand.get(cand, id) == 0{
+						continue
+					}
+					let simple = mut (isPA && t == 1)
+					if isAlloc && t == 1{
+						continue
+					}
+					let addressTaken = mut (simple && nextAddrOf)
+					if simple == false || addressTaken{
+						cand.set(cand, id, 0)
+						hasW.set(hasW, id, 0)
+						wgt.set(wgt, id, 0)
+					} else {
+						let d = mut depth.get(depth, k)
+						if d > 4{
+							d = 4
+						}
+						let w = mut bits_left(1, 3 * d)
+						wgt.set(wgt, id, wgt.get(wgt, id) + w)
+						hasW.set(hasW, id, 1)
+					}
+				}
+			}
+		}
+		let chosen = mut ? new Vec()
+		for id in 0..nn{
+			if cand.get(cand, id) == 1 && hasW.get(hasW, id) == 1 && wgt.get(wgt, id) >= 8{
+				? chosen.push(chosen, id)
+			}
+		}
+		let nc = mut chosen.size(chosen)
+		if nc == 0{
+			return
+		}
+		// Collections.sort(chosen): insertion sort by name
+		for a in 1..nc{
+			let cur = mut chosen.get(chosen, a)
+			let b = mut a
+			for q in 0..a{
+				if b == 0{
+					break
+				}
+				let prev = mut chosen.get(chosen, b - 1)
+				if RegVarHintPass.nameLess(names, cur, prev){
+					chosen.set(chosen, b, prev)
+					b -= 1
+				} else {
+					break
+				}
+			}
+			chosen.set(chosen, b, cur)
+		}
+		// the reference token (file, line) of the last leading ALLOC
+		let:<mut s32> line0 = mut 0
+		let:<owns mut String> file0 = mut null
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, s + lastLeading)
+			let t0 = mut ? st.items.getSome(st.items, 0)
+			line0 = t0.line + 0
+			match Some(t0.file){ file0 = mut ? t0.file.sub(t0.file, 0, t0.file.length(t0.file)) }
+		}
+		for q in 0..nc{
+			let id = mut chosen.get(chosen, q)
+			let w = mut wgt.get(wgt, id)
+			if w > 1000000000{
+				w = 1000000000
+			}
+			let isF = mut false
+			let ty = mut ? types.getSome(types, id)
+			isF = ty.endsWith(ty, "_f32") || ty.endsWith(ty, "_f64")
+			let nm = mut names.keyAt(names, id)
+			let nameCopy = mut ? new String()
+			match Some(nm){ nameCopy = ? nm.sub(nm, 0, nm.length(nm)) }
+			let wt = mut ? String.fromU64(w)
+			let:<owns mut String> fcopy = mut null
+			match Some(file0){ fcopy = mut ? file0.sub(file0, 0, file0.length(file0)) }
+			let rtext = mut ? String.from("REGVAR")
+			let h = mut ? new BytecodeStatement()
+			let tk0 = mut ? new BytecodeToken(rtext, fcopy, line0, BytecodeTokenKind.CODE)
+			? h.add(h, tk0)
+			let:<owns mut String> nf1 = mut null
+			let tk1 = mut ? new BytecodeToken(nameCopy, nf1, line0, BytecodeTokenKind.CODE)
+			? h.add(h, tk1)
+			let:<owns mut String> nf2 = mut null
+			let tk2 = mut ? new BytecodeToken(wt, nf2, line0, BytecodeTokenKind.CODE)
+			? h.add(h, tk2)
+			if isF{
+				let ft = mut ? String.from("f")
+				let:<owns mut String> nf3 = mut null
+				let tk3 = mut ? new BytecodeToken(ft, nf3, line0, BytecodeTokenKind.CODE)
+				? h.add(h, tk3)
+			}
+			match Some(hints){ ? hints.add(hints, h) }
+		}
+		match Some(insAt){ ? insAt.push(insAt, s + lastLeading) }
+		match Some(insAt){ ? insAt.push(insAt, nc) }
+	}
+
+	/** Java String.compareTo(a) < 0 for the ids' names (byte order; the same as UTF-16 order for ASCII). */
+	static func nameLess(names: ref some imut StringScalarMap<u64>, a: mut u64, b: mut u64) bool{
+		let ka = mut names.keyAt(names, a)
+		let kb = mut names.keyAt(names, b)
+		match Some(ka){
+			match Some(kb){
+				let la = mut ka.length(ka)
+				let lb = mut kb.length(kb)
+				let m = mut la
+				if lb < m{
+					m = lb
+				}
+				for q in 0..m{
+					let ca = mut String.charCode(ka.charAt(ka, q))
+					let cb = mut String.charCode(kb.charAt(kb, q))
+					if ca != cb{
+						return ca < cb
+					}
+				}
+				return la < lb
+			}
+		}
+		return false
+	}
+}

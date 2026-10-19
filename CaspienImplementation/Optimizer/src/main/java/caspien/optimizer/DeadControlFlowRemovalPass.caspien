@@ -1,0 +1,493 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/**
+ * Folds constant branches `PUSH true|false T ; CMP ; JMP L` and removes the code that becomes unreachable (port of DeadControlFlowRemovalPass.java).
+ * Every rewrite of the Java only ever DELETES lines of the function (the three lines vanish or collapse to the JMP statement that was already
+ * there), so a function is processed as a subsequence of its original statement indices (`cur`) and the dropped statements are marked once;
+ * the Java identity set "alreadyDead" becomes "unreachable before the round" by position. Functions are independent of each other.
+ */
+@pub
+struct DeadControlFlowRemovalPass{@pub{
+}}
+
+@pub
+impl constructor for DeadControlFlowRemovalPass() self{
+	return DeadControlFlowRemovalPass{}
+}
+
+@pub
+impl DeadControlFlowRemovalPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let funcs = mut ? new Vec()
+		match Some(program){ funcs = ? VarAnalysis.functions(program) }
+		let nf = mut VarAnalysis.count(funcs)
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let drop = mut ? new Vec()
+		? drop.zero(drop, n)
+		let changed = mut false
+		for q in 0..nf{
+			let fi = mut (nf - 1 - q)
+			let s = mut VarAnalysis.startOf(funcs, fi)
+			let e = mut VarAnalysis.endOf(funcs, fi)
+			let asm = mut false
+			match Some(program){ asm = VarAnalysis.hasMnemonic(program, s, e, "ASM_START") }
+			if asm{
+				continue
+			}
+			let did = mut false
+			did = ? DeadControlFlowRemovalPass.processFunction(program, s, e, drop)
+			if did{
+				changed = true
+			}
+		}
+		if changed == false{
+			return false
+		}
+		let out = mut ? new BytecodeProgram()
+		for i in 0..n{
+			if drop.get(drop, i) == 0{
+				match Some(program){
+					let moved = mut program.items.take(program.items, i)
+					? out.items.add(out.items, moved)
+				}
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+
+	/** Repeats rewriteAll on function [s, e] until nothing is foldable; marks the removed statements in `drop`. */
+	@throws
+	static func processFunction(program: ref mut BytecodeProgram, s: mut u64, e: mut u64, drop: ref mut Vec) mut bool{
+		?catch(ex){ throw ex }
+		let m = mut (e + 1 - s)
+		let cur = mut ? new Vec()
+		for q in 0..m{
+			? cur.push(cur, s + q)
+		}
+		let changed = mut false
+		let rounds = mut (m + 1)
+		for r in 0..rounds{
+			let did = mut false
+			did = ? DeadControlFlowRemovalPass.round(program, cur)
+			if did == false{
+				break
+			}
+			changed = true
+		}
+		if changed{
+			let j = mut 0
+			let cs = mut cur.size(cur)
+			for q in 0..m{
+				let idx = mut (s + q)
+				if j < cs && cur.get(cur, j) == idx{
+					j += 1
+				} else {
+					match Some(drop){ drop.set(drop, idx, 1) }
+				}
+			}
+		}
+		return changed
+	}
+
+	// ---- read-only line tests (statement index = program index) ----
+
+	static func isBoolLit(program: ref some imut BytecodeProgram, i: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		if VarAnalysis.stmtIs(st, "PUSH") == false || st.size(st) != 3{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 1)
+		return t.text.equals(t.text, lit)
+	}
+
+	static func isSized(program: ref some imut BytecodeProgram, i: mut u64, m: static imut string, sz: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		return VarAnalysis.stmtIs(st, m) && st.size(st) == sz
+	}
+
+	static func isLabelDefAt(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) != 1{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 0)
+		if t.kind != BytecodeTokenKind.CODE{
+			return false
+		}
+		return t.text.startsWith(t.text, "@") && t.text.endsWith(t.text, ":")
+	}
+
+	static func isDeclOrFunc(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		return VarAnalysis.isMn(program, i, "ALLOC") || VarAnalysis.isMn(program, i, "ARG") || VarAnalysis.isMn(program, i, "REGVAR") || VarAnalysis.isMn(program, i, "RETURNS") || VarAnalysis.isMn(program, i, "FUNC_DECORATE") || VarAnalysis.isMn(program, i, "STRING") || VarAnalysis.isMn(program, i, "ALLOC_STATIC") || VarAnalysis.isMn(program, i, "FUNC_START") || VarAnalysis.isMn(program, i, "FUNC_END")
+	}
+
+	static func isStructural(name: ref some imut String) bool{
+		return name.startsWith(name, "@if_branch_") || name.startsWith(name, "@end_of_if_") || name.startsWith(name, "@loop_") || name.startsWith(name, "@loop_end_") || name.startsWith(name, "@for_") || name.startsWith(name, "@for_end_") || name.startsWith(name, "@match_branch_") || name.startsWith(name, "@end_of_match_")
+	}
+
+	/** Java findHits over the positions of `cur`: start positions of `PUSH true|false T ; CMP ; JMP L`. */
+	@throws
+	static func findHits(program: ref some imut BytecodeProgram, cur: ref some imut Vec, hits: ref some mut Vec) void{
+		?catch(e){ throw e }
+		let m = mut cur.size(cur)
+		let i = mut 1
+		for g in 0..m{
+			if i + 2 > m - 1{
+				break
+			}
+			let a = mut cur.get(cur, i)
+			let isTrue = mut DeadControlFlowRemovalPass.isBoolLit(program, a, "true")
+			let isFalse = mut DeadControlFlowRemovalPass.isBoolLit(program, a, "false")
+			if isTrue == false && isFalse == false{
+				i += 1
+				continue
+			}
+			if DeadControlFlowRemovalPass.isSized(program, cur.get(cur, i + 1), "CMP", 1) == false{
+				i += 1
+				continue
+			}
+			if DeadControlFlowRemovalPass.isSized(program, cur.get(cur, i + 2), "JMP", 2) == false{
+				i += 1
+				continue
+			}
+			? hits.push(hits, i)
+			i += 3
+		}
+	}
+
+	/** Java dropJumpToNext over all of `cur`: removes an unconditional `JMP L` directly followed by `L:`; returns how many. */
+	@throws
+	static func dropJumpToNext(program: ref some imut BytecodeProgram, cur: ref some mut Vec) mut u64{
+		?catch(e){ throw e }
+		let m = mut cur.size(cur)
+		if m < 3{
+			return 0
+		}
+		let fe = mut (m - 1)
+		let del = mut ? new Vec()
+		? del.zero(del, m)
+		let removed = mut 0
+		let nxt = mut fe
+		let lim = mut (fe - 1)
+		for q in 0..lim{
+			let k = mut (fe - 1 - q)
+			let drop = mut false
+			let li = mut cur.get(cur, k)
+			let ni = mut cur.get(cur, nxt)
+			if DeadControlFlowRemovalPass.isSized(program, li, "JMP", 2) && DeadControlFlowRemovalPass.isLabelDefAt(program, ni){
+				let same = mut false
+				let st = mut ? program.items.getSome(program.items, li)
+				let nx = mut ? program.items.getSome(program.items, ni)
+				let jt = mut ? st.items.getSome(st.items, 1)
+				let lt = mut ? nx.items.getSome(nx.items, 0)
+				if lt.text.length(lt.text) == jt.text.length(jt.text) + 1 && lt.text.startsWith(lt.text, jt.text){
+					same = true
+				}
+				if same && VarAnalysis.isMn(program, cur.get(cur, k - 1), "CMP") == false{
+					drop = true
+				}
+			}
+			if drop{
+				del.set(del, k, 1)
+				removed += 1
+			} else {
+				nxt = k
+			}
+		}
+		if removed > 0{
+			let w = mut 0
+			for k in 0..m{
+				if del.get(del, k) == 0{
+					cur.set(cur, w, cur.get(cur, k))
+					w += 1
+				}
+			}
+			for q in 0..removed{
+				let dummy = mut cur.pop(cur)
+			}
+		}
+		return removed
+	}
+
+	/** Java reachable over the lines of `cur`: seen[k] = 1 when position k is reachable. */
+	@throws
+	static func reach(program: ref mut BytecodeProgram, curIn: ref some imut Vec) owns some mut Vec{
+		?catch(e){ throw e }
+		let m = mut curIn.size(curIn)
+		let cur = mut ? new Vec()
+		for k in 0..m{
+			? cur.push(cur, curIn.get(curIn, k))
+		}
+		let seen = mut ? new Vec()
+		? seen.zero(seen, m)
+		let kind = mut ? new Vec()  // 1 label def, 2 JMP of two tokens, 3 FUNC_END/RET/THROW, 4 CMP, 5 other JMP
+		? kind.zero(kind, m)
+		let labels = mut ? new StringScalarMap:<u64>()
+		for k in 0..m{
+			let idx = mut cur.get(cur, k)
+			let code = mut 0
+			let lab = mut ? new String()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, idx)
+				let sz = mut st.size(st)
+				if sz == 1{
+					let t0 = mut ? st.items.getSome(st.items, 0)
+					if t0.kind == BytecodeTokenKind.CODE && t0.text.startsWith(t0.text, "@") && t0.text.endsWith(t0.text, ":"){
+						code = 1
+						lab = ? t0.text.sub(t0.text, 0, t0.text.length(t0.text) - 1)
+					}
+				}
+				if code == 0{
+					if VarAnalysis.stmtIs(st, "JMP"){
+						if sz == 2{
+							code = 2
+						} else {
+							code = 5
+						}
+					} else if VarAnalysis.stmtIs(st, "FUNC_END") || VarAnalysis.stmtIs(st, "RET") || VarAnalysis.stmtIs(st, "THROW"){
+						code = 3
+					} else if VarAnalysis.stmtIs(st, "CMP"){
+						code = 4
+					}
+				}
+			}
+			kind.set(kind, k, code)
+			if code == 1{
+				? labels.put(labels, lab, k)
+			}
+		}
+		let nl = mut labels.size(labels)
+		let flagged = mut ? new Vec()      // label position -> named by something other than a JMP
+		? flagged.zero(flagged, m)
+		let tgt = mut ? new Vec()      // JMP position -> label position + 1
+		? tgt.zero(tgt, m)
+		match Some(program){
+			for k in 0..m{
+				let kd = mut kind.get(kind, k)
+				if kd == 1 || kd == 5{
+					continue
+				}
+				let st = mut ? program.items.getSome(program.items, cur.get(cur, k))
+				if kd == 2{
+					let jt = mut ? st.items.getSome(st.items, 1)
+					if labels.containsKey(labels, jt.text){
+						tgt.set(tgt, k, labels.getOrDefault(labels, jt.text, 0) + 1)
+					}
+					continue
+				}
+				let sz = mut st.size(st)
+				for t in 0..sz{
+					let tk = mut ? st.items.getSome(st.items, t)
+					if tk.text.startsWith(tk.text, "@"){
+						if labels.containsKey(labels, tk.text){
+							flagged.set(flagged, labels.getOrDefault(labels, tk.text, 0), 1)
+						}
+					}
+				}
+			}
+		}
+		let work = mut ? new Vec()
+		? work.push(work, 0)
+		for li in 0..nl{
+			let nm = mut labels.keyAt(labels, li)
+			let root = mut false
+			match Some(nm){
+				let lp = mut labels.valueAt(labels, li, 0)
+				if DeadControlFlowRemovalPass.isStructural(nm) == false || flagged.get(flagged, lp) == 1{
+					root = true
+				}
+			}
+			if root{
+				? work.push(work, labels.valueAt(labels, li, 0))
+			}
+		}
+		let wb = mut (m * 2 + nl + 4)
+		for w in 0..wb{
+			if work.size(work) == 0{
+				break
+			}
+			let k = mut work.pop(work)
+			for g in 0..m{
+				if k >= m || seen.get(seen, k) == 1{
+					break
+				}
+				seen.set(seen, k, 1)
+				let kd = mut kind.get(kind, k)
+				if kd == 3{
+					break
+				}
+				if kd == 2{
+					let t = mut tgt.get(tgt, k)
+					if t > 0{
+						? work.push(work, t - 1)
+					}
+					let conditional = mut false
+					if k > 0 && kind.get(kind, k - 1) == 4{
+						conditional = true
+					}
+					if conditional == false{
+						break
+					}
+				}
+				k += 1
+			}
+		}
+		return seen
+	}
+
+	/** One Java rewriteAll round over the function in `cur`; false when nothing was foldable. */
+	@throws
+	static func round(program: ref mut BytecodeProgram, curArg: ref mut Vec) mut bool{
+		?catch(ex){ throw ex }
+		let cur = mut ? new Vec()
+		let m0 = mut 0
+		match Some(curArg){ m0 = curArg.size(curArg) }
+		for q in 0..m0{
+			match Some(curArg){ ? cur.push(cur, curArg.get(curArg, q)) }
+		}
+		let hits = mut ? new Vec()
+		match Some(program){ ? DeadControlFlowRemovalPass.findHits(program, cur, hits) }
+		if hits.size(hits) == 0{
+			return false
+		}
+		if hits.size(hits) > 1{
+			let pre = mut 0
+			match Some(program){ pre = ? DeadControlFlowRemovalPass.dropJumpToNext(program, cur) }
+			if pre > 0{
+				hits.clear(hits)
+				match Some(program){ ? DeadControlFlowRemovalPass.findHits(program, cur, hits) }
+			}
+		}
+		let m = mut cur.size(cur)
+		let before = mut ? DeadControlFlowRemovalPass.reach(program, cur)
+		let src = mut ? new Vec()
+		let body = mut ? new Vec()
+		let nh = mut hits.size(hits)
+		let h = mut 0
+		let skip = mut 0
+		for k in 0..m{
+			if skip > 0{
+				skip -= 1
+				continue
+			}
+			if h < nh && hits.get(hits, h) == k{
+				let isFalse = mut false
+				match Some(program){ isFalse = DeadControlFlowRemovalPass.isBoolLit(program, cur.get(cur, k), "false") }
+				if isFalse{
+					? src.push(src, k + 2)
+					? body.push(body, cur.get(cur, k + 2))
+				}
+				skip = 2
+				h += 1
+			} else {
+				? src.push(src, k)
+				? body.push(body, cur.get(cur, k))
+			}
+		}
+		let mb = mut body.size(body)
+		let after = mut ? DeadControlFlowRemovalPass.reach(program, body)
+		let keep = mut ? new Vec()
+		? keep.zero(keep, mb)
+		for j in 0..mb{
+			let dead = mut false
+			if after.get(after, j) == 0 && before.get(before, src.get(src, j)) == 1{
+				dead = true
+			}
+			if dead{
+				match Some(program){
+					if DeadControlFlowRemovalPass.isDeclOrFunc(program, body.get(body, j)){
+						dead = false
+					}
+				}
+			}
+			if dead == false{
+				keep.set(keep, j, 1)
+			}
+		}
+		// labels that a kept line still names must stay
+		let cand = mut ? new StringScalarMap:<u64>()
+		let candOf = mut ? new Vec()
+		? candOf.zero(candOf, mb)
+		for j in 0..mb{
+			if keep.get(keep, j) == 1{
+				continue
+			}
+			let lab = mut ? new String()
+			let isLab = mut false
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, body.get(body, j))
+				if DeadControlFlowRemovalPass.isLabelDefAt(program, body.get(body, j)){
+					let t0 = mut ? st.items.getSome(st.items, 0)
+					lab = ? t0.text.sub(t0.text, 0, t0.text.length(t0.text) - 1)
+					isLab = true
+				}
+			}
+			if isLab{
+				let id = mut cand.size(cand)
+				if cand.containsKey(cand, lab){
+					id = cand.getOrDefault(cand, lab, 0)
+				} else {
+					? cand.put(cand, lab, id)
+				}
+				candOf.set(candOf, j, id + 1)
+			}
+		}
+		let nc = mut cand.size(cand)
+		if nc > 0{
+			let named = mut ? new Vec()
+			? named.zero(named, nc)
+			match Some(program){
+				for j in 0..mb{
+					if keep.get(keep, j) == 0 || DeadControlFlowRemovalPass.isLabelDefAt(program, body.get(body, j)){
+						continue
+					}
+					let st = mut ? program.items.getSome(program.items, body.get(body, j))
+					let sz = mut st.size(st)
+					for t in 0..sz{
+						let tk = mut ? st.items.getSome(st.items, t)
+						if tk.text.startsWith(tk.text, "@") && cand.containsKey(cand, tk.text){
+							named.set(named, cand.getOrDefault(cand, tk.text, 0), 1)
+						}
+					}
+				}
+			}
+			for j in 0..mb{
+				let c = mut candOf.get(candOf, j)
+				if keep.get(keep, j) == 0 && c > 0 && named.get(named, c - 1) == 1{
+					keep.set(keep, j, 1)
+				}
+			}
+		}
+		cur.clear(cur)
+		for j in 0..mb{
+			if keep.get(keep, j) == 1{
+				? cur.push(cur, body.get(body, j))
+			}
+		}
+		let dummy = mut 0
+		match Some(program){ dummy = ? DeadControlFlowRemovalPass.dropJumpToNext(program, cur) }
+		match Some(curArg){ curArg.clear(curArg) }
+		let nk = mut cur.size(cur)
+		for q in 0..nk{
+			match Some(curArg){ ? curArg.push(curArg, cur.get(cur, q)) }
+		}
+		return true
+	}
+}

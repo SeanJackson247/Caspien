@@ -1,0 +1,584 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+/**
+ * The Optimizer's view of compiler.config (ports of FoldConfig, VariableConfig, UnrollConfig, InlineConfig). Each `parse` takes the config's lines
+ * (see OptConfig.lines) and keeps the Java behaviour: only top-level `key: value` lines count, `#` starts a comment, a malformed value stops the compile.
+ * The Java exception texts carried "path:line" and the offending value; a Caspien `throw` takes a literal, so these say which key was wrong.
+ */
+
+/** `constant-folding: on|off`. */
+@pub
+struct FoldConfig{@pub{
+	enabled: mut bool
+}}
+
+@pub
+impl constructor for FoldConfig(enabled: mut bool) self{
+	return FoldConfig{enabled= enabled}
+}
+
+/** The eight on/off switches of the variable group. */
+@pub
+struct VariableConfig{@pub{
+	elision: mut bool
+	shifting: mut bool
+	unpacking: mut bool
+	deadFlow: mut bool
+	deadFunctions: mut bool
+	unusedDecls: mut bool
+	allocReorder: mut bool
+	structReorder: mut bool
+}}
+
+@pub
+impl constructor for VariableConfig() self{
+	return VariableConfig{elision= false, shifting= false, unpacking= false, deadFlow= false, deadFunctions= false, unusedDecls= false, allocReorder= false, structReorder= false}
+}
+
+/** `loop-unrolling` preset and its four numbers (all 0 while the preset is off). */
+@pub
+struct UnrollConfig{@pub{
+	enabled: mut bool
+	preset: owns some mut String
+	factor: mut s64
+	fullMaxTrips: mut s64
+	maxBodyLines: mut s64
+	maxGrowth: mut s64
+	nested: mut bool
+}}
+
+@pub
+@throws
+impl constructor for UnrollConfig() self{
+	?catch(e){ throw e }
+	let p = mut ? String.from("off")
+	return UnrollConfig{enabled= false, preset= p, factor= 0, fullMaxTrips= 0, maxBodyLines= 0, maxGrowth= 0, nested= false}
+}
+
+/** `function-inlining` preset and its numbers. */
+@pub
+struct InlineConfig{@pub{
+	enabled: mut bool
+	preset: owns some mut String
+	maxCalleeLines: mut s64
+	maxDepth: mut s64
+	maxGrowth: mut s64
+	growthFactor: mut s64
+	totalFactor: mut s64
+	maxMultiCalleeLines: mut s64
+}}
+
+@pub
+@throws
+impl constructor for InlineConfig() self{
+	?catch(e){ throw e }
+	let p = mut ? String.from("off")
+	return InlineConfig{enabled= false, preset= p, maxCalleeLines= 0, maxDepth= 0, maxGrowth= 0, growthFactor= 0, totalFactor= 0, maxMultiCalleeLines= 0}
+}
+
+@pub
+impl InlineConfig{
+	/** Java `GROWTH_FLOOR`. */
+	@pub
+	static func growthFloor() mut s64{
+		return 2000
+	}
+
+	/** Java `TOTAL_FLOOR`. */
+	@pub
+	static func totalFloor() mut s64{
+		return 50000
+	}
+}
+
+/** One `key: value` config line. */
+@pub
+struct KeyVal{@pub{
+	key: owns some mut String
+	val: owns some mut String
+}}
+
+@pub
+impl constructor for KeyVal(key: owns some mut String, val: owns some mut String) self{
+	return KeyVal{key= key, val= val}
+}
+
+/** Shared line handling of the four parsers, and the parsers themselves. */
+@pub
+struct OptConfig{@pub{
+}}
+
+@pub
+impl OptConfig{
+	/** The config text as its lines (Java `String.lines()`): \n, \r\n or \r end a line, no empty last line. */
+	@pub
+	@throws
+	static func lines(text: ref some imut String) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let out = mut ? new ObjectList:<String>()
+		let content = mut ? text.sub(text, 0, text.length(text))
+		let n = mut content.length(content)
+		let start = mut 0
+		let i = mut 0
+		let limit = mut (n + 1)
+		for step in 0..limit{
+			if i >= n{
+				break
+			}
+			let c = mut content.charAt(content, i)
+			if c == '\n' || c == '\r'{
+				let ln = mut ? content.sub(content, start, i)
+				? out.add(out, ln)
+				if c == '\r' && i + 1 < n && content.charAt(content, i + 1) == '\n'{
+					i += 1
+				}
+				i += 1
+				start = i
+			} else {
+				i += 1
+			}
+		}
+		if start < n{
+			let ln = mut ? content.sub(content, start, n)
+			? out.add(out, ln)
+		}
+		return out
+	}
+
+	@pub
+	static func count(lines: ref imut ObjectList<String>) mut u64{
+		let n = mut 0
+		match Some(lines){ n = lines.size(lines) }
+		return n
+	}
+
+	/** `split` of line `i`. */
+	@pub
+	@throws
+	static func splitAt(lines: ref imut ObjectList<String>, i: mut u64, unquote: mut bool) owns mut KeyVal{
+		?catch(e){ throw e }
+		let:<owns mut KeyVal> kv = mut null
+		match Some(lines){
+			let rl = mut ? lines.getSome(lines, i)
+			kv = ? OptConfig.split(rl, unquote)
+		}
+		return kv
+	}
+
+	/** One config line as `key`/`val` (both trimmed; a surrounding "..." pair of the value removed when `unquote`), or null for a line that carries no top-level `key: value`. */
+	@pub
+	@throws
+	static func split(raw0: ref some imut String, unquote: mut bool) owns mut KeyVal{
+		?catch(e){ throw e }
+		let rtext = mut ? raw0.sub(raw0, 0, raw0.length(raw0))
+		let rn = mut rtext.length(rtext)
+		let hash = mut rn
+		for hi in 0..rn{
+			if hash == rn &&then String.charCode(rtext.charAt(rtext, hi)) == 35{
+				hash = hi
+			}
+		}
+		if hash < rn{
+			rtext = ? rtext.sub(rtext, 0, hash)
+		}
+		let n = mut rtext.length(rtext)
+		if n == 0{
+			return null
+		}
+		let c0 = mut rtext.charAt(rtext, 0)
+		if c0 == ' ' || c0 == '\t' || c0 == '\n' || c0 == '\r'{
+			return null
+		}
+		let t = mut ? rtext.trim(rtext)
+		let colon = mut t.indexOf(t, ':')
+		if colon <= 0{
+			return null
+		}
+		let k0 = mut ? t.sub(t, 0, wrap:<u64>(colon))
+		let k = mut ? k0.trim(k0)
+		let v0 = mut ? t.substring(t, wrap:<u64>(colon) + 1)
+		let v = mut ? v0.trim(v0)
+		if unquote{
+			let vn = mut v.length(v)
+			if vn >= 2 &&then v.charAt(v, 0) == '"' &&then v.charAt(v, vn - 1) == '"'{
+				let inner = mut ? v.sub(v, 1, vn - 1)
+				v = inner
+			}
+		}
+		let kv = mut ? new KeyVal(k, v)
+		return kv
+	}
+
+	/** Java's `number()` of the unroll/inline parsers: 1..12 decimal digits, else the compile stops. */
+	@pub
+	@throws
+	static func number(val: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		let n = mut val.length(val)
+		if n == 0 || n > 12{
+			throw "[config error] compiler.config: a loop-unroll-/inline- key needs a whole number (1 to 12 digits)"
+		}
+		let v = mut 0
+		for i in 0..n{
+			let cc = mut String.charCode(val.charAt(val, i))
+			if cc < 48 || cc > 57{
+				throw "[config error] compiler.config: a loop-unroll-/inline- key needs a whole number (0 or more)"
+			}
+			v = v * 10 + (cc - 48)
+		}
+		return wrap:<s64>(v)
+	}
+
+	/** Java `(int) x` of a long. */
+	@pub
+	static func asInt(x: mut s64) mut s64{
+		let w = mut wrap:<s32>(x)
+		return w as s64
+	}
+
+	/** `on` -> true, `off` -> false, anything else stops the compile. */
+	@throws
+	static func onOff(val: ref some imut String) mut bool{
+		if val.equals(val, "on"){
+			return true
+		}
+		if val.equals(val, "off"){
+			return false
+		}
+		throw "[config error] compiler.config: a switch must be on or off"
+	}
+
+	@pub
+	@throws
+	static func parseFold(lines: ref imut ObjectList<String>) owns some mut FoldConfig{
+		?catch(e){ throw e }
+		let on = mut false
+		let n = mut OptConfig.count(lines)
+		for i in 0..n{
+			let kv = mut ? OptConfig.splitAt(lines, i, false)
+			match Some(kv){
+				if kv.key.equals(kv.key, "constant-folding"){
+					on = ? OptConfig.onOff(kv.val)
+				}
+			}
+		}
+		let r = mut ? new FoldConfig(on)
+		return r
+	}
+
+	@pub
+	@throws
+	static func parseVariable(lines: ref imut ObjectList<String>) owns some mut VariableConfig{
+		?catch(e){ throw e }
+		let c = mut ? new VariableConfig()
+		let n = mut OptConfig.count(lines)
+		for i in 0..n{
+			let kv = mut ? OptConfig.splitAt(lines, i, false)
+			match Some(kv){
+				let k = kv.key
+				if k.equals(k, "variable-elision"){ c.elision = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "variable-shifting"){ c.shifting = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "struct-unpacking"){ c.unpacking = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "dead-control-flow-removal"){ c.deadFlow = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "dead-function-removal"){ c.deadFunctions = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "unused-declaration-removal"){ c.unusedDecls = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "variable-allocation-reordering"){ c.allocReorder = ? OptConfig.onOff(kv.val) }
+				else if k.equals(k, "struct-member-reordering"){ c.structReorder = ? OptConfig.onOff(kv.val) }
+			}
+		}
+		return c
+	}
+
+	static func isPreset(val: ref some imut String) mut bool{
+		return val.equals(val, "off") || val.equals(val, "conservative") || val.equals(val, "balanced") || val.equals(val, "aggressive")
+	}
+
+	@pub
+	@throws
+	static func parseUnroll(lines: ref imut ObjectList<String>) owns some mut UnrollConfig{
+		?catch(e){ throw e }
+		let c = mut ? new UnrollConfig()
+		let preset = mut ? String.from("off")
+		let hasFactor = mut false
+		let hasTrips = mut false
+		let hasBody = mut false
+		let hasGrowth = mut false
+		let factor = mut wrap:<s64>(0)
+		let trips = mut wrap:<s64>(0)
+		let body = mut wrap:<s64>(0)
+		let growth = mut wrap:<s64>(0)
+		let nestedOn = mut false
+		let n = mut OptConfig.count(lines)
+		for i in 0..n{
+			let kv = mut ? OptConfig.splitAt(lines, i, true)
+			match Some(kv){
+				let k = kv.key
+				let v = kv.val
+				if k.equals(k, "loop-unrolling"){
+					if OptConfig.isPreset(v) == false{
+						throw "[config error] compiler.config: 'loop-unrolling' must be off, conservative, balanced or aggressive"
+					}
+					preset = ? v.sub(v, 0, v.length(v))
+				} else if k.equals(k, "loop-unroll-factor"){
+					let n_factor = mut ? OptConfig.number(v)
+					factor = OptConfig.asInt(n_factor)
+					hasFactor = true
+				} else if k.equals(k, "loop-unroll-full-max-trips"){
+					let n_trips = mut ? OptConfig.number(v)
+					trips = OptConfig.asInt(n_trips)
+					hasTrips = true
+				} else if k.equals(k, "loop-unroll-max-body-lines"){
+					let n_body = mut ? OptConfig.number(v)
+					body = OptConfig.asInt(n_body)
+					hasBody = true
+				} else if k.equals(k, "loop-unroll-max-growth"){
+					growth = ? OptConfig.number(v)
+					hasGrowth = true
+				} else if k.equals(k, "loop-unroll-nested"){
+					if v.equals(v, "on") == false && v.equals(v, "off") == false{
+						throw "[config error] compiler.config: 'loop-unroll-nested' must be 'on' or 'off'"
+					}
+					nestedOn = v.equals(v, "on")
+				}
+			}
+		}
+		c.preset = ? preset.sub(preset, 0, preset.length(preset))
+		if preset.equals(preset, "conservative"){
+			c.factor = 2
+			c.fullMaxTrips = 4
+			c.maxBodyLines = 40
+			c.maxGrowth = 400
+		} else if preset.equals(preset, "balanced"){
+			c.factor = 4
+			c.fullMaxTrips = 16
+			c.maxBodyLines = 100
+			c.maxGrowth = 2000
+		} else if preset.equals(preset, "aggressive"){
+			c.factor = 8
+			c.fullMaxTrips = 4096
+			c.maxBodyLines = 2000
+			c.maxGrowth = 200000
+		} else{
+			return c
+		}
+		c.enabled = true
+		c.nested = nestedOn
+		if hasFactor{ c.factor = factor }
+		if hasTrips{ c.fullMaxTrips = trips }
+		if hasBody{ c.maxBodyLines = body }
+		if hasGrowth{ c.maxGrowth = growth }
+		return c
+	}
+
+	/** Java `Math.min(x, Integer.MAX_VALUE)` then `(int)`. */
+	@pub
+	static func clampInt(x: mut s64) mut s64{
+		if x > 2147483647{
+			return 2147483647
+		}
+		return x
+	}
+
+	@pub
+	@throws
+	static func parseInline(lines: ref imut ObjectList<String>) owns some mut InlineConfig{
+		?catch(e){ throw e }
+		let c = mut ? new InlineConfig()
+		let preset = mut ? String.from("off")
+		let hasCallee = mut false
+		let hasDepth = mut false
+		let hasGrowth = mut false
+		let hasGFactor = mut false
+		let hasTFactor = mut false
+		let hasMulti = mut false
+		let callee = mut wrap:<s64>(0)
+		let depth = mut wrap:<s64>(0)
+		let growth = mut wrap:<s64>(0)
+		let gfactor = mut wrap:<s64>(0)
+		let tfactor = mut wrap:<s64>(0)
+		let multi = mut wrap:<s64>(0)
+		let n = mut OptConfig.count(lines)
+		for i in 0..n{
+			let kv = mut ? OptConfig.splitAt(lines, i, true)
+			match Some(kv){
+				let k = kv.key
+				let v = kv.val
+				if k.equals(k, "function-inlining"){
+					if OptConfig.isPreset(v) == false{
+						throw "[config error] compiler.config: 'function-inlining' must be off, conservative, balanced or aggressive"
+					}
+					preset = ? v.sub(v, 0, v.length(v))
+				} else if k.equals(k, "inline-max-callee-lines"){
+					let n_callee = mut ? OptConfig.number(v)
+					callee = OptConfig.clampInt(n_callee)
+					hasCallee = true
+				} else if k.equals(k, "inline-max-depth"){
+					let n_depth = mut ? OptConfig.number(v)
+					depth = OptConfig.clampInt(n_depth)
+					hasDepth = true
+				} else if k.equals(k, "inline-max-growth"){
+					growth = ? OptConfig.number(v)
+					hasGrowth = true
+				} else if k.equals(k, "inline-max-growth-factor"){
+					gfactor = ? OptConfig.number(v)
+					hasGFactor = true
+				} else if k.equals(k, "inline-max-multi-callee-lines"){
+					let n_multi = mut ? OptConfig.number(v)
+					multi = OptConfig.clampInt(n_multi)
+					hasMulti = true
+				} else if k.equals(k, "inline-max-total-factor"){
+					tfactor = ? OptConfig.number(v)
+					hasTFactor = true
+				}
+			}
+		}
+		c.preset = ? preset.sub(preset, 0, preset.length(preset))
+		if preset.equals(preset, "conservative"){
+			c.maxCalleeLines = 12
+			c.maxDepth = 1
+			c.maxGrowth = 200
+		} else if preset.equals(preset, "balanced"){
+			c.maxCalleeLines = 40
+			c.maxDepth = 3
+			c.maxGrowth = 2000
+		} else if preset.equals(preset, "aggressive"){
+			c.maxCalleeLines = 2147483647
+			c.maxDepth = 32
+			c.maxGrowth = 100000000
+			c.growthFactor = 30
+			c.totalFactor = 10
+		} else{
+			return c
+		}
+		c.enabled = true
+		c.maxMultiCalleeLines = 1000
+		if hasMulti{ c.maxMultiCalleeLines = multi }
+		if hasCallee{ c.maxCalleeLines = callee }
+		if hasDepth{ c.maxDepth = depth }
+		if hasGrowth{ c.maxGrowth = growth }
+		if hasGFactor{ c.growthFactor = gfactor }
+		if hasTFactor{ c.totalFactor = tfactor }
+		return c
+	}
+
+	/** Java `FoldConfig.toString()` etc. joined as Optimizer.optimize's "[info] optimizer: ..." line. Everything is read into locals first: an append ends the proofs on the config structs. */
+	@pub
+	@throws
+	static func describe(fold: ref imut FoldConfig, v: ref imut VariableConfig, u: ref imut UnrollConfig, inl: ref imut InlineConfig) owns some mut String {
+		?catch(e){ throw e }
+		let foldOn = mut false
+		match Some(fold){ foldOn = fold.enabled }
+		let elision = mut false
+		let shifting = mut false
+		let unpacking = mut false
+		let deadFlow = mut false
+		let deadFunctions = mut false
+		let unusedDecls = mut false
+		let allocReorder = mut false
+		let structReorder = mut false
+		match Some(v){
+			elision = v.elision
+			shifting = v.shifting
+			unpacking = v.unpacking
+			deadFlow = v.deadFlow
+			deadFunctions = v.deadFunctions
+			unusedDecls = v.unusedDecls
+			allocReorder = v.allocReorder
+			structReorder = v.structReorder
+		}
+		let uOn = mut false
+		let uFactor = mut wrap:<s64>(0)
+		let uTrips = mut wrap:<s64>(0)
+		let uBody = mut wrap:<s64>(0)
+		let uGrowth = mut wrap:<s64>(0)
+		let uPreset = mut ? new String()
+		match Some(u){
+			uOn = u.enabled
+			uFactor = u.factor
+			uTrips = u.fullMaxTrips
+			uBody = u.maxBodyLines
+			uGrowth = u.maxGrowth
+			uPreset = ? u.preset.sub(u.preset, 0, u.preset.length(u.preset))
+		}
+		let iOn = mut false
+		let iCallee = mut wrap:<s64>(0)
+		let iDepth = mut wrap:<s64>(0)
+		let iGrowth = mut wrap:<s64>(0)
+		let iGFactor = mut wrap:<s64>(0)
+		let iTFactor = mut wrap:<s64>(0)
+		let iMulti = mut wrap:<s64>(0)
+		let iPreset = mut ? new String()
+		match Some(inl){
+			iOn = inl.enabled
+			iCallee = inl.maxCalleeLines
+			iDepth = inl.maxDepth
+			iGrowth = inl.maxGrowth
+			iGFactor = inl.growthFactor
+			iTFactor = inl.totalFactor
+			iMulti = inl.maxMultiCalleeLines
+			iPreset = ? inl.preset.sub(inl.preset, 0, inl.preset.length(inl.preset))
+		}
+		let s = mut ? String.from("[info] optimizer: ")
+		if uOn{
+			? s.append(s, "loop-unrolling ")
+			? s.append(s, uPreset)
+			? s.append(s, " (factor ")
+			? s.appendS64(s, uFactor)
+			? s.append(s, ", full<=")
+			? s.appendS64(s, uTrips)
+			? s.append(s, " trips, body<=")
+			? s.appendS64(s, uBody)
+			? s.append(s, " lines, growth<=")
+			? s.appendS64(s, uGrowth)
+			? s.append(s, ")")
+		} else{
+			? s.append(s, "loop-unrolling off")
+		}
+		? s.append(s, "; ")
+		if foldOn{ ? s.append(s, "constant-folding on") } else{ ? s.append(s, "constant-folding off") }
+		? s.append(s, "; variable-elision ")
+		? OptConfig.onOffText(s, elision)
+		? s.append(s, "; variable-shifting ")
+		? OptConfig.onOffText(s, shifting)
+		? s.append(s, "; struct-unpacking ")
+		? OptConfig.onOffText(s, unpacking)
+		? s.append(s, "; dead-control-flow-removal ")
+		? OptConfig.onOffText(s, deadFlow)
+		? s.append(s, "; dead-function-removal ")
+		? OptConfig.onOffText(s, deadFunctions)
+		? s.append(s, "; unused-declaration-removal ")
+		? OptConfig.onOffText(s, unusedDecls)
+		? s.append(s, "; variable-allocation-reordering ")
+		? OptConfig.onOffText(s, allocReorder)
+		? s.append(s, "; struct-member-reordering ")
+		? OptConfig.onOffText(s, structReorder)
+		? s.append(s, "; ")
+		if iOn{
+			? s.append(s, "function-inlining ")
+			? s.append(s, iPreset)
+			? s.append(s, " (callee<=")
+			? s.appendS64(s, iCallee)
+			? s.append(s, " lines, depth ")
+			? s.appendS64(s, iDepth)
+			? s.append(s, ", growth<=")
+			? s.appendS64(s, iGrowth)
+			? s.append(s, ", x")
+			? s.appendS64(s, iGFactor)
+			? s.append(s, " per function, x")
+			? s.appendS64(s, iTFactor)
+			? s.append(s, " per program, multi-site callee<=")
+			? s.appendS64(s, iMulti)
+			? s.append(s, " lines)")
+		} else{
+			? s.append(s, "function-inlining off")
+		}
+		return s
+	}
+
+	@throws
+	static func onOffText(s: ref some mut String, on: mut bool) void{
+		?catch(e){ throw e }
+		if on{ ? s.append(s, "on") } else{ ? s.append(s, "off") }
+	}
+}

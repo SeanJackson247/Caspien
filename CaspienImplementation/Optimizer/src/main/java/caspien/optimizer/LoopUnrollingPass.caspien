@@ -1,0 +1,1962 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+
+/** Java LoopUnrollingLoop: one recognised counted `for` (indices into the program, the hidden range, the variable, labels, decorators). */
+@pub
+struct LoopUnrollingLoop{@pub{
+	start: mut u64
+	bodyStart: mut u64
+	incStart: mut u64
+	jmpIdx: mut u64
+	endIdx: mut u64
+	headIdx: mut u64
+	lo: mut u64
+	hi: mut u64
+	forced: mut bool
+	dont: mut bool
+	factor: mut u64
+	rangeName: owns some mut String
+	rangeType: owns some mut String
+	var: owns some mut String
+	varType: owns some mut String
+	headLabel: owns some mut String
+	endLabel: owns some mut String
+	pos: owns mut String
+}}
+
+@pub
+impl constructor for LoopUnrollingLoop(start: mut u64, bodyStart: mut u64, incStart: mut u64, jmpIdx: mut u64, endIdx: mut u64, headIdx: mut u64, lo: mut u64, hi: mut u64, forced: mut bool, dont: mut bool, factor: mut u64, rangeName: owns some mut String, rangeType: owns some mut String, var: owns some mut String, varType: owns some mut String, headLabel: owns some mut String, endLabel: owns some mut String, pos: owns mut String) self{
+	return LoopUnrollingLoop{start= start, bodyStart= bodyStart, incStart= incStart, jmpIdx= jmpIdx, endIdx= endIdx, headIdx= headIdx, lo= lo, hi= hi, forced= forced, dont= dont, factor= factor, rangeName= rangeName, rangeType= rangeType, var= var, varType= varType, headLabel= headLabel, endLabel= endLabel, pos= pos}
+}
+
+/** An ALLOC copy queued by renameLocals: inserted after the `ord`-th ALLOC named `name` once the function is done (Java pendingAllocs, which matched by object identity). */
+@pub
+struct PendingAlloc{@pub{
+	name: owns some mut String
+	ord: mut u64
+	stmt: owns some mut BytecodeStatement
+}}
+
+@pub
+impl constructor for PendingAlloc(name: owns some mut String, ord: mut u64, stmt: owns some mut BytecodeStatement) self{
+	return PendingAlloc{name= name, ord= ord, stmt= stmt}
+}
+
+/**
+ * Loop unrolling (port of LoopUnrollingPass.java; the plan of a loop is decided by `plan`, LoopUnrollingPlan is (kind, u, rem) there).
+ * Instance state across rounds (Java fields): next fresh label number, per-function growth, already-reported @dont notes.
+ * Scalars that the helpers share live in a Vec `st`: 0 nextLabel, 1 enabled, 2 factor, 3 fullMaxTrips, 4 maxBodyLines, 5 maxGrowth, 6 nested,
+ * 7 growth of the current function, 8 lines added by the last apply (as s64 bits).
+ */
+@pub
+struct LoopUnrollingPass{@pub{
+	nextLabel: mut u64
+	grown: owns some mut StringScalarMap<s64>
+	noted: owns some mut StringSet
+}}
+
+@pub
+@throws
+impl constructor for LoopUnrollingPass() self{
+	?catch(e){ throw e }
+	let g = mut ? new StringScalarMap:<s64>()
+	let n = mut ? new StringSet()
+	return LoopUnrollingPass{nextLabel= 0, grown= g, noted= n}
+}
+
+@pub
+impl LoopUnrollingPass{
+	static func stGet(st: ref imut Vec, i: mut u64) mut u64{
+		match Some(st){
+			return st.get(st, i)
+		}
+		return 0
+	}
+
+	static func stSet(st: ref mut Vec, i: mut u64, v: mut u64) void{
+		match Some(st){
+			st.set(st, i, v)
+		}
+	}
+
+	// ---- string helpers ----------------------------------------------------------------------------------
+
+	@throws
+	static func copyStr(a: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? a.sub(a, 0, a.length(a))
+		return r
+	}
+
+	@throws
+	static func catLit(a: ref some imut String, lit: static imut string) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? a.sub(a, 0, a.length(a))
+		? r.append(r, lit)
+		return r
+	}
+
+	/** Java allDigits: 1..12 characters, all '0'..'9'. */
+	static func allDigits(s: ref some imut String) bool{
+		let n = mut s.length(s)
+		if n == 0 || n > 12{
+			return false
+		}
+		for i in 0..n{
+			let c = mut String.charCode(s.charAt(s, i))
+			if c < 48 || c > 57{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Value of a digit string (callers checked allDigits). */
+	static func parseU(s: ref some imut String) mut u64{
+		let n = mut s.length(s)
+		let v = mut 0
+		for i in 0..n{
+			let c = mut String.charCode(s.charAt(s, i))
+			v = v * 10 + (c - 48)
+		}
+		return v
+	}
+
+	/** Index of the last '_' or -1 (Java lastIndexOf). */
+	static func lastUnderscore(s: ref some imut String) mut s64{
+		let n = mut s.length(s)
+		let r = mut wrap:<s64>(0)
+		r = r - 1
+		for i in 0..n{
+			if s.charAt(s, i) == '_'{
+				r = wrap:<s64>(i)
+			}
+		}
+		return r
+	}
+
+	/** Java labelName: "@for_12:" -> "for_12", "@for_12" -> "for_12". */
+	@throws
+	static func labelName(t: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut t.length(t)
+		let e2 = mut n
+		if n >= 2 &&then t.charAt(t, n - 1) == ':'{
+			e2 = n - 1
+		}
+		if n == 0{
+			let z = mut ? t.sub(t, 0, 0)
+			return z
+		}
+		let r = mut ? t.sub(t, 1, e2)
+		return r
+	}
+
+	/** Java stripQuotes. */
+	@throws
+	static func stripQuotes(t: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut t.length(t)
+		if n >= 2 &&then t.charAt(t, 0) == '"' &&then t.charAt(t, n - 1) == '"'{
+			let r = mut ? t.sub(t, 1, n - 1)
+			return r
+		}
+		let r2 = mut ? t.sub(t, 0, n)
+		return r2
+	}
+
+	// ---- readers over the program: all take the nullable program and answer false/0 on any problem --------
+
+	static func nTok(program: ref imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			return st.size(st)
+		}
+		return 0
+	}
+
+	/** Java `is(line, size, first)`: exactly `n` tokens, the first a CODE token with text `lit`. */
+	static func isOp(program: ref imut BytecodeProgram, i: mut u64, n: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if st.size(st) != n{
+				return false
+			}
+			let t = mut ? st.items.getSome(st.items, 0)
+			if t.kind != BytecodeTokenKind.CODE{
+				return false
+			}
+			return t.text.equals(t.text, lit)
+		}
+		return false
+	}
+
+	/** Token text equals the literal (no kind check). */
+	static func tokLit(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			return tk.text.equals(tk.text, lit)
+		}
+		return false
+	}
+
+	static func tokStarts(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			return tk.text.startsWith(tk.text, lit)
+		}
+		return false
+	}
+
+	/** Token text equals the String. */
+	static func tokStr(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, other: ref some imut String) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			return tk.text.equals(tk.text, other)
+		}
+		return false
+	}
+
+	/** Token text starts with the String. */
+	static func tokStartsStr(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, prefix: ref some imut String) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			return tk.text.startsWith(tk.text, prefix)
+		}
+		return false
+	}
+
+	/** Two tokens have equal text. */
+	static func tokTok(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, j: mut u64, u: mut u64) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			let sj = mut ? program.items.getSome(program.items, j)
+			if u >= sj.size(sj){
+				return false
+			}
+			let uk = mut ? sj.items.getSome(sj.items, u)
+			return tk.text.equals(tk.text, uk.text)
+		}
+		return false
+	}
+
+	static func tokCode(program: ref imut BytecodeProgram, i: mut u64, t: mut u64) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			return tk.kind == BytecodeTokenKind.CODE
+		}
+		return false
+	}
+
+	@throws
+	static func tokCopy(program: ref imut BytecodeProgram, i: mut u64, t: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String("")
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			let tk = mut ? st.items.getSome(st.items, t)
+			r = ? tk.text.sub(tk.text, 0, tk.text.length(tk.text))
+		}
+		return r
+	}
+
+	/** Java isLabelDef: one CODE token "@name:". */
+	static func isLabelDef(program: ref imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			if st.size(st) != 1{
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, 0)
+			if tk.kind != BytecodeTokenKind.CODE{
+				return false
+			}
+			if tk.text.startsWith(tk.text, "@") &&then tk.text.endsWith(tk.text, ":"){
+				return true
+			}
+			return false
+		}
+		return false
+	}
+
+	/** Java isForDeco: FOR_DECORATE @x ["file:line"]. */
+	static func isForDeco(program: ref imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			let n = mut st.size(st)
+			if n != 2 && n != 3{
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, 0)
+			if tk.kind != BytecodeTokenKind.CODE{
+				return false
+			}
+			return tk.text.equals(tk.text, "FOR_DECORATE")
+		}
+		return false
+	}
+
+	/** A new token with the kind/line/file of token `t` of statement `i` and the given text. */
+	@throws
+	static func makeToken(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, text: owns some mut String) owns some mut BytecodeToken{
+		?catch(e){ throw e }
+		let:<owns mut String> f = mut null
+		let line = mut wrap:<s32>(0)
+		let isCode = mut true
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			let tk = mut ? st.items.getSome(st.items, t)
+			line = tk.line + 0
+			isCode = tk.kind == BytecodeTokenKind.CODE
+			match Some(tk.file){
+				f = mut ? tk.file.sub(tk.file, 0, tk.file.length(tk.file))
+			}
+		}
+		if isCode{
+			let nt = mut ? new BytecodeToken(text, f, line, BytecodeTokenKind.CODE)
+			return nt
+		} else {
+			let nt2 = mut ? new BytecodeToken(text, f, line, BytecodeTokenKind.STRING)
+			return nt2
+		}
+	}
+
+	/** Appends a copy of statement `i` to `out`. */
+	@throws
+	static func addCopy(program: ref imut BytecodeProgram, i: mut u64, out: ref mut BytecodeProgram) void{
+		?catch(e){ throw e }
+		match Some(program){
+			let s = mut ? program.items.getSome(program.items, i)
+			let c = mut ? BytecodeStatement.copyOf(s)
+			match Some(out){ ? out.add(out, c) }
+		}
+	}
+
+	/** Highest number at the end of any "@name_N" label token, capped at 1e9 (Java maxNum), -1 when none. */
+	static func maxLabelNum(program: ref some imut BytecodeProgram) mut s64{
+		?catch(e){ return 0 }
+		let best = mut wrap:<s64>(0)
+		best = best - 1
+		let n = mut program.size(program)
+		for i in 0..n{
+			let st = mut ? program.items.getSome(program.items, i)
+			let m = mut st.size(st)
+			for t in 0..m{
+				let tk = mut ? st.items.getSome(st.items, t)
+				if tk.kind == BytecodeTokenKind.CODE &&then tk.text.startsWith(tk.text, "@"){
+					let len = mut tk.text.length(tk.text)
+					let e2 = mut len
+					if len >= 2 &&then tk.text.charAt(tk.text, len - 1) == ':'{
+						e2 = len - 1
+					}
+					// name = text[1, e2); last '_' inside it, digits after it
+					let us = mut 0
+					let have = mut false
+					for q in 1..e2{
+						if tk.text.charAt(tk.text, q) == '_'{
+							us = q
+							have = true
+						}
+					}
+					if have{
+						let dl = mut (e2 - us - 1)
+						if dl >= 1 && dl <= 12{
+							let ok = mut true
+							let v = mut 0
+							for q in 0..dl{
+								let c = mut String.charCode(tk.text.charAt(tk.text, us + 1 + q))
+								if c < 48 || c > 57{
+									ok = false
+								} else {
+									v = v * 10 + (c - 48)
+								}
+							}
+							if ok{
+								if v > 1000000000{
+									v = 1000000000
+								}
+								let vs = mut wrap:<s64>(v)
+								if vs > best{
+									best = vs
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return best
+	}
+
+	// ---- candidate loop ----------------------------------------------------------------------------------
+
+	/** Java match(): the counted `for` whose hidden range setup starts at line `s`, or null. */
+	@throws
+	static func matchLoop(program: ref imut BytecodeProgram, s: mut u64, fnEnd: mut u64) owns mut LoopUnrollingLoop{
+		?catch(e){ throw e }
+		if s + 13 >= fnEnd{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, s, 3, "ADDR") == false{
+			return null
+		}
+		if LoopUnrollingPass.tokStarts(program, s, 1, "$for_range_") == false{
+			return null
+		}
+		let rangeName = mut ? LoopUnrollingPass.tokCopy(program, s, 1)
+		let rty = mut ? LoopUnrollingPass.tokCopy(program, s, 2)
+		let open = mut rty.indexOf(rty, "range(")
+		if open < 0{
+			return null
+		}
+		if rty.endsWith(rty, ")") == false{
+			return null
+		}
+		let tl = mut rty.length(rty)
+		let ob = mut (wrap:<u64>(open) + 6)
+		let inner = mut ? rty.sub(rty, ob, tl - 1)
+		let comma = mut inner.indexOf(inner, ',')
+		if comma < 0{
+			return null
+		}
+		let cm = mut wrap:<u64>(comma)
+		let loS = mut ? inner.sub(inner, 0, cm)
+		let hiS = mut ? inner.substring(inner, cm + 1)
+		if LoopUnrollingPass.allDigits(loS) == false || LoopUnrollingPass.allDigits(hiS) == false{
+			return null
+		}
+		let lo = mut LoopUnrollingPass.parseU(loS)
+		let hi = mut LoopUnrollingPass.parseU(hiS)
+		if hi < lo{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, s + 1, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, s + 1, 1, loS) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, s + 2, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, s + 2, 1, hiS) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, s + 3, 4, "ASSIGN") == false{
+			return null
+		}
+		if LoopUnrollingPass.tokStr(program, s + 3, 1, rty) == false || LoopUnrollingPass.tokStr(program, s + 3, 2, rty) == false || LoopUnrollingPass.tokStr(program, s + 3, 3, rty) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, s + 4, 3, "ADDR") == false || LoopUnrollingPass.tokStarts(program, s + 4, 1, "$"){
+			return null
+		}
+		let varName = mut ? LoopUnrollingPass.tokCopy(program, s + 4, 1)
+		let vt = mut ? LoopUnrollingPass.tokCopy(program, s + 4, 2)
+		let rstart = mut ? LoopUnrollingPass.catLit(rangeName, ".start")
+		if LoopUnrollingPass.isOp(program, s + 5, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, s + 5, 1, rstart) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, s + 6, 4, "ASSIGN") == false{
+			return null
+		}
+		if LoopUnrollingPass.tokStr(program, s + 6, 1, vt) == false || LoopUnrollingPass.tokStr(program, s + 6, 2, vt) == false || LoopUnrollingPass.tokStr(program, s + 6, 3, vt) == false{
+			return null
+		}
+		let h = mut (s + 7)
+		let forced = mut false
+		let dont = mut false
+		let factor = mut 0
+		let:<owns mut String> pos = mut null
+		for g in 0..fnEnd{
+			if h >= fnEnd{
+				break
+			}
+			if LoopUnrollingPass.isForDeco(program, h) == false{
+				break
+			}
+			let dt = mut ? LoopUnrollingPass.tokCopy(program, h, 1)
+			let dl = mut dt.length(dt)
+			if dt.equals(dt, "@unroll"){
+				forced = true
+			} else if dt.startsWith(dt, "@unroll(") &&then dt.endsWith(dt, ")"){
+				let dg = mut ? dt.sub(dt, 8, dl - 1)
+				if LoopUnrollingPass.allDigits(dg){
+					forced = true
+					factor = LoopUnrollingPass.parseU(dg)
+					if factor > 2147483647{
+						throw "NumberFormatException: @unroll factor out of int range"
+					}
+				}
+			} else if dt.equals(dt, "@dont(unroll)"){
+				dont = true
+			}
+			if LoopUnrollingPass.nTok(program, h) == 3{
+				let rawq = mut ? LoopUnrollingPass.tokCopy(program, h, 2)
+				pos = mut ? LoopUnrollingPass.stripQuotes(rawq)
+			}
+			h += 1
+		}
+		if h + 6 >= fnEnd{
+			return null
+		}
+		if LoopUnrollingPass.isLabelDef(program, h) == false{
+			return null
+		}
+		let hl0 = mut ? LoopUnrollingPass.tokCopy(program, h, 0)
+		let hn = mut hl0.length(hl0)
+		if hl0.startsWith(hl0, "@for_") == false || hn < 6{
+			return null
+		}
+		let hdig = mut ? hl0.sub(hl0, 5, hn - 1)
+		if LoopUnrollingPass.allDigits(hdig) == false{
+			return null
+		}
+		let head = mut ? hl0.sub(hl0, 0, hn - 1)
+		if LoopUnrollingPass.isOp(program, h + 1, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, h + 1, 1, varName) == false || LoopUnrollingPass.tokStr(program, h + 1, 2, vt) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, h + 2, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, h + 2, 1, rangeName) == false || LoopUnrollingPass.tokStr(program, h + 2, 2, rty) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, h + 3, 4, "IN") == false || LoopUnrollingPass.tokStr(program, h + 3, 1, vt) == false || LoopUnrollingPass.tokStr(program, h + 3, 2, rty) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, h + 4, 1, "CMP") == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, h + 5, 2, "JMP") == false || LoopUnrollingPass.tokStarts(program, h + 5, 1, "@for_end_") == false{
+			return null
+		}
+		let endLabel = mut ? LoopUnrollingPass.tokCopy(program, h + 5, 1)
+		let endColon = mut ? LoopUnrollingPass.catLit(endLabel, ":")
+		let endIdx = mut 0
+		let foundEnd = mut false
+		let scan = mut (fnEnd - (h + 6))
+		for d in 0..scan{
+			let k = mut (h + 6 + d)
+			if LoopUnrollingPass.isLabelDef(program, k) &&then LoopUnrollingPass.tokStr(program, k, 0, endColon){
+				endIdx = k
+				foundEnd = true
+				break
+			}
+		}
+		if foundEnd == false{
+			return null
+		}
+		if endIdx < h + 11{
+			return null
+		}
+		let jmp = mut (endIdx - 1)
+		if LoopUnrollingPass.isOp(program, jmp, 2, "JMP") == false || LoopUnrollingPass.tokStr(program, jmp, 1, head) == false{
+			return null
+		}
+		let inc = mut (jmp - 4)
+		if LoopUnrollingPass.isOp(program, inc, 3, "ADDR") == false || LoopUnrollingPass.tokStr(program, inc, 1, varName) == false || LoopUnrollingPass.tokStr(program, inc, 2, vt) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, inc + 1, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, inc + 1, 1, varName) == false || LoopUnrollingPass.tokStr(program, inc + 1, 2, vt) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, inc + 2, 3, "INC") == false || LoopUnrollingPass.tokStr(program, inc + 2, 1, vt) == false{
+			return null
+		}
+		if LoopUnrollingPass.isOp(program, inc + 3, 4, "ASSIGN") == false{
+			return null
+		}
+		let lp = mut ? new LoopUnrollingLoop(s, h + 6, inc, jmp, endIdx, h, lo, hi, forced, dont, factor, rangeName, rty, varName, vt, head, endLabel, pos)
+		return lp
+	}
+
+	/** True when `a` (text of a token) names the same label as token (j,u): both stripped of '@' and one trailing ':'. */
+	static func sameLabel(program: ref imut BytecodeProgram, i: mut u64, t: mut u64, j: mut u64, u: mut u64) bool{
+		?catch(e){ return false }
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, i)
+			let tk = mut ? st.items.getSome(st.items, t)
+			let sj = mut ? program.items.getSome(program.items, j)
+			let uk = mut ? sj.items.getSome(sj.items, u)
+			let la = mut tk.text.length(tk.text)
+			let lb = mut uk.text.length(uk.text)
+			let ea = mut la
+			let eb = mut lb
+			if la >= 2 &&then tk.text.charAt(tk.text, la - 1) == ':'{
+				ea = la - 1
+			}
+			if lb >= 2 &&then uk.text.charAt(uk.text, lb - 1) == ':'{
+				eb = lb - 1
+			}
+			if la == 0 || lb == 0{
+				return la == lb
+			}
+			if ea != eb{
+				return false
+			}
+			for q in 1..ea{
+				if tk.text.charAt(tk.text, q) != uk.text.charAt(uk.text, q){
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+
+	/** Java copyable(): is the body safe to copy? */
+	@throws
+	static func copyable(program: ref imut BytecodeProgram, fnStart: mut u64, fnEnd: mut u64, bodyStart: mut u64, incStart: mut u64, headLabel: ref some imut String, rangeName: ref some imut String) mut bool{
+		?catch(e){ throw e }
+		let hc = mut ? LoopUnrollingPass.catLit(headLabel, ":")
+		let rd = mut ? LoopUnrollingPass.catLit(rangeName, ".")
+		let defs = mut ? new Vec()
+		let span = mut (incStart - bodyStart)
+		for d in 0..span{
+			let k = mut (bodyStart + d)
+			let nt = mut LoopUnrollingPass.nTok(program, k)
+			if nt == 0{
+				continue
+			}
+			if LoopUnrollingPass.tokCode(program, k, 0){
+				if LoopUnrollingPass.tokLit(program, k, 0, "ALLOC") || LoopUnrollingPass.tokLit(program, k, 0, "ALLOC_STATIC") || LoopUnrollingPass.tokLit(program, k, 0, "FUNC_START") || LoopUnrollingPass.tokLit(program, k, 0, "FUNC_END") || LoopUnrollingPass.tokLit(program, k, 0, "STRUCT_START") || LoopUnrollingPass.tokLit(program, k, 0, "GLOBAL") || LoopUnrollingPass.tokLit(program, k, 0, "REGVAR"){
+					return false
+				}
+			}
+			for t in 0..nt{
+				if LoopUnrollingPass.tokCode(program, k, t){
+					if LoopUnrollingPass.tokStr(program, k, t, headLabel) || LoopUnrollingPass.tokStr(program, k, t, hc) || LoopUnrollingPass.tokStr(program, k, t, rangeName) || LoopUnrollingPass.tokStartsStr(program, k, t, rd){
+						return false
+					}
+				}
+			}
+			if LoopUnrollingPass.isLabelDef(program, k){
+				? defs.push(defs, k)
+			}
+		}
+		let nd = mut defs.size(defs)
+		if nd > 0{
+			let fspan = mut (fnEnd - fnStart)
+			for d in 0..fspan{
+				let k = mut (fnStart + d)
+				if k >= bodyStart && k < incStart{
+					continue
+				}
+				let nt = mut LoopUnrollingPass.nTok(program, k)
+				for t in 0..nt{
+					if LoopUnrollingPass.tokCode(program, k, t) &&then LoopUnrollingPass.tokStarts(program, k, t, "@"){
+						for q in 0..nd{
+							if LoopUnrollingPass.sameLabel(program, k, t, defs.get(defs, q), 0){
+								return false
+							}
+						}
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** Index of the "ALLOC rangeName T" line in [fnStart, start), or -1. */
+	static func findAlloc(program: ref imut BytecodeProgram, fnStart: mut u64, start: mut u64, rangeName: ref some imut String) mut s64{
+		let span = mut (start - fnStart)
+		for d in 0..span{
+			let k = mut (fnStart + d)
+			if LoopUnrollingPass.isOp(program, k, 3, "ALLOC") &&then LoopUnrollingPass.tokStr(program, k, 1, rangeName){
+				return wrap:<s64>(k)
+			}
+		}
+		let m = mut wrap:<s64>(0)
+		return m - 1
+	}
+
+	// ---- reading the loop variable / locals of a body ------------------------------------------------------
+
+	/** True when every mention of the loop variable in lines [b0, b1) is a plain "PUSH var vt" not directly followed by ADDR_OF (Java onlyReadsVar). */
+	static func onlyReadsVar(program: ref imut BytecodeProgram, b0: mut u64, b1: mut u64, varName: ref some imut String, varType: ref some imut String, nestedOk: mut bool) bool{
+		let span = mut (b1 - b0)
+		if nestedOk == false{
+			for d in 0..span{
+				let k = mut (b0 + d)
+				if LoopUnrollingPass.nTok(program, k) == 1{
+					if LoopUnrollingPass.tokStarts(program, k, 0, "@for_") || LoopUnrollingPass.tokStarts(program, k, 0, "@fu_"){
+						return false
+					}
+				}
+			}
+		}
+		for d in 0..span{
+			let k = mut (b0 + d)
+			let nt = mut LoopUnrollingPass.nTok(program, k)
+			let mentions = mut false
+			if nt > 1{
+				for t in 1..nt{
+					if LoopUnrollingPass.tokCode(program, k, t) &&then LoopUnrollingPass.tokStr(program, k, t, varName){
+						mentions = true
+						if t != 1{
+							return false
+						}
+					}
+				}
+			}
+			if mentions == false{
+				continue
+			}
+			if LoopUnrollingPass.isOp(program, k, 3, "PUSH") == false || LoopUnrollingPass.tokStr(program, k, 2, varType) == false{
+				return false
+			}
+			if d + 1 < span{
+				if LoopUnrollingPass.nTok(program, k + 1) > 0 &&then LoopUnrollingPass.tokLit(program, k + 1, 0, "ADDR_OF"){
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	/** Java boundIs: bound text `b` (with an imut_/mut_ prefix) names `name`; compared in place. */
+	static func boundIs(b: ref some imut String, from: mut u64, to: mut u64, name: ref some imut String) bool{
+		let off = mut from
+		if to - from >= 5 &&then b.charAt(b, from) == 'i' &&then b.charAt(b, from + 1) == 'm' &&then b.charAt(b, from + 2) == 'u' &&then b.charAt(b, from + 3) == 't' &&then b.charAt(b, from + 4) == '_'{
+			off = from + 5
+		} else if to - from >= 4 &&then b.charAt(b, from) == 'm' &&then b.charAt(b, from + 1) == 'u' &&then b.charAt(b, from + 2) == 't' &&then b.charAt(b, from + 3) == '_'{
+			off = from + 4
+		}
+		let nl = mut name.length(name)
+		if to - off != nl{
+			return false
+		}
+		for q in 0..nl{
+			if b.charAt(b, off + q) != name.charAt(name, q){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Java namesVar on text `t`: the name itself, `name.field`, or a bound of a range type. */
+	static func namesVar(t: ref some imut String, name: ref some imut String) bool{
+		if t.equals(t, name){
+			return true
+		}
+		let nl = mut name.length(name)
+		let tl = mut t.length(t)
+		if tl > nl &&then t.startsWith(t, name) &&then t.charAt(t, nl) == '.'{
+			return true
+		}
+		let open = mut t.indexOf(t, "range(")
+		if open < 0{
+			return false
+		}
+		if t.endsWith(t, ")") == false{
+			return false
+		}
+		let ib = mut (wrap:<u64>(open) + 6)
+		let ie = mut (tl - 1)
+		let cm = mut 0
+		let have = mut false
+		for q in ib..ie{
+			if have == false &&then t.charAt(t, q) == ','{
+				cm = q
+				have = true
+			}
+		}
+		if have == false{
+			return false
+		}
+		if LoopUnrollingPass.boundIs(t, ib, cm, name){
+			return true
+		}
+		return LoopUnrollingPass.boundIs(t, cm + 1, ie, name)
+	}
+
+	/** namesVar on token (k, t) of the program. */
+	static func namesVarTok(program: ref imut BytecodeProgram, k: mut u64, t: mut u64, name: ref some imut String) mut bool{
+		?catch(e){ return false }
+		let ans = mut false
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, k)
+			if t >= st.size(st){
+				return false
+			}
+			let tk = mut ? st.items.getSome(st.items, t)
+			ans = LoopUnrollingPass.namesVar(tk.text, name)
+		}
+		return ans
+	}
+
+	/** Java functionOf(...)[0]: the FUNC_START at or before `idx`. */
+	static func funcStartOf(program: ref imut BytecodeProgram, idx: mut u64) mut u64{
+		let s = mut idx
+		for q in 0..idx{
+			if LoopUnrollingPass.isOp(program, s, 2, "FUNC_START"){
+				break
+			}
+			if s == 0{
+				break
+			}
+			s -= 1
+		}
+		return s
+	}
+
+	/** Java functionOf(...)[1]: the FUNC_END at or after `idx` (the program size when there is none). */
+	static func funcEndOf(program: ref imut BytecodeProgram, idx: mut u64) mut u64{
+		let sz = mut 0
+		match Some(program){ sz = program.size(program) }
+		let e = mut idx
+		let lim = mut 0
+		if sz > idx{
+			lim = sz - idx
+		}
+		for q in 0..lim{
+			if LoopUnrollingPass.nTok(program, e) >= 1 &&then LoopUnrollingPass.tokLit(program, e, 0, "FUNC_END"){
+				break
+			}
+			e += 1
+		}
+		return e
+	}
+
+	/** Java bodyLocals: locals declared in the body (ALLOC'd in this function, named only inside the body span), only for a body holding an inner loop. */
+	@throws
+	static func bodyLocals(program: ref imut BytecodeProgram, startIdx: mut u64, bodyStart: mut u64, incStart: mut u64, varName: ref some imut String, rangeName: ref some imut String, locals: ref mut ObjectList<String>) void{
+		?catch(e){ throw e }
+		let vn = mut ? LoopUnrollingPass.copyStr(varName)
+		let rn = mut ? LoopUnrollingPass.copyStr(rangeName)
+		let nested = mut false
+		let span = mut (incStart - bodyStart)
+		for d in 0..span{
+			let k = mut (bodyStart + d)
+			let nt = mut LoopUnrollingPass.nTok(program, k)
+			for t in 0..nt{
+				if LoopUnrollingPass.tokStarts(program, k, t, "$for_range_"){
+					nested = true
+				}
+			}
+		}
+		if nested == false{
+			return
+		}
+		let f0 = mut LoopUnrollingPass.funcStartOf(program, startIdx)
+		let f1 = mut LoopUnrollingPass.funcEndOf(program, startIdx)
+		let nA = mut (f1 + 1 - f0)
+		for ai in 0..nA{
+			let a = mut (f0 + ai)
+			if LoopUnrollingPass.isOp(program, a, 3, "ALLOC") == false{
+				continue
+			}
+			let name = mut ? LoopUnrollingPass.tokCopy(program, a, 1)
+			if name.equals(name, vn) || name.equals(name, rn) || name.equals(name, "gt_routine_address") || name.equals(name, "gt_error_message") || name.startsWith(name, "gt_trace_"){
+				continue
+			}
+			let inside = mut false
+			let outside = mut false
+			for ki in 0..nA{
+				if outside{
+					break
+				}
+				let k = mut (f0 + ki)
+				if k == a || LoopUnrollingPass.isOp(program, k, 3, "ALLOC"){
+					continue
+				}
+				let inb = mut false
+				if k >= bodyStart && k < incStart{
+					inb = true
+				}
+				let nt = mut LoopUnrollingPass.nTok(program, k)
+				if nt > 1{
+					for t in 1..nt{
+						if outside{
+							break
+						}
+						if LoopUnrollingPass.tokCode(program, k, t) &&then LoopUnrollingPass.namesVarTok(program, k, t, name){
+							if inb{
+								inside = true
+							} else {
+								outside = true
+							}
+						}
+					}
+				}
+			}
+			if inside &&then outside == false{
+				match Some(locals){ ? locals.add(locals, name) }
+			}
+		}
+	}
+
+	// ---- renaming ---------------------------------------------------------------------------------------
+
+	/** An owned copy of map[key], or null. */
+	@throws
+	static func mapGet(map: ref imut StringMap<String>, key: ref some imut String) owns mut String{
+		?catch(e){ throw e }
+		let:<owns mut String> r = mut null
+		match Some(map){
+			let v = mut map.get(map, key)
+			match Some(v){
+				r = mut ? v.sub(v, 0, v.length(v))
+			}
+		}
+		return r
+	}
+
+	/** Java renameBound. */
+	@throws
+	static func renameBound(b: ref some imut String, map: ref imut StringMap<String>) owns some mut String{
+		?catch(e){ throw e }
+		let bb = mut ? LoopUnrollingPass.copyStr(b)
+		let off = mut 0
+		if bb.startsWith(bb, "imut_"){
+			off = 5
+		} else if bb.startsWith(bb, "mut_"){
+			off = 4
+		}
+		let rest = mut ? bb.substring(bb, off)
+		let r = mut ? LoopUnrollingPass.mapGet(map, rest)
+		let res = mut ? bb.sub(bb, 0, off)
+		match Some(r){
+			? res.append(res, r)
+			return res
+		}
+		return bb
+	}
+
+	/** Java renameTok: `t` with the locals of `map` renamed (the token itself, `name.field`, or the bounds of a range type). */
+	@throws
+	static func renameTok(t: ref some imut String, map: ref imut StringMap<String>) owns some mut String{
+		?catch(e){ throw e }
+		let tt = mut ? LoopUnrollingPass.copyStr(t)
+		let r1 = mut ? LoopUnrollingPass.mapGet(map, tt)
+		match Some(r1){
+			let c1 = mut ? LoopUnrollingPass.copyStr(r1)
+			return c1
+		}
+		let tl = mut tt.length(tt)
+		let dot = mut tt.indexOf(tt, '.')
+		let hasRange = mut tt.indexOf(tt, "range(")
+		if dot > 0{
+			let du = mut wrap:<u64>(dot)
+			let pre = mut ? tt.sub(tt, 0, du)
+			let r2 = mut ? LoopUnrollingPass.mapGet(map, pre)
+			let res = mut ? tt.sub(tt, 0, 0)
+			let tail = mut ? tt.substring(tt, du)
+			match Some(r2){
+				if hasRange < 0{
+					? res.append(res, r2)
+					? res.append(res, tail)
+					return res
+				}
+			}
+		}
+		if hasRange >= 0 &&then tt.endsWith(tt, ")"){
+			let ob = mut (wrap:<u64>(hasRange) + 6)
+			let inner = mut ? tt.sub(tt, ob, tl - 1)
+			let comma = mut inner.indexOf(inner, ',')
+			if comma > 0{
+				let cu = mut wrap:<u64>(comma)
+				let loT = mut ? inner.sub(inner, 0, cu)
+				let hiT = mut ? inner.substring(inner, cu + 1)
+				let lo2 = mut ? LoopUnrollingPass.renameBound(loT, map)
+				let hi2 = mut ? LoopUnrollingPass.renameBound(hiT, map)
+				let res = mut ? tt.sub(tt, 0, ob)
+				? res.append(res, lo2)
+				? res.append(res, ",")
+				? res.append(res, hi2)
+				? res.append(res, ")")
+				return res
+			}
+		}
+		return tt
+	}
+
+	/** Java freshCopy's map: every label the lines [b0, b1) define gets a fresh name (old -> new). */
+	@throws
+	static func freshMap(program: ref imut BytecodeProgram, b0: mut u64, b1: mut u64, st: ref mut Vec, lmap: ref mut StringMap<String>) void{
+		?catch(e){ throw e }
+		let span = mut (b1 - b0)
+		for d in 0..span{
+			let k = mut (b0 + d)
+			if LoopUnrollingPass.isLabelDef(program, k) == false{
+				continue
+			}
+			let tx = mut ? LoopUnrollingPass.tokCopy(program, k, 0)
+			let old = mut ? LoopUnrollingPass.labelName(tx)
+			let us = mut LoopUnrollingPass.lastUnderscore(old)
+			let numeric = mut false
+			if us >= 0{
+				let dg = mut ? old.substring(old, wrap:<u64>(us) + 1)
+				if LoopUnrollingPass.allDigits(dg){
+					numeric = true
+				}
+			}
+			let num = mut LoopUnrollingPass.stGet(st, 0)
+			LoopUnrollingPass.stSet(st, 0, num + 1)
+			let fresh = mut ? String.from("")
+			if numeric{
+				fresh = ? old.sub(old, 0, wrap:<u64>(us) + 1)
+			} else {
+				fresh = ? LoopUnrollingPass.catLit(old, "_u")
+			}
+			? fresh.appendU64(fresh, num)
+			match Some(lmap){ ? lmap.put(lmap, old, fresh) }
+		}
+	}
+
+	/** Java renameLocals' map: each local gets name__uK (K = next fresh number; a name listed twice is renamed twice, the last wins). */
+	@throws
+	static func localMap(locals: ref imut ObjectList<String>, st: ref mut Vec, rmap: ref mut StringMap<String>) void{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(locals){ n = locals.size(locals) }
+		for q in 0..n{
+			let nm = mut ? new String("")
+			match Some(locals){
+				let e0 = mut locals.get(locals, q)
+				match Some(e0){ nm = ? e0.sub(e0, 0, e0.length(e0)) }
+			}
+			let num = mut LoopUnrollingPass.stGet(st, 0)
+			LoopUnrollingPass.stSet(st, 0, num + 1)
+			let nn = mut ? LoopUnrollingPass.catLit(nm, "__u")
+			? nn.appendU64(nn, num)
+			match Some(rmap){ ? rmap.put(rmap, nm, nn) }
+		}
+	}
+
+	/** Queues the renamed ALLOC lines of the function around `startIdx` for every local of `rmap` (Java pendingAllocs). */
+	@throws
+	static func queueAllocs(program: ref mut BytecodeProgram, startIdx: mut u64, rmap: ref imut StringMap<String>, pend: ref mut ObjectList<PendingAlloc>) void{
+		?catch(e){ throw e }
+		let f0 = mut LoopUnrollingPass.funcStartOf(program, startIdx)
+		let f1 = mut LoopUnrollingPass.funcEndOf(program, startIdx)
+		let nA = mut (f1 + 1 - f0)
+		for ai in 0..nA{
+			let a = mut (f0 + ai)
+			if LoopUnrollingPass.isOp(program, a, 3, "ALLOC") == false{
+				continue
+			}
+			let name = mut ? LoopUnrollingPass.tokCopy(program, a, 1)
+			let newName = mut ? LoopUnrollingPass.mapGet(rmap, name)
+			let hasNew = mut false
+			let nn2 = mut ? String.from("")
+			match Some(newName){
+				hasNew = true
+				nn2 = ? newName.sub(newName, 0, newName.length(newName))
+			}
+			if hasNew{
+				let ord = mut 0
+				for bi in 0..ai{
+					let b = mut (f0 + bi)
+					if LoopUnrollingPass.isOp(program, b, 3, "ALLOC") &&then LoopUnrollingPass.tokStr(program, b, 1, name){
+						ord += 1
+					}
+				}
+				let ty = mut ? LoopUnrollingPass.tokCopy(program, a, 2)
+				let newTy = mut ? LoopUnrollingPass.renameTok(ty, rmap)
+				let ns = mut ? new BytecodeStatement()
+				let t0 = mut ? LoopUnrollingPass.tokCopy(program, a, 0)
+				let k0 = mut ? LoopUnrollingPass.makeToken(program, a, 0, t0)
+				? ns.add(ns, k0)
+				let k1 = mut ? LoopUnrollingPass.makeToken(program, a, 1, nn2)
+				? ns.add(ns, k1)
+				let k2 = mut ? LoopUnrollingPass.makeToken(program, a, 2, newTy)
+				? ns.add(ns, k2)
+				let pa = mut ? new PendingAlloc(name, ord, ns)
+				match Some(pend){ ? pend.add(pend, pa) }
+			}
+		}
+	}
+
+	@throws
+	static func pendName(pend: ref imut ObjectList<PendingAlloc>, q: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		match Some(pend){
+			let p0 = mut pend.get(pend, q)
+			match Some(p0){
+				let r = mut ? p0.name.sub(p0.name, 0, p0.name.length(p0.name))
+				return r
+			}
+		}
+		let z = mut ? new String("")
+		return z
+	}
+
+	/** Inserts the queued ALLOC lines after their originals; returns how many lines were added (Java flushAllocs). */
+	@throws
+	static func flushAllocs(program: ref mut BytecodeProgram, pend: ref mut ObjectList<PendingAlloc>, fnStart: mut u64) mut u64{
+		?catch(e){ throw e }
+		let np = mut 0
+		match Some(pend){ np = pend.size(pend) }
+		let added = mut 0
+		for q in 0..np{
+			let ord = mut 0
+			match Some(pend){
+				let p0 = mut pend.get(pend, q)
+				match Some(p0){ ord = p0.ord }
+			}
+			let name = mut ? LoopUnrollingPass.pendName(pend, q)
+			let:<owns mut BytecodeStatement> stmt = mut null
+			match Some(pend){
+				let p1 = mut pend.get(pend, q)
+				match Some(p1){ stmt = p1.stmt }
+			}
+			let sz = mut 0
+			match Some(program){ sz = program.size(program) }
+			let cnt = mut 0
+			let at = mut 0
+			let found = mut false
+			let lim = mut 0
+			if sz > fnStart{
+				lim = sz - fnStart
+			}
+			for ki in 0..lim{
+				let k = mut (fnStart + ki)
+				if LoopUnrollingPass.isOp(program, k, 3, "ALLOC") &&then LoopUnrollingPass.tokStr(program, k, 1, name){
+					if cnt == ord{
+						at = k
+						found = true
+						break
+					}
+					cnt += 1
+				}
+			}
+			if found{
+				match Some(stmt){
+					match Some(program){ ? program.insertAt(program, at + 1, stmt) }
+				}
+				added += 1
+			}
+		}
+		match Some(pend){ ? pend.clear(pend) }
+		return added
+	}
+
+	// ---- emitting lines -----------------------------------------------------------------------------------
+
+	/** Copies lines [b0, b1) to `out`, with label renames (lmap), local renames (rmap) and the induction variable replaced by `value` in "PUSH var vt" lines. */
+	@throws
+	static func emitBody(program: ref mut BytecodeProgram, b0: mut u64, b1: mut u64, out: ref mut BytecodeProgram, lmap: ref imut StringMap<String>, rmap: ref imut StringMap<String>, hasL: mut bool, hasR: mut bool, doSubst: mut bool, varName: ref imut String, varType: ref imut String, value: mut u64) void{
+		?catch(e){ throw e }
+		let cnt = mut (b1 - b0)
+		for d in 0..cnt{
+			let i = mut (b0 + d)
+			let substLine = mut false
+			if doSubst{
+				if LoopUnrollingPass.isOp(program, i, 3, "PUSH"){
+					match Some(varName){
+						match Some(varType){
+							if LoopUnrollingPass.tokStr(program, i, 1, varName) &&then LoopUnrollingPass.tokStr(program, i, 2, varType){
+								substLine = true
+							}
+						}
+					}
+				}
+			}
+			if hasL == false && hasR == false && substLine == false{
+				? LoopUnrollingPass.addCopy(program, i, out)
+				continue
+			}
+			let ns = mut ? new BytecodeStatement()
+			let nt = mut LoopUnrollingPass.nTok(program, i)
+			for t in 0..nt{
+				let cur = mut ? LoopUnrollingPass.tokCopy(program, i, t)
+				if hasL{
+					if LoopUnrollingPass.tokCode(program, i, t) &&then cur.startsWith(cur, "@"){
+						let colon = mut cur.endsWith(cur, ":")
+						let nm = mut ? LoopUnrollingPass.labelName(cur)
+						let rep = mut ? LoopUnrollingPass.mapGet(lmap, nm)
+						let nc = mut ? String.from("@")
+						match Some(rep){
+							? nc.append(nc, rep)
+							if colon{
+								? nc.append(nc, ":")
+							}
+							cur = nc
+						}
+					}
+				}
+				if hasR &&then t >= 1 &&then LoopUnrollingPass.tokCode(program, i, t){
+					let nc2 = mut ? LoopUnrollingPass.renameTok(cur, rmap)
+					cur = nc2
+				}
+				if substLine &&then t == 1{
+					let nc3 = mut ? String.fromU64(value)
+					cur = nc3
+				}
+				let tok = mut ? LoopUnrollingPass.makeToken(program, i, t, cur)
+				? ns.add(ns, tok)
+			}
+			match Some(out){ ? out.add(out, ns) }
+		}
+	}
+
+	/** Copies line `i` to `out`, replacing token text `from1` by `to1` (any token) and, when `use2`, `from2` by `to2` (only token `only2`, 99 = any). */
+	@throws
+	static func emitSwap(program: ref mut BytecodeProgram, i: mut u64, out: ref mut BytecodeProgram, from1: ref imut String, to1: ref imut String, use2: mut bool, only2: mut u64, from2: ref imut String, to2: ref imut String) void{
+		?catch(e){ throw e }
+		let ns = mut ? new BytecodeStatement()
+		let nt = mut LoopUnrollingPass.nTok(program, i)
+		for t in 0..nt{
+			let cur = mut ? LoopUnrollingPass.tokCopy(program, i, t)
+			let hit1 = mut false
+			match Some(from1){ hit1 = cur.equals(cur, from1) }
+			if hit1{
+				let nc = mut ? String.from("")
+				match Some(to1){ nc = ? to1.sub(to1, 0, to1.length(to1)) }
+				cur = nc
+			} else if use2 &&then only2 + t >= 99 ||then only2 == t{
+				let hit2 = mut false
+				match Some(from2){ hit2 = cur.equals(cur, from2) }
+				if hit2{
+					let nc4 = mut ? String.from("")
+					match Some(to2){ nc4 = ? to2.sub(to2, 0, to2.length(to2)) }
+					cur = nc4
+				}
+			}
+			let tok = mut ? LoopUnrollingPass.makeToken(program, i, t, cur)
+			? ns.add(ns, tok)
+		}
+		match Some(out){ ? out.add(out, ns) }
+	}
+
+	/** A one-token line (a label) with the file/line of token 0 of line `refIdx`. */
+	@throws
+	static func addLabel(program: ref imut BytecodeProgram, refIdx: mut u64, out: ref mut BytecodeProgram, text: owns some mut String) void{
+		?catch(e){ throw e }
+		let ns = mut ? new BytecodeStatement()
+		let tok = mut ? LoopUnrollingPass.makeToken(program, refIdx, 0, text)
+		? ns.add(ns, tok)
+		match Some(out){ ? out.add(out, ns) }
+	}
+
+	/** The line "JMP label". */
+	@throws
+	static func addJmp(program: ref imut BytecodeProgram, refIdx: mut u64, out: ref mut BytecodeProgram, label: owns some mut String) void{
+		?catch(e){ throw e }
+		let ns = mut ? new BytecodeStatement()
+		let j = mut ? String.from("JMP")
+		let t1 = mut ? LoopUnrollingPass.makeToken(program, refIdx, 0, j)
+		? ns.add(ns, t1)
+		let t2 = mut ? LoopUnrollingPass.makeToken(program, refIdx, 0, label)
+		? ns.add(ns, t2)
+		match Some(out){ ? out.add(out, ns) }
+	}
+
+	// ---- the plan -----------------------------------------------------------------------------------------
+
+	/** Java HARD_CAP. */
+	static func hardCap() mut s64{
+		return 20000
+	}
+
+	static func remOf(n: mut u64, u: mut u64) mut u64{
+		match u != 0{
+			return n % u
+		}
+		return 0
+	}
+
+	/** Java heuristicPlan: 0 = leave, 1 = full, 2 = partial (u = the preset's factor). */
+	static func heuristic(st: ref imut Vec, n: mut u64, bodyLines: mut u64) mut u64{
+		if LoopUnrollingPass.stGet(st, 1) == 0{
+			return 0
+		}
+		let bl = mut wrap:<s64>(bodyLines)
+		let maxBody = mut wrap:<s64>(LoopUnrollingPass.stGet(st, 4))
+		if bl > maxBody{
+			return 0
+		}
+		let unit = mut (bl + 4)
+		let budget = mut (wrap:<s64>(LoopUnrollingPass.stGet(st, 5)) - wrap:<s64>(LoopUnrollingPass.stGet(st, 7)))
+		let ns = mut wrap:<s64>(n)
+		let fullMax = mut wrap:<s64>(LoopUnrollingPass.stGet(st, 3))
+		if fullMax > 0 &&then ns <= fullMax{
+			if (ns - 1) * unit <= budget{
+				return 1
+			}
+		}
+		let u = mut wrap:<s64>(LoopUnrollingPass.stGet(st, 2))
+		if u >= 2 &&then ns >= 2 * u{
+			let rem = mut wrap:<s64>(LoopUnrollingPass.remOf(n, LoopUnrollingPass.stGet(st, 2)))
+			let extra = mut ((u - 1 + rem) * unit + 3)
+			if extra <= budget{
+				return 2
+			}
+		}
+		return 0
+	}
+
+	/** Java plan: 0 = leave the loop, 1 = full unroll, 2 = partial (u = factor of the decorator or of the preset). */
+	static func plan(st: ref imut Vec, forced: mut bool, dont: mut bool, factor: mut u64, n: mut u64, bodyLines: mut u64) mut u64{
+		if dont{
+			return 0
+		}
+		if forced{
+			let unit = mut (wrap:<s64>(bodyLines) + 4)
+			let ns = mut wrap:<s64>(n)
+			let f = mut wrap:<s64>(factor)
+			if f == 0 || ns <= f{
+				if (ns - 1) * unit > LoopUnrollingPass.hardCap(){
+					return 0
+				}
+				return 1
+			}
+			let rem = mut wrap:<s64>(LoopUnrollingPass.remOf(n, factor))
+			if (f - 1 + rem) * unit + 3 > LoopUnrollingPass.hardCap(){
+				return 0
+			}
+			return 2
+		}
+		return LoopUnrollingPass.heuristic(st, n, bodyLines)
+	}
+
+	// ---- messages -----------------------------------------------------------------------------------------
+
+	/** "[note] " / "[warning] " + (pos - ) + text. */
+	@throws
+	static func addMsg(msgs: ref mut Messages, tag: static imut string, hasPos: mut bool, pos: ref imut String, text: ref imut String) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from(tag)
+		if hasPos{
+			match Some(pos){ ? line.append(line, pos) }
+			? line.append(line, " - ")
+		}
+		match Some(text){ ? line.append(line, text) }
+		match Some(msgs){ ? msgs.add(msgs, line) }
+	}
+
+	/** An owned copy of one String field of the loop: 0 rangeName, 1 rangeType, 2 var, 3 varType, 4 headLabel, 5 endLabel, 6 pos ("" when null). */
+	@throws
+	static func lpStr(lp: ref imut LoopUnrollingLoop, which: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		if which == 0{
+			match Some(lp){
+				let r0 = mut ? lp.rangeName.sub(lp.rangeName, 0, lp.rangeName.length(lp.rangeName))
+				return r0
+			}
+		}
+		if which == 1{
+			match Some(lp){
+				let r1 = mut ? lp.rangeType.sub(lp.rangeType, 0, lp.rangeType.length(lp.rangeType))
+				return r1
+			}
+		}
+		if which == 2{
+			match Some(lp){
+				let r2 = mut ? lp.var.sub(lp.var, 0, lp.var.length(lp.var))
+				return r2
+			}
+		}
+		if which == 3{
+			match Some(lp){
+				let r3 = mut ? lp.varType.sub(lp.varType, 0, lp.varType.length(lp.varType))
+				return r3
+			}
+		}
+		if which == 4{
+			match Some(lp){
+				let r4 = mut ? lp.headLabel.sub(lp.headLabel, 0, lp.headLabel.length(lp.headLabel))
+				return r4
+			}
+		}
+		if which == 5{
+			match Some(lp){
+				let r5 = mut ? lp.endLabel.sub(lp.endLabel, 0, lp.endLabel.length(lp.endLabel))
+				return r5
+			}
+		}
+		if which == 6{
+			match Some(lp){
+				match Some(lp.pos){
+					let r6 = mut ? lp.pos.sub(lp.pos, 0, lp.pos.length(lp.pos))
+					return r6
+				}
+			}
+		}
+		let z = mut ? new String("")
+		return z
+	}
+
+	/** Java apply(): unrolls the loop whose range setup is at line `start` (the lines before it are unchanged since it was found). false = left alone. */
+	@throws
+	func apply(_self: ref mut self, program: ref mut BytecodeProgram, msgs: ref mut Messages, st: ref mut Vec, pend: ref mut ObjectList<PendingAlloc>, start: mut u64, fnStart: mut u64, fnEnd: mut u64, fname: ref some imut String) mut bool{
+		?catch(e){ throw e }
+		let fnm = mut ? LoopUnrollingPass.copyStr(fname)
+		let lp = mut ? LoopUnrollingPass.matchLoop(program, start, fnEnd)
+		let found = mut false
+		let bodyStart = mut 0
+		let incStart = mut 0
+		let jmpIdx = mut 0
+		let endIdx = mut 0
+		let headIdx = mut 0
+		let lo = mut 0
+		let hi = mut 0
+		let forced = mut false
+		let dont = mut false
+		let factor = mut 0
+		let hasPos = mut false
+		match Some(lp){
+			found = true
+			bodyStart = lp.bodyStart
+			incStart = lp.incStart
+			jmpIdx = lp.jmpIdx
+			endIdx = lp.endIdx
+			headIdx = lp.headIdx
+			lo = lp.lo
+			hi = lp.hi
+			forced = lp.forced
+			dont = lp.dont
+			factor = lp.factor
+			match Some(lp.pos){ hasPos = true }
+		}
+		if found{
+			let rangeName = mut ? LoopUnrollingPass.lpStr(lp, 0)
+			let rangeType = mut ? LoopUnrollingPass.lpStr(lp, 1)
+			let varName = mut ? LoopUnrollingPass.lpStr(lp, 2)
+			let varType = mut ? LoopUnrollingPass.lpStr(lp, 3)
+			let headLabel = mut ? LoopUnrollingPass.lpStr(lp, 4)
+			let endLabel = mut ? LoopUnrollingPass.lpStr(lp, 5)
+			let pos = mut ? LoopUnrollingPass.lpStr(lp, 6)
+			let n = mut (hi - lo)
+			let bodyLines = mut (incStart - bodyStart)
+			let kind = mut LoopUnrollingPass.plan(st, forced, dont, factor, n, bodyLines)
+			if kind == 0{
+				if dont &&then LoopUnrollingPass.heuristic(st, n, bodyLines) != 0{
+					let key = mut ? String.from("dont:")
+					if hasPos{
+						? key.append(key, pos)
+					} else {
+						? key.append(key, "null")
+					}
+					? key.append(key, ":")
+					? key.append(key, headLabel)
+					let isNew = mut false
+					match Some(_self){ isNew = ? _self.noted.add(_self.noted, key) }
+					if isNew{
+						let txt = mut ? String.from("@dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)")
+						? LoopUnrollingPass.addMsg(msgs, "[note] ", hasPos, pos, txt)
+					}
+				}
+				return false
+			}
+			let full = mut false
+			if kind == 1{
+				full = true
+			}
+			let oldSize = mut (endIdx - start + 1)
+			let out = mut ? new BytecodeProgram()
+			let emptyMap = mut ? new StringMap:<String>()
+			let u = mut 0
+			let allocIdx = mut LoopUnrollingPass.findAlloc(program, fnStart, start, rangeName)
+			let newType = mut ? String.from("")
+			if full{
+				for k in 0..7{
+					? LoopUnrollingPass.addCopy(program, start + k, out)
+				}
+				let nestedOk = mut forced
+				if LoopUnrollingPass.stGet(st, 6) != 0{
+					nestedOk = true
+				}
+				let subst = mut LoopUnrollingPass.onlyReadsVar(program, bodyStart, incStart, varName, varType, nestedOk)
+				let locals = mut ? new ObjectList:<String>()
+				if subst{
+					? LoopUnrollingPass.bodyLocals(program, start, bodyStart, incStart, varName, rangeName, locals)
+				}
+				let nloc = mut locals.size(locals)
+				for c in 0..n{
+					let lmap = mut ? new StringMap:<String>()
+					let rmap = mut ? new StringMap:<String>()
+					let hasL = mut false
+					let hasR = mut false
+					if c > 0{
+						? LoopUnrollingPass.freshMap(program, bodyStart, incStart, st, lmap)
+						if lmap.size(lmap) > 0{
+							hasL = true
+						}
+						if nloc > 0{
+							? LoopUnrollingPass.localMap(locals, st, rmap)
+							? LoopUnrollingPass.queueAllocs(program, start, rmap, pend)
+							hasR = true
+						}
+					}
+					? LoopUnrollingPass.emitBody(program, bodyStart, incStart, out, lmap, rmap, hasL, hasR, subst, varName, varType, lo + c)
+					if subst == false &&then c + 1 < n{
+						? LoopUnrollingPass.emitBody(program, incStart, jmpIdx, out, emptyMap, emptyMap, false, false, false, varName, varType, 0)
+					}
+				}
+				? LoopUnrollingPass.addCopy(program, endIdx, out)
+			} else {
+				u = LoopUnrollingPass.stGet(st, 2)
+				if forced{
+					u = factor
+				}
+				let rem = mut LoopUnrollingPass.remOf(n, u)
+				let trips = mut 0
+				match u != 0{ trips = n / u }
+				let newHi = mut (lo + trips * u)
+				let ob = mut rangeType.indexOf(rangeType, '(')
+				let obu = mut (wrap:<u64>(ob) + 1)
+				let nt0 = mut ? rangeType.sub(rangeType, 0, obu)
+				? nt0.appendU64(nt0, lo)
+				? nt0.append(nt0, ",")
+				? nt0.appendU64(nt0, newHi)
+				? nt0.append(nt0, ")")
+				newType = nt0
+				let hiStr = mut ? String.fromU64(hi)
+				let newHiStr = mut ? String.fromU64(newHi)
+				for k in 0..7{
+					? LoopUnrollingPass.emitSwap(program, start + k, out, rangeType, newType, k == 2, 1, hiStr, newHiStr)
+				}
+				let hlen = mut headLabel.length(headLabel)
+				let fuLabel = mut ? String.from("@fu_")
+				let hnum = mut ? headLabel.substring(headLabel, 5)
+				? fuLabel.append(fuLabel, hnum)
+				let remNum = mut LoopUnrollingPass.stGet(st, 0)
+				LoopUnrollingPass.stSet(st, 0, remNum + 1)
+				let remLabel = mut ? String.from("@for_rem_")
+				? remLabel.appendU64(remLabel, remNum)
+				let fuColon = mut ? LoopUnrollingPass.catLit(fuLabel, ":")
+				? LoopUnrollingPass.addLabel(program, start, out, fuColon)
+				for k in 1..6{
+					? LoopUnrollingPass.emitSwap(program, headIdx + k, out, rangeType, newType, k == 5, 99, endLabel, remLabel)
+				}
+				for c in 0..u{
+					let lmap = mut ? new StringMap:<String>()
+					let hasL = mut false
+					if c > 0{
+						? LoopUnrollingPass.freshMap(program, bodyStart, incStart, st, lmap)
+						if lmap.size(lmap) > 0{
+							hasL = true
+						}
+					}
+					? LoopUnrollingPass.emitBody(program, bodyStart, incStart, out, lmap, emptyMap, hasL, false, false, varName, varType, 0)
+					? LoopUnrollingPass.emitBody(program, incStart, jmpIdx, out, emptyMap, emptyMap, false, false, false, varName, varType, 0)
+				}
+				let fuCopy = mut ? LoopUnrollingPass.copyStr(fuLabel)
+				? LoopUnrollingPass.addJmp(program, start, out, fuCopy)
+				let remColon = mut ? LoopUnrollingPass.catLit(remLabel, ":")
+				? LoopUnrollingPass.addLabel(program, start, out, remColon)
+				for c in 0..rem{
+					let lmap = mut ? new StringMap:<String>()
+					let hasL = mut false
+					? LoopUnrollingPass.freshMap(program, bodyStart, incStart, st, lmap)
+					if lmap.size(lmap) > 0{
+						hasL = true
+					}
+					? LoopUnrollingPass.emitBody(program, bodyStart, incStart, out, lmap, emptyMap, hasL, false, false, varName, varType, 0)
+					if c + 1 < rem{
+						? LoopUnrollingPass.emitBody(program, incStart, jmpIdx, out, emptyMap, emptyMap, false, false, false, varName, varType, 0)
+					}
+				}
+				? LoopUnrollingPass.addCopy(program, endIdx, out)
+				if allocIdx >= 0{
+					let tmp = mut ? new BytecodeProgram()
+					? LoopUnrollingPass.emitSwap(program, wrap:<u64>(allocIdx), tmp, rangeType, newType, false, 99, hiStr, newHiStr)
+					let repl = mut tmp.items.take(tmp.items, 0)
+					match Some(repl){
+						match Some(program){ program.set(program, wrap:<u64>(allocIdx), repl) }
+					}
+				}
+			}
+			// replace [start, endIdx] by out
+			let psz = mut 0
+			match Some(program){ psz = program.size(program) }
+			let outN = mut out.size(out)
+			let newItems = mut ? new ObjectList:<BytecodeStatement>()
+			for q in 0..start{
+				match Some(program){
+					let mv = mut program.items.take(program.items, q)
+					? newItems.add(newItems, mv)
+				}
+			}
+			for q in 0..outN{
+				let mv2 = mut out.items.take(out.items, q)
+				? newItems.add(newItems, mv2)
+			}
+			let tailFrom = mut (endIdx + 1)
+			let tailN = mut 0
+			if psz > tailFrom{
+				tailN = psz - tailFrom
+			}
+			for q in 0..tailN{
+				match Some(program){
+					let mv3 = mut program.items.take(program.items, tailFrom + q)
+					? newItems.add(newItems, mv3)
+				}
+			}
+			match Some(program){ program.items = newItems }
+			let added = mut (wrap:<s64>(outN) - wrap:<s64>(oldSize))
+			let ga = mut added
+			if ga < 0{
+				ga = 0
+			}
+			LoopUnrollingPass.stSet(st, 7, LoopUnrollingPass.stGet(st, 7) + wrap:<u64>(ga))
+			LoopUnrollingPass.stSet(st, 8, wrap:<u64>(added))
+			if forced{
+				let txt2 = mut ? String.from("@unroll: ")
+				if full{
+					? txt2.append(txt2, "unrolled fully")
+				} else {
+					? txt2.append(txt2, "unrolled by ")
+					? txt2.appendU64(txt2, u)
+				}
+				? txt2.append(txt2, " (")
+				? txt2.appendU64(txt2, n)
+				? txt2.append(txt2, " iterations, ")
+				if added >= 0{
+					? txt2.append(txt2, "+")
+				}
+				? txt2.appendS64(txt2, added)
+				? txt2.append(txt2, " lines)")
+				? LoopUnrollingPass.addMsg(msgs, "[note] ", hasPos, pos, txt2)
+			}
+			return true
+		}
+		return false
+	}
+
+	static func anyUnrollDecorator(program: ref imut BytecodeProgram) bool{
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		for i in 0..n{
+			if LoopUnrollingPass.isForDeco(program, i) &&then LoopUnrollingPass.tokStarts(program, i, 1, "@unroll"){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** Loads the UnrollConfig switches into `st` (1 enabled, 2 factor, 3 fullMaxTrips, 4 maxBodyLines, 5 maxGrowth, 6 nested). */
+	static func loadConfig(cfg: ref imut UnrollConfig, st: ref mut Vec) void{
+		match Some(cfg){
+			let en = mut 0
+			if cfg.enabled{
+				en = 1
+			}
+			LoopUnrollingPass.stSet(st, 1, en)
+			LoopUnrollingPass.stSet(st, 2, wrap:<u64>(cfg.factor))
+			LoopUnrollingPass.stSet(st, 3, wrap:<u64>(cfg.fullMaxTrips))
+			LoopUnrollingPass.stSet(st, 4, wrap:<u64>(cfg.maxBodyLines))
+			LoopUnrollingPass.stSet(st, 5, wrap:<u64>(cfg.maxGrowth))
+			let ne = mut 0
+			if cfg.nested{
+				ne = 1
+			}
+			LoopUnrollingPass.stSet(st, 6, ne)
+		}
+	}
+
+	@pub
+	@throws
+	func run(_self: ref mut self, program: ref mut BytecodeProgram, cfg: ref imut UnrollConfig, msgs: ref mut Messages) mut bool{
+		?catch(e){ throw e }
+		let st = mut ? new Vec()
+		? st.zero(st, 16)
+		LoopUnrollingPass.loadConfig(cfg, st)
+		if LoopUnrollingPass.stGet(st, 1) == 0 &&then LoopUnrollingPass.anyUnrollDecorator(program) == false{
+			return false
+		}
+		let mx = mut wrap:<s64>(0)
+		match Some(program){ mx = LoopUnrollingPass.maxLabelNum(program) }
+		if mx < 0{
+			mx = 0
+		}
+		let nl = mut 0
+		match Some(_self){ nl = _self.nextLabel }
+		let cand = mut (wrap:<u64>(mx) + 1)
+		if cand > nl{
+			nl = cand
+		}
+		LoopUnrollingPass.stSet(st, 0, nl)
+		let changed = mut false
+		let pend = mut ? new ObjectList:<PendingAlloc>()
+		let i = mut 0
+		for guard in 0..4000000000{
+			let size = mut 0
+			match Some(program){ size = program.size(program) }
+			if i >= size{
+				break
+			}
+			if LoopUnrollingPass.isOp(program, i, 2, "FUNC_START") == false{
+				i += 1
+				continue
+			}
+			let fnStart = mut i
+			let fnEnd = mut (fnStart + 1)
+			let lim = mut (size - fnEnd)
+			for q in 0..lim{
+				if LoopUnrollingPass.nTok(program, fnEnd) >= 1 &&then LoopUnrollingPass.tokLit(program, fnEnd, 0, "FUNC_END"){
+					break
+				}
+				fnEnd += 1
+			}
+			let fname = mut ? LoopUnrollingPass.tokCopy(program, fnStart, 1)
+			let g = mut wrap:<s64>(0)
+			match Some(_self){ g = _self.grown.getOrDefault(_self.grown, fname, 0) }
+			LoopUnrollingPass.stSet(st, 7, wrap:<u64>(g))
+			// candidates: 7 numbers each: start, end, forced, dont, factor, n, bodyLines
+			let cv = mut ? new Vec()
+			let kspan = mut (fnEnd - fnStart - 1)
+			for kd in 0..kspan{
+				let k = mut (fnStart + 1 + kd)
+				if LoopUnrollingPass.isOp(program, k, 3, "ADDR") == false{
+					continue
+				}
+				if LoopUnrollingPass.tokStarts(program, k, 1, "$for_range_") == false{
+					continue
+				}
+				let lp = mut ? LoopUnrollingPass.matchLoop(program, k, fnEnd)
+				let hit = mut false
+				let bodyStart = mut 0
+				let incStart = mut 0
+				let endIdx = mut 0
+				let forced = mut 0
+				let dont = mut 0
+				let factor = mut 0
+				let nn = mut 0
+				match Some(lp){
+					hit = true
+					bodyStart = lp.bodyStart
+					incStart = lp.incStart
+					endIdx = lp.endIdx
+					if lp.forced{
+						forced = 1
+					}
+					if lp.dont{
+						dont = 1
+					}
+					factor = lp.factor
+					nn = lp.hi - lp.lo
+				}
+				if hit{
+					let hl = mut ? LoopUnrollingPass.lpStr(lp, 4)
+					let rn = mut ? LoopUnrollingPass.lpStr(lp, 0)
+					let ok = mut ? LoopUnrollingPass.copyable(program, fnStart, fnEnd, bodyStart, incStart, hl, rn)
+					if ok{
+						? cv.push(cv, k)
+						? cv.push(cv, endIdx)
+						? cv.push(cv, forced)
+						? cv.push(cv, dont)
+						? cv.push(cv, factor)
+						? cv.push(cv, nn)
+						? cv.push(cv, incStart - bodyStart)
+					}
+				}
+			}
+			let ncand = mut (cv.size(cv) / 7)
+			// innermost candidates only
+			let inner = mut ? new Vec()
+			for a in 0..ncand{
+				let aStart = mut cv.get(cv, a * 7)
+				let aEnd = mut cv.get(cv, a * 7 + 1)
+				let aForced = mut cv.get(cv, a * 7 + 2)
+				let hasInner = mut false
+				for b in 0..ncand{
+					if hasInner{
+						break
+					}
+					if b != a{
+						let bStart = mut cv.get(cv, b * 7)
+						let bEnd = mut cv.get(cv, b * 7 + 1)
+						if bStart > aStart &&then bEnd < aEnd{
+							let bf = mut (cv.get(cv, b * 7 + 2) != 0)
+							let bd = mut (cv.get(cv, b * 7 + 3) != 0)
+							let pk = mut LoopUnrollingPass.plan(st, bf, bd, cv.get(cv, b * 7 + 4), cv.get(cv, b * 7 + 5), cv.get(cv, b * 7 + 6))
+							if aForced == 0 ||then pk != 0{
+								hasInner = true
+							}
+						}
+					}
+				}
+				if hasInner == false{
+					? inner.push(inner, a)
+				}
+			}
+			let delta = mut wrap:<s64>(0)
+			let anyApplied = mut false
+			let ni = mut inner.size(inner)
+			for r in 0..ni{
+				let c = mut (ni - 1 - r)
+				let a = mut inner.get(inner, c)
+				let aStart = mut cv.get(cv, a * 7)
+				let curEnd = mut wrap:<u64>(wrap:<s64>(fnEnd) + delta)
+				let done = mut false
+				done = ? _self.apply(_self, program, msgs, st, pend, aStart, fnStart, curEnd, fname)
+				if done{
+					changed = true
+					anyApplied = true
+					delta = delta + wrap:<s64>(LoopUnrollingPass.stGet(st, 8))
+				}
+			}
+			let fl = mut ? LoopUnrollingPass.flushAllocs(program, pend, fnStart)
+			delta = delta + wrap:<s64>(fl)
+			if anyApplied{
+				let gv = mut wrap:<s64>(LoopUnrollingPass.stGet(st, 7))
+				match Some(_self){ ? _self.grown.put(_self.grown, fname, gv) }
+			}
+			let nextI = mut (wrap:<s64>(fnEnd) + delta + 1)
+			i = wrap:<u64>(nextI)
+			if nextI <= wrap:<s64>(fnStart){
+				i = fnStart + 1
+			}
+		}
+		match Some(_self){ _self.nextLabel = LoopUnrollingPass.stGet(st, 0) }
+		return changed
+	}
+
+	/** Java reportUnhonoured: every @unroll still on a loop was not honoured; say why. */
+	@pub
+	@throws
+	static func reportUnhonoured(program: ref imut BytecodeProgram, cfg: ref imut UnrollConfig, msgs: ref mut Messages) void{
+		?catch(e){ throw e }
+		let st = mut ? new Vec()
+		? st.zero(st, 16)
+		LoopUnrollingPass.loadConfig(cfg, st)
+		let total = mut 0
+		match Some(program){ total = program.size(program) }
+		for d in 0..total{
+			if LoopUnrollingPass.isForDeco(program, d) == false{
+				continue
+			}
+			if LoopUnrollingPass.tokStarts(program, d, 1, "@unroll") == false{
+				continue
+			}
+			let hasPos = mut false
+			let pos = mut ? String.from("")
+			if LoopUnrollingPass.nTok(program, d) == 3{
+				let rq = mut ? LoopUnrollingPass.tokCopy(program, d, 2)
+				pos = ? LoopUnrollingPass.stripQuotes(rq)
+				hasPos = true
+			}
+			let first = mut d
+			for q in 0..d{
+				if first > 0 &&then LoopUnrollingPass.isForDeco(program, first - 1){
+					first -= 1
+				}
+			}
+			let fnStart = mut LoopUnrollingPass.funcStartOf(program, d)
+			let fnEnd = mut LoopUnrollingPass.funcEndOf(program, d)
+			let reason = mut ? String.from("")
+			let haveS = mut false
+			let s = mut 0
+			if first >= 7{
+				s = first - 7
+				if s >= fnStart{
+					haveS = true
+				}
+			}
+			let:<owns mut LoopUnrollingLoop> lp = mut null
+			if haveS{
+				lp = mut ? LoopUnrollingPass.matchLoop(program, s, fnEnd)
+			}
+			let rangeOk = mut false
+			if haveS{
+				if LoopUnrollingPass.isOp(program, s, 3, "ADDR") &&then LoopUnrollingPass.tokStarts(program, s, 1, "$for_range_"){
+					rangeOk = true
+				}
+			}
+			let range = mut ? String.from("")
+			if rangeOk{
+				range = ? LoopUnrollingPass.tokCopy(program, s, 2)
+			}
+			let rpos = mut range.indexOf(range, "range(")
+			if rangeOk == false ||then rpos < 0{
+				reason = ? String.from("this loop is not a counted `for` the unroller recognises")
+			} else {
+				let rl = mut range.length(range)
+				let ob = mut (wrap:<u64>(rpos) + 6)
+				let inner = mut ? range.sub(range, ob, rl - 1)
+				let comma = mut inner.indexOf(inner, ',')
+				let lit = mut false
+				let loS = mut ? String.from("")
+				let hiS = mut ? String.from("")
+				if comma > 0{
+					loS = ? inner.sub(inner, 0, wrap:<u64>(comma))
+					hiS = ? inner.substring(inner, wrap:<u64>(comma) + 1)
+					if LoopUnrollingPass.allDigits(loS) &&then LoopUnrollingPass.allDigits(hiS){
+						lit = true
+					}
+				}
+				if lit == false{
+					let rep = mut ? inner.replace(inner, ",", "..")
+					reason = ? String.from("its bounds are not compile-time constants (range ")
+					? reason.append(reason, rep)
+					? reason.append(reason, ")")
+				} else if lp == null{
+					let lov = mut LoopUnrollingPass.parseU(loS)
+					let hiv = mut LoopUnrollingPass.parseU(hiS)
+					if hiv <= lov{
+						reason = ? String.from("the loop never runs")
+					} else {
+						reason = ? String.from("an earlier pass changed the loop's shape")
+					}
+				} else {
+					let dont = mut false
+					let forced = mut false
+					let factor = mut 0
+					let nn = mut 0
+					let bodyStart = mut 0
+					let incStart = mut 0
+					match Some(lp){
+						dont = lp.dont
+						forced = lp.forced
+						factor = lp.factor
+						nn = lp.hi - lp.lo
+						bodyStart = lp.bodyStart
+						incStart = lp.incStart
+					}
+					if true{
+						let hl = mut ? LoopUnrollingPass.lpStr(lp, 4)
+						let rn = mut ? LoopUnrollingPass.lpStr(lp, 0)
+						if dont{
+							reason = ? String.from("the loop is also marked @dont(unroll)")
+						} else {
+							let cp = mut ? LoopUnrollingPass.copyable(program, fnStart, fnEnd, bodyStart, incStart, hl, rn)
+							if cp == false{
+								reason = ? String.from("it defines a label that is used from outside the loop body (a try block, for instance)")
+							} else if LoopUnrollingPass.plan(st, forced, dont, factor, nn, incStart - bodyStart) == 0{
+								reason = ? String.from("it would add more than 20000 lines")
+							} else {
+								reason = ? String.from("an inner loop that cannot be unrolled is in the way")
+							}
+						}
+					}
+				}
+			}
+			let txt = mut ? String.from("@unroll not honoured: ")
+			? txt.append(txt, reason)
+			? LoopUnrollingPass.addMsg(msgs, "[warning] ", hasPos, pos, txt)
+		}
+	}
+}

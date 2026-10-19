@@ -1,0 +1,375 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/** Result slot of one `sizeStep` call (Java kept needStruct/needMult in fields). */
+@pub
+struct SizeofStep{@pub{
+	val: mut s64
+	need: mut bool
+	mult: mut s64
+	ok: mut bool
+	num: mut s64
+	name: owns some mut String
+}}
+
+@pub
+@throws
+impl constructor for SizeofStep() self{
+	?catch(e){ throw e }
+	let n = mut ? new String()
+	return SizeofStep{val= 0, need= false, mult= 1, ok= false, num= 0, name= n}
+}
+
+/**
+ * Struct sizes from the STRUCT_START ... STRUCT_END declarations (port of SizeofResolutionSizes.java). Declarations are kept as ranges of one
+ * flat member table: a member is a type text, or a padding byte count (memPad = 1).
+ */
+@pub
+struct SizeofResolutionSizes{@pub{
+	declIds: owns some mut StringScalarMap<u64>
+	memTexts: owns some mut ObjectList<String>
+	memPad: owns some mut Vec
+	memVal: owns some mut Vec
+	declStart: owns some mut Vec
+	declCount: owns some mut Vec
+	cache: owns some mut StringScalarMap<s64>
+}}
+
+@pub
+@throws
+impl constructor for SizeofResolutionSizes() self{
+	?catch(e){ throw e }
+	let a = mut ? new StringScalarMap:<u64>()
+	let b = mut ? new ObjectList:<String>()
+	let c = mut ? new Vec()
+	let d = mut ? new Vec()
+	let e1 = mut ? new Vec()
+	let f = mut ? new Vec()
+	let g = mut ? new StringScalarMap:<s64>()
+	return SizeofResolutionSizes{declIds= a, memTexts= b, memPad= c, memVal= d, declStart= e1, declCount= f, cache= g}
+}
+
+@pub
+impl SizeofResolutionSizes{
+	/** Java constructor: reads the declarations. A STRUCT_PADDING that is not a number throws (NumberFormatException in Java). */
+	@pub
+	@throws
+	static func build(program: ref mut BytecodeProgram) owns some mut SizeofResolutionSizes {
+		?catch(e){ throw e }
+		let sz = mut ? new SizeofResolutionSizes()
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let cur = mut 0 // current declaration id
+		let have = mut false // Java: cur != null
+		for i in 0..n{
+			let code = mut 0
+			let t1 = mut ? new String()
+			let t2 = mut ? new String()
+			let sz1 = mut 0
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, i)
+				sz1 = st.size(st)
+				if VarAnalysis.stmtIs(st, "STRUCT_START") && sz1 >= 2{
+					code = 1
+					let a = mut ? st.items.getSome(st.items, 1)
+					t1 = ? a.text.sub(a.text, 0, a.text.length(a.text))
+				} else if VarAnalysis.stmtIs(st, "STRUCT_MEMBER") && sz1 >= 3{
+					code = 2
+					let b = mut ? st.items.getSome(st.items, 2)
+					t2 = ? b.text.sub(b.text, 0, b.text.length(b.text))
+				} else if VarAnalysis.stmtIs(st, "STRUCT_PADDING") && sz1 >= 2{
+					code = 3
+					let c = mut ? st.items.getSome(st.items, 1)
+					t1 = ? c.text.sub(c.text, 0, c.text.length(c.text))
+				} else if VarAnalysis.stmtIs(st, "STRUCT_END"){
+					code = 4
+				}
+			}
+			match Some(sz){
+				if code == 1{
+					let id = mut sz.declStart.size(sz.declStart)
+					let startAt = mut sz.memTexts.size(sz.memTexts)
+					? sz.declStart.push(sz.declStart, startAt)
+					? sz.declCount.push(sz.declCount, 0)
+					? sz.declIds.put(sz.declIds, t1, id)
+					cur = id
+					have = true
+				} else if code == 2 && have{
+					? sz.memTexts.add(sz.memTexts, t2)
+					? sz.memPad.push(sz.memPad, 0)
+					? sz.memVal.push(sz.memVal, 0)
+					sz.declCount.set(sz.declCount, cur, sz.declCount.get(sz.declCount, cur) + 1)
+				} else if code == 3 && have{
+					let:<mut s64> v = mut ? t1.parseS64(t1)
+					let empty = mut ? new String()
+					? sz.memTexts.add(sz.memTexts, empty)
+					? sz.memPad.push(sz.memPad, 1)
+					? sz.memVal.push(sz.memVal, wrap:<u64>(v))
+					sz.declCount.set(sz.declCount, cur, sz.declCount.get(sz.declCount, cur) + 1)
+				} else if code == 4{
+					have = false
+				}
+			}
+		}
+		return sz
+	}
+
+	/** Size of the named struct, or -1 when it has no declaration (Java structSize(name, 0)). */
+	@pub
+	@throws
+	static func structSize(sizes: ref mut SizeofResolutionSizes, name: ref some imut String) mut s64 {
+		?catch(e){ throw e }
+		let early = mut 0 // 1 = cached, 2 = unknown
+		let:<mut s64> cached = mut 0
+		let id0 = mut 0
+		let memCount = mut 0
+		match Some(sizes){
+			if sizes.cache.containsKey(sizes.cache, name){
+				early = 1
+				cached = sizes.cache.getOrDefault(sizes.cache, name, 0)
+			} else if sizes.declIds.containsKey(sizes.declIds, name) == false{
+				early = 2
+			} else {
+				id0 = sizes.declIds.getOrDefault(sizes.declIds, name, 0)
+				memCount = sizes.memTexts.size(sizes.memTexts)
+			}
+		}
+		if early == 1{
+			return cached
+		}
+		if early == 2{
+			return -1
+		}
+		let res = mut ? new SizeofStep()
+		let names = mut ? new ObjectList:<String>()
+		let ids = mut ? new Vec()
+		let depths = mut ? new Vec()
+		let nextMember = mut ? new Vec()
+		let sums = mut ? new Vec()
+		let waiting = mut ? new Vec()
+		let nm0 = mut ? name.sub(name, 0, name.length(name))
+		? names.add(names, nm0)
+		? ids.push(ids, id0)
+		? depths.push(depths, 0)
+		? nextMember.push(nextMember, 0)
+		? sums.push(sums, 0)
+		? waiting.push(waiting, 1)
+		let:<mut s64> finished = mut 0
+		let childDone = mut false
+		let outerBound = mut ((memCount + 2) * 140 + 200)
+		for og in 0..outerBound{
+			let top = mut names.size(names)
+			if top == 0{
+				break
+			}
+			top = top - 1
+			let declId = mut ids.get(ids, top)
+			let i = mut nextMember.get(nextMember, top)
+			let:<mut s64> sum = mut wrap:<s64>(sums.get(sums, top))
+			if childDone{
+				let:<mut s64> w = mut wrap:<s64>(waiting.get(waiting, top))
+				let:<mut s64> f = mut finished
+				if f < 0{
+					f = 8
+				}
+				sum = sum + w * f
+				i += 1
+				childDone = false
+			}
+			let descended = mut false
+			let cnt = mut 0
+			let base = mut 0
+			match Some(sizes){
+				cnt = sizes.declCount.get(sizes.declCount, declId)
+				base = sizes.declStart.get(sizes.declStart, declId)
+			}
+			let innerBound = mut (cnt + 1)
+			for ig in 0..innerBound{
+				if i >= cnt{
+					break
+				}
+				let mi = mut (base + i)
+				let kind = mut 0 // 1 padding, 2 plain size, 3 known child, 4 too deep, 5 descend
+				let:<mut s64> amount = mut 0
+				let cid = mut 0
+				let childDepth = mut (depths.get(depths, top) + 1)
+				res.need = false
+				res.val = 0
+				res.mult = 1
+				match Some(sizes){
+					if sizes.memPad.get(sizes.memPad, mi) == 1{
+						kind = 1
+						amount = wrap:<s64>(sizes.memVal.get(sizes.memVal, mi))
+					} else {
+						let mt = mut ? sizes.memTexts.getSome(sizes.memTexts, mi)
+						? SizeofResolutionSizes.sizeStep(sizes, mt, res)
+					}
+				}
+				if kind == 0{
+					if res.need == false{
+						kind = 2
+						amount = res.val
+					} else if childDepth > 64{
+						kind = 4
+					} else {
+						kind = 5
+					}
+					if res.need{
+						match Some(sizes){
+							if sizes.cache.containsKey(sizes.cache, res.name){
+								kind = 3
+								amount = sizes.cache.getOrDefault(sizes.cache, res.name, 0)
+							} else if kind == 5{
+								cid = sizes.declIds.getOrDefault(sizes.declIds, res.name, 0)
+							}
+						}
+					}
+				}
+				if kind == 1 || kind == 2{
+					sum = sum + amount
+					i += 1
+					continue
+				}
+				if kind == 3{
+					if amount < 0{
+						amount = 8
+					}
+					sum = sum + res.mult * amount
+					i += 1
+					continue
+				}
+				if kind == 4{
+					sum = sum + res.mult * 8
+					i += 1
+					continue
+				}
+				nextMember.set(nextMember, top, i)
+				sums.set(sums, top, wrap:<u64>(sum))
+				waiting.set(waiting, top, wrap:<u64>(res.mult))
+				let cn = mut ? res.name.sub(res.name, 0, res.name.length(res.name))
+				? names.add(names, cn)
+				? ids.push(ids, cid)
+				? depths.push(depths, childDepth)
+				? nextMember.push(nextMember, 0)
+				? sums.push(sums, 0)
+				? waiting.push(waiting, 1)
+				descended = true
+				break
+			}
+			if descended{
+				continue
+			}
+			let key = mut ? names.getSome(names, top)
+			let kc = mut ? key.sub(key, 0, key.length(key))
+			match Some(sizes){ ? sizes.cache.put(sizes.cache, kc, sum) }
+			finished = sum
+			childDone = true
+			? names.removeLast(names)
+			let dummy = mut ids.pop(ids)
+			dummy = depths.pop(depths)
+			dummy = nextMember.pop(nextMember)
+			dummy = sums.pop(sums)
+			dummy = waiting.pop(waiting)
+		}
+		return finished
+	}
+
+	/** Parses a decimal long into res.num; res.ok = false when it is not one (Java catches NumberFormatException). */
+	static func tryParse(s: ref some imut String, res: ref some mut SizeofStep) void {
+		?catch(e){
+			res.ok = false
+			return
+		}
+		let:<mut s64> v = mut ? s.parseS64(s)
+		res.num = v
+		res.ok = true
+	}
+
+	/** Java sizeStep: size of a canonical type; when it ends in a struct, res.need is set with res.name and res.mult. */
+	@throws
+	static func sizeStep(_self: ref some imut SizeofResolutionSizes, canonical: ref some imut String, res: ref some mut SizeofStep) void {
+		?catch(e){ throw e }
+		let:<mut s64> mult = mut 1
+		let cur = mut ? canonical.sub(canonical, 0, canonical.length(canonical))
+		let guard = mut (canonical.length(canonical) + 2)
+		for g in 0..guard{
+			if cur.startsWith(cur, "owns_") || cur.startsWith(cur, "ref_") || cur.startsWith(cur, "raw_") || cur.startsWith(cur, "auto_") || cur.startsWith(cur, "static_"){
+				res.val = mult * 8
+				return
+			}
+			let rest = mut ? cur.sub(cur, 0, cur.length(cur))
+			if rest.startsWith(rest, "some_"){
+				rest = ? rest.substring(rest, 5)
+			}
+			if rest.startsWith(rest, "mut_"){
+				rest = ? rest.substring(rest, 4)
+			} else if rest.startsWith(rest, "imut_"){
+				rest = ? rest.substring(rest, 5)
+			} else if rest.startsWith(rest, "indeterminate_"){
+				rest = ? rest.substring(rest, 14)
+			}
+			if rest.startsWith(rest, "atomic_"){
+				rest = ? rest.substring(rest, 7)
+			}
+			if rest.equals(rest, "u8") || rest.equals(rest, "s8") || rest.equals(rest, "bool") || rest.equals(rest, "char") || rest.equals(rest, "void"){
+				res.val = mult
+				return
+			}
+			if rest.equals(rest, "u16") || rest.equals(rest, "s16"){
+				res.val = mult * 2
+				return
+			}
+			if rest.equals(rest, "u32") || rest.equals(rest, "s32") || rest.equals(rest, "f32"){
+				res.val = mult * 4
+				return
+			}
+			if rest.equals(rest, "u64") || rest.equals(rest, "s64") || rest.equals(rest, "f64") || rest.equals(rest, "code_addr") || rest.equals(rest, "string"){
+				res.val = mult * 8
+				return
+			}
+			if rest.equals(rest, "range") || rest.startsWith(rest, "range("){
+				res.val = mult * 16
+				return
+			}
+			if rest.startsWith(rest, "dynarray(") || rest.startsWith(rest, "unsafe_dynarray("){
+				res.val = mult * 8
+				return
+			}
+			let rl = mut rest.length(rest)
+			if rl > 0 && rest.endsWith(rest, "]"){
+				let open = mut 0
+				let found = mut false
+				for q in 0..rl{
+					let k = mut (rl - 1 - q)
+					if found == false && rest.charAt(rest, k) == '['{
+						open = k
+						found = true
+					}
+				}
+				if found && open > 0{
+					let inner = mut ? rest.sub(rest, open + 1, rl - 1)
+					SizeofResolutionSizes.tryParse(inner, res)
+					if res.ok == false{
+						res.val = mult * 8
+						return
+					}
+					mult = mult * res.num
+					cur = ? rest.sub(rest, 0, open)
+					continue
+				}
+			}
+			if _self.declIds.containsKey(_self.declIds, rest){
+				res.need = true
+				res.name = ? rest.sub(rest, 0, rl)
+				res.mult = mult
+				res.val = 0
+				return
+			}
+			res.val = mult * 8
+			return
+		}
+	}
+}

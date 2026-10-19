@@ -1,0 +1,229 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/Text.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+import "VarScan.caspien"
+
+/**
+ * Once-assigned literal locals are substituted (port of VariableElisionPass.java): "ADDR x T / PUSH lit / ASSIGN" of a local scalar that is never
+ * assigned again is removed together with x's ALLOC, and every read "PUSH x T" becomes "PUSH lit T". Bounds spelled by name in range types
+ * (imut_range(0,imut_n)) are rewritten to the literal when it is plain digits.
+ */
+@pub
+struct VariableElisionPass{@pub{
+}}
+
+@pub
+impl constructor for VariableElisionPass() self{
+	return VariableElisionPass{}
+}
+
+@pub
+impl VariableElisionPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let funcs = mut ? new Vec()
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		match Some(program){ funcs = ? VarAnalysis.functions(program) }
+		let nf = mut VarAnalysis.count(funcs)
+		if nf == 0{
+			return false
+		}
+		let rm = mut ? new Vec()
+		let rp = mut ? new Vec()
+		? rm.zero(rm, n)
+		? rp.zero(rp, n)
+		let out = mut ? new BytecodeProgram()
+		let changed = mut false
+		let pos = mut 0
+		for k in 0..nf{
+			let s = mut VarAnalysis.startOf(funcs, k)
+			let e = mut VarAnalysis.endOf(funcs, k)
+			let gap = mut (s - pos)
+			for g in 0..gap{
+				match Some(program){
+					let moved = mut program.items.take(program.items, pos + g)
+					? out.items.add(out.items, moved)
+				}
+			}
+			let lits = mut ? new StringMap:<String>()
+			let hasAsm = mut false
+			match Some(program){ hasAsm = VarAnalysis.hasMnemonic(program, s, e, "ASM_START") }
+			if hasAsm == false{
+				let sc = mut ? VarScan.scan(program, s, e)
+				let labels = mut ? VarAnalysis.labels(program, s, e)
+				let jumps = mut ? new Vec()
+				match Some(program){ jumps = ? VarAnalysis.jumps(program, s, e, labels) }
+				let nv = mut VarScan.count(sc)
+				for v in 0..nv{
+					let nAssign = mut (sc.asOff.get(sc.asOff, v + 1) - sc.asOff.get(sc.asOff, v))
+					let skip = mut false
+					if sc.bad.get(sc.bad, v) != 0 || nAssign != 1{
+						skip = true
+					}
+					if skip == false{
+						let nm = mut ? sc.names.getSome(sc.names, v)
+						if nm.startsWith(nm, "gt_trace_"){
+							skip = true
+						}
+					}
+					if skip == false{
+						let a = mut sc.asLines.get(sc.asLines, sc.asOff.get(sc.asOff, v))
+						let r0 = mut sc.rdOff.get(sc.rdOff, v)
+						let nr = mut (sc.rdOff.get(sc.rdOff, v + 1) - r0)
+						let ok = mut true
+						for q in 0..nr{
+							let r = mut sc.rdLines.get(sc.rdLines, r0 + q)
+							if r < a || VarAnalysis.dominated(a, r, jumps) == false{
+								ok = false
+							}
+						}
+						if ok{
+							rm.set(rm, a, 1)
+							rm.set(rm, a + 1, 1)
+							rm.set(rm, a + 2, 1)
+							rm.set(rm, sc.allocIdx.get(sc.allocIdx, v), 1)
+							let litText = mut ? new String()
+							match Some(program){ litText = ? VarScan.copyTok(program, a + 1, 1) }
+							if Text.isDigits(litText){
+								let nm2 = mut ? sc.names.getSome(sc.names, v)
+								let nameCopy = mut ? nm2.sub(nm2, 0, nm2.length(nm2))
+								let litCopy = mut ? litText.sub(litText, 0, litText.length(litText))
+								? lits.put(lits, nameCopy, litCopy)
+							}
+							for q in 0..nr{
+								let r = mut sc.rdLines.get(sc.rdLines, r0 + q)
+								rp.set(rp, r, a + 2)
+							}
+							changed = true
+						}
+					}
+				}
+			}
+			let hasLits = mut (lits.size(lits) > 0)
+			let span = mut (e + 1 - s)
+			for d in 0..span{
+				let i = mut (s + d)
+				if rm.get(rm, i) == 0{
+					if rp.get(rp, i) != 0{
+						let lt = mut ? new String()
+						match Some(program){ lt = ? VarScan.copyTok(program, rp.get(rp, i) - 2 + 1, 1) }
+						match Some(program){ ? VarScan.setTokText(program, i, 1, lt) }
+					}
+					if hasLits{
+						? VariableElisionPass.rewriteRangeTypes(program, i, lits)
+					}
+					match Some(program){
+						let moved = mut program.items.take(program.items, i)
+						? out.items.add(out.items, moved)
+					}
+				}
+			}
+			pos = e + 1
+		}
+		let tail = mut (n - pos)
+		for g in 0..tail{
+			match Some(program){
+				let moved = mut program.items.take(program.items, pos + g)
+				? out.items.add(out.items, moved)
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return changed
+	}
+
+	/** Java rewriteRangeTypes for statement `i`: every token spelling a range type with named bounds gets the literals. */
+	@throws
+	static func rewriteRangeTypes(program: ref mut BytecodeProgram, i: mut u64, lits: ref some imut StringMap<String>) void{
+		?catch(e){ throw e }
+		let m = mut 0
+		match Some(program){ m = VarScan.sizeOf(program, i) }
+		for k in 0..m{
+			let has = mut false
+			match Some(program){ has = VariableElisionPass.hasRangeParen(program, i, k) }
+			if has{
+				let cp = mut ? new String()
+				match Some(program){ cp = ? VarScan.copyTok(program, i, k) }
+				let ns = mut ? VariableElisionPass.rewriteText(cp, lits)
+				if ns.equals(ns, cp) == false{
+					match Some(program){ ? VarScan.setTokText(program, i, k, ns) }
+				}
+			}
+		}
+	}
+
+	/** Token k of statement i contains "range(" and ends with ")". */
+	static func hasRangeParen(program: ref some imut BytecodeProgram, i: mut u64, k: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		let tk = mut ? st.items.getSome(st.items, k)
+		return tk.text.contains(tk.text, "range(") && tk.text.endsWith(tk.text, ")")
+	}
+
+	/** The new spelling of a range type text `s` (a copy of `s` when nothing changes). */
+	@throws
+	static func rewriteText(s: ref some imut String, lits: ref some imut StringMap<String>) owns some mut String{
+		?catch(e){ throw e }
+		let cp = mut ? s.sub(s, 0, s.length(s))
+		let open = mut s.indexOf(s, "range(")
+		if open < 0{
+			return cp
+		}
+		let o = mut wrap:<u64>(open)
+		let len = mut s.length(s)
+		if o + 6 > len - 1{
+			return cp
+		}
+		let inner = mut ? s.sub(s, o + 6, len - 1)
+		let comma = mut inner.indexOf(inner, mut ',')
+		if comma < 0{
+			return cp
+		}
+		let c = mut wrap:<u64>(comma)
+		let loPart = mut ? inner.sub(inner, 0, c)
+		let hiPart = mut ? inner.sub(inner, c + 1, inner.length(inner))
+		let head = mut ? s.sub(s, 0, o + 6)
+		let lo = mut ? VariableElisionPass.boundText(loPart, lits)
+		let hi = mut ? VariableElisionPass.boundText(hiPart, lits)
+		let res = mut head
+		? res.append(res, lo)
+		? res.append(res, ",")
+		? res.append(res, hi)
+		? res.append(res, ")")
+		return res
+	}
+
+	/** Java boundText: `imut_n` / `mut_n` whose name is an elided literal become the literal. */
+	@throws
+	static func boundText(part: ref some imut String, lits: ref some imut StringMap<String>) owns some mut String{
+		?catch(e){ throw e }
+		let off = mut 0
+		if part.startsWith(part, "imut_"){
+			off = 5
+		} else if part.startsWith(part, "mut_"){
+			off = 4
+		}
+		let nm = mut ? part.sub(part, off, part.length(part))
+		if off != 0{
+			if lits.containsKey(lits, nm){
+				let v = mut lits.get(lits, nm)
+				match Some(v){
+					let c = mut ? v.sub(v, 0, v.length(v))
+					return c
+				}
+			}
+		}
+		let r = mut ? part.sub(part, 0, part.length(part))
+		return r
+	}
+}

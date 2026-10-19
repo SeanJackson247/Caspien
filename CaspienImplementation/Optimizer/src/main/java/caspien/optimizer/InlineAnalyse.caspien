@@ -1,0 +1,699 @@
+import "stdlib/string.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "InlineHob.caspien"
+import "InlineState.caspien"
+
+/**
+ * Callee analysis of FunctionInliningPass (port of FunctionInliningPass.analyse / stackBalanced / walkBack). Worker `inline`.
+ * Lines are `Ls` lines of token ids; a "why" is kept as a code + two ids and turned into text only when a message needs it
+ * (codes: 1 non-code line, 2 decorator A, 3 parameter A redeclared with another type, 4 local A declared twice with different types,
+ * 5 GT_UNWIND shape, 6 PUSH_LABEL of something other than a landing pad / catch, 7 mnemonic A, 8 no RETURNS, 9 main, 10 call cycle, 11 too long,
+ * 12 @dont(inline), 13 off, 14 param type A, 15 duplicate parameter names, 16 label A not defined in callee, 17 local name A used in an
+ * unrecognised position (B), 18 RET shape).
+ */
+@pub
+struct IU{@pub{
+}}
+
+@pub
+impl IU{
+	/** Java `mn(l)`: the first token's id when it is a code token, else 0. */
+	@pub
+	static func mn(st: ref some imut FunctionInliningState, ls: ref some imut Ls, i: mut u64) mut u64{
+		let t = mut ls.tok(ls, i, 0)
+		if t == 0{
+			return 0
+		}
+		if st.h.isStr(st.h, t){
+			return 0
+		}
+		return t
+	}
+
+	/** Java `is(l, size, first)`. */
+	@pub
+	static func isN(st: ref some imut FunctionInliningState, ls: ref some imut Ls, i: mut u64, size: mut u64, m: mut u64) bool{
+		if ls.ntok(ls, i) != size{
+			return false
+		}
+		return IU.mn(st, ls, i) == m
+	}
+
+	/** Java `isLabelDef`. */
+	@pub
+	static func isLabelDef(st: ref some imut FunctionInliningState, ls: ref some imut Ls, i: mut u64) bool{
+		if ls.ntok(ls, i) != 1{
+			return false
+		}
+		let t = mut ls.tok(ls, i, 0)
+		if st.h.isStr(st.h, t){
+			return false
+		}
+		return st.h.isAt(st.h, t) && st.h.isColon(st.h, t)
+	}
+
+	/** Java `boundary`. */
+	@pub
+	static func boundary(st: ref some imut FunctionInliningState, ls: ref some imut Ls, i: mut u64) bool{
+		if ls.ntok(ls, i) == 0{
+			return false
+		}
+		if IU.isLabelDef(st, ls, i){
+			return true
+		}
+		let m = mut IU.mn(st, ls, i)
+		if m == 0{
+			return false
+		}
+		return st.h.isBoundary(st.h, m)
+	}
+
+	/** Java `unq`: the text without its surrounding double quotes (when it has both). */
+	@pub
+	@throws
+	static func unq(st: ref some mut FunctionInliningState, t: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut st.h.length(st.h, t)
+		if n >= 2 &&then st.h.ch(st.h, t, 0) == 34 &&then st.h.ch(st.h, t, n - 1) == 34{
+			let r = mut ? st.h.internRange(st.h, t, 1, n - 1)
+			return r
+		}
+		return t
+	}
+
+	@pub
+	static func scalarType(st: ref some imut FunctionInliningState, t: mut u64) bool{
+		if t == 0{
+			return false
+		}
+		return st.h.isScalar(st.h, t)
+	}
+
+	@pub
+	static func rangeParam(st: ref some imut FunctionInliningState, t: mut u64) bool{
+		return t != 0 && (t == st.h.imutRange || t == st.h.mutRange)
+	}
+
+	@pub
+	static func wordsOf(st: ref some imut FunctionInliningState, t: mut u64) mut u64{
+		if IU.rangeParam(st, t){
+			return 2
+		}
+		return 1
+	}
+
+	/** Java `pureLine`. */
+	@pub
+	static func pureLine(st: ref some imut FunctionInliningState, ls: ref some imut Ls, i: mut u64) bool{
+		let m = mut IU.mn(st, ls, i)
+		if m == 0{
+			return false
+		}
+		return st.h.isPush1(st.h, m) || st.h.isBinary(st.h, m) || st.h.isUnary(st.h, m)
+	}
+}
+
+@pub
+struct InlAna{@pub{
+}}
+
+@pub
+impl InlAna{
+	/** The src line of code line `c` of the callee at codeList offset `off`. */
+	@pub
+	static func cl(st: ref some imut FunctionInliningState, off: mut u64, c: mut u64) mut u64{
+		return st.codeList.get(st.codeList, off + c)
+	}
+
+	/**
+	 * Java stackBalanced: the operand-stack depth over the body is 0 at every RET, every statement boundary and the end, and every mnemonic has a known effect.
+	 */
+	@pub
+	static func stackBalanced(st: ref some imut FunctionInliningState, src: ref some imut Ls, off: mut u64, cn: mut u64) bool{
+		let depth = mut 0
+		for ci in 0..cn{
+			let li = mut InlAna.cl(st, off, ci)
+			if IU.isLabelDef(st, src, li){
+				continue
+			}
+			let m = mut IU.mn(st, src, li)
+			if m == 0{
+				return false
+			}
+			let pops = mut 0
+			let pushes = mut 0
+			if m == st.h.JMP || m == st.h.GT_DESTRUCT || m == st.h.CC_START || m == st.h.CC_END || m == st.h.CALL || m == st.h.EXTERN_CALL || m == st.h.VARARGS_XMM_COUNT{
+				continue
+			} else if m == st.h.GT_UNWIND{
+				depth = 0
+				continue
+			} else if m == st.h.PUSH_LABEL{
+				pops = 0
+				pushes = 1
+			} else if m == st.h.RET{
+				pops = 1
+				if src.ntok(src, li) >= 2 &&then src.tok(src, li, 1) == st.h.imutVoid{
+					pops = 0
+				}
+				if depth != pops{
+					return false
+				}
+				depth = 0
+				continue
+			} else if m == st.h.ASSIGN || m == st.h.ATOMIC_ASSIGN{
+				pops = 2
+				pushes = 0
+			} else if m == st.h.CMP || m == st.h.POP{
+				pops = 1
+				pushes = 0
+			} else if st.h.isPush1(st.h, m) || m == st.h.PUSH_RET{
+				pops = 0
+				pushes = 1
+			} else if st.h.isBinary(st.h, m){
+				pops = 2
+				pushes = 1
+			} else if st.h.isUnary(st.h, m) || m == st.h.INC || m == st.h.DEC{
+				pops = 1
+				pushes = 1
+			} else {
+				return false
+			}
+			if depth + pushes < pops{
+				return false
+			}
+			depth = depth + pushes - pops
+		}
+		return depth == 0
+	}
+
+	/** Index (in code lines) of the CC_START matching the CC_END at `k`, plus 1; 0 when there is none. */
+	static func matchStartBack(st: ref some imut FunctionInliningState, src: ref some imut Ls, off: mut u64, k: mut u64) mut u64{
+		let depth = mut 0
+		let cnt = mut (k + 1)
+		for g in 0..cnt{
+			let j = mut (k - g)
+			let jm = mut IU.mn(st, src, InlAna.cl(st, off, j))
+			if jm == st.h.CC_END{
+				depth += 1
+			} else if jm == st.h.CC_START{
+				if depth > 0{
+					depth -= 1
+				}
+				if depth == 0{
+					return j + 1
+				}
+			}
+		}
+		return 0
+	}
+
+	/** Java walkBack: first line of the expression ending at code line `tail`, plus 1 (0 = the shape is not understood). */
+	@pub
+	static func walkBack(st: ref some imut FunctionInliningState, src: ref some imut Ls, off: mut u64, cn: mut u64, tail: mut u64) mut u64{
+		let need = mut 1
+		let kk = mut (tail + 1)
+		let guard = mut (cn * 2 + 8)
+		for g in 0..guard{
+			if kk == 0{
+				break
+			}
+			let k = mut (kk - 1)
+			let li = mut InlAna.cl(st, off, k)
+			if IU.isLabelDef(st, src, li){
+				kk -= 1
+				continue
+			}
+			let m = mut IU.mn(st, src, li)
+			if m == 0{
+				return 0
+			}
+			let pops = mut 0
+			let pushes = mut 0
+			if m == st.h.JMP || m == st.h.GT_DESTRUCT{
+				kk -= 1
+				continue
+			}
+			let ccEndNoRet = mut false
+			if m == st.h.CC_END{
+				ccEndNoRet = true
+				if k + 1 < cn{
+					if IU.isN(st, src, InlAna.cl(st, off, k + 1), 2, st.h.PUSH_RET){
+						ccEndNoRet = false
+					}
+				}
+			}
+			if ccEndNoRet{
+				let j1 = mut InlAna.matchStartBack(st, src, off, k)
+				if j1 == 0{
+					return 0
+				}
+				kk = j1 - 1
+				continue
+			} else if m == st.h.ASSIGN || m == st.h.ATOMIC_ASSIGN{
+				pops = 2
+				pushes = 0
+			} else if m == st.h.CMP || m == st.h.POP{
+				pops = 1
+				pushes = 0
+			} else if st.h.isPush1(st.h, m){
+				pops = 0
+				pushes = 1
+			} else if st.h.isBinary(st.h, m){
+				pops = 2
+				pushes = 1
+			} else if st.h.isUnary(st.h, m) || m == st.h.INC || m == st.h.DEC{
+				pops = 1
+				pushes = 1
+			} else if m == st.h.PUSH_RET{
+				pops = 0
+				pushes = 1
+				if k == 0{
+					return 0
+				}
+				if IU.isN(st, src, InlAna.cl(st, off, k - 1), 2, st.h.CC_END) == false{
+					return 0
+				}
+			} else {
+				return 0
+			}
+			if need + pops < pushes{
+				return 0
+			}
+			need = need + pops - pushes
+			if m == st.h.PUSH_RET{
+				let j1 = mut InlAna.matchStartBack(st, src, off, k - 1)
+				if j1 == 0{
+					return 0
+				}
+				let j = mut (j1 - 1)
+				if need == 0{
+					return j + 1
+				}
+				kk = j
+				continue
+			}
+			if need == 0{
+				return k + 1
+			}
+			kk -= 1
+		}
+		return 0
+	}
+
+	/**
+	 * Java analyse(L, s, e, cyclic) for the function in src lines s..e (FUNC_START .. FUNC_END), function number k. Results go into the c* tables;
+	 * `cyc` says the function is on a call cycle. Side effects on forcedWhy / forcedPos as in Java.
+	 */
+	@pub
+	@throws
+	static func analyse(st: ref some mut FunctionInliningState, src: ref some imut Ls, k: mut u64, s: mut u64, e: mut u64, cyc: mut bool) void{
+		?catch(ex){ throw ex }
+		let name = mut src.tok(src, s, 1)
+		let retType = mut 0
+		let ok = mut true
+		let whyC = mut 0
+		let whyA = mut 0
+		let whyB = mut 0
+		let forced = mut false
+		let dont = mut false
+		let unwinds = mut false
+		let usesAddr = mut false
+		let usesMsg = mut false
+		let hasCatch = mut false
+		let pos = mut 0
+		let parOff = mut st.parList.n
+		let alOff = mut st.alList.n
+		let codeOff = mut st.codeList.n
+		let lbOff = mut st.lbList.n
+		let glOff = mut st.glList.n
+		let retOff = mut st.retList.n
+		st.locs.begin(st.locs)
+		st.labs.begin(st.labs)
+		st.globs.begin(st.globs)
+		let lo = mut (s + 1)
+		for i in lo..e{
+			let m = mut IU.mn(st, src, i)
+			if m == 0{
+				whyC = 1
+				ok = false
+				continue
+			}
+			let n = mut src.ntok(src, i)
+			if m == st.h.FUNC_DECORATE{
+				let dt = mut src.tok(src, i, 1)
+				let t2 = mut src.tok(src, i, 2)
+				let posOk = mut false
+				if n == 3 &&then st.h.isStr(st.h, t2){
+					posOk = true
+				}
+				let shapeOk = mut false
+				if n == 2 || posOk{
+					shapeOk = true
+				}
+				let nameOk = mut false
+				if st.h.isDecok(st.h, dt) || dt == st.h.atDont{
+					nameOk = true
+				}
+				if shapeOk == false || nameOk == false{
+					whyC = 2
+					whyA = dt
+					ok = false
+				} else if dt == st.h.atInline{
+					forced = true
+				} else if dt == st.h.atDont{
+					dont = true
+				}
+				if posOk{
+					pos = ? IU.unq(st, t2)
+				}
+				continue
+			}
+			if m == st.h.RETURNS{
+				retType = src.tok(src, i, 1)
+				continue
+			}
+			if m == st.h.ARG &&then n == 3{
+				? st.parList.push(st.parList, src.tok(src, i, 1))
+				? st.parList.push(st.parList, src.tok(src, i, 2))
+				continue
+			}
+			if m == st.h.ALLOC &&then n == 3{
+				let nm = mut src.tok(src, i, 1)
+				let ty = mut src.tok(src, i, 2)
+				if nm == st.h.gtAddr || nm == st.h.gtMsg{
+					continue
+				}
+				let isDup = mut false
+				let np = mut ((st.parList.n - parOff) / 2)
+				for j in 0..np{
+					if st.parList.get(st.parList, parOff + j * 2) == nm{
+						if st.parList.get(st.parList, parOff + j * 2 + 1) != ty{
+							whyC = 3
+							whyA = nm
+							ok = false
+						}
+						isDup = true
+					}
+				}
+				let na = mut ((st.alList.n - alOff) / 2)
+				for j in 0..na{
+					if st.alList.get(st.alList, alOff + j * 2) == nm{
+						if st.alList.get(st.alList, alOff + j * 2 + 1) != ty{
+							whyC = 4
+							whyA = nm
+							ok = false
+						}
+						isDup = true
+					}
+				}
+				if isDup == false{
+					? st.alList.push(st.alList, nm)
+					? st.alList.push(st.alList, ty)
+				}
+				continue
+			}
+			if m == st.h.THROW{
+				unwinds = true
+				continue
+			}
+			if m == st.h.GT_UNWIND{
+				unwinds = true
+				let shape = mut false
+				if n == 1{
+					shape = true
+				}
+				if n == 2 &&then src.tok(src, i, 1) == st.h.MSG{
+					shape = true
+				}
+				if shape == false{
+					whyC = 5
+					ok = false
+				}
+			}
+			if m == st.h.PUSH_LABEL{
+				let good = mut false
+				if n == 3{
+					let t1 = mut src.tok(src, i, 1)
+					if st.h.isCallsitep(st.h, t1) || st.h.isCatchp(st.h, t1){
+						good = true
+					}
+				}
+				if good == false{
+					whyC = 6
+					ok = false
+				}
+			}
+			if st.h.isExcl(st.h, m){
+				whyC = 7
+				whyA = m
+				ok = false
+			}
+			? st.codeList.push(st.codeList, i)
+		}
+		let cn = mut (st.codeList.n - codeOff)
+		for ci in 0..cn{
+			let li = mut InlAna.cl(st, codeOff, ci)
+			let n = mut src.ntok(src, li)
+			for t in 1..n{
+				let tk = mut src.tok(src, li, t)
+				if st.h.isStr(st.h, tk) == false{
+					if tk == st.h.gtAddr{ usesAddr = true }
+					if tk == st.h.gtMsg{ usesMsg = true }
+				}
+			}
+		}
+		let lines = mut (e - s - 1)
+		if retType == 0{
+			whyC = 8
+			ok = false
+		}
+		if name == st.h.mainFn{
+			whyC = 9
+			ok = false
+		}
+		if cyc{
+			whyC = 10
+			ok = false
+		}
+		if lines > st.cfgMaxCallee &&then forced == false{
+			whyC = 11
+			ok = false
+		}
+		if dont{
+			whyC = 12
+			ok = false
+		}
+		if st.cfgEnabled == false &&then forced == false{
+			whyC = 13
+			ok = false
+		}
+		let np2 = mut ((st.parList.n - parOff) / 2)
+		let na2 = mut ((st.alList.n - alOff) / 2)
+		let distinct = mut 0
+		for j in 0..np2{
+			let pn = mut st.parList.get(st.parList, parOff + j * 2)
+			let pt = mut st.parList.get(st.parList, parOff + j * 2 + 1)
+			if IU.scalarType(st, pt) == false &&then IU.rangeParam(st, pt) == false{
+				whyC = 14
+				whyA = pt
+				ok = false
+			}
+			if st.locs.has(st.locs, pn) == false{
+				? st.locs.put(st.locs, pn, 1)
+				distinct += 1
+			}
+		}
+		for j in 0..na2{
+			let an = mut st.alList.get(st.alList, alOff + j * 2)
+			if st.locs.has(st.locs, an) == false{
+				? st.locs.put(st.locs, an, 1)
+				distinct += 1
+			}
+		}
+		if distinct != np2 + na2{
+			whyC = 15
+			ok = false
+		}
+		// labels
+		for ci in 0..cn{
+			let li = mut InlAna.cl(st, codeOff, ci)
+			if IU.isLabelDef(st, src, li){
+				let t = mut src.tok(src, li, 0)
+				let nm = mut st.h.nameOfLabel(st.h, t)
+				if st.labs.has(st.labs, nm) == false{
+					? st.labs.put(st.labs, nm, 1)
+					? st.lbList.push(st.lbList, nm)
+				}
+				if st.h.isCatchp(st.h, t){
+					hasCatch = true
+				}
+			}
+		}
+		let flow = mut false
+		for ci in 0..cn{
+			let li = mut InlAna.cl(st, codeOff, ci)
+			let m = mut IU.mn(st, src, li)
+			if IU.isLabelDef(st, src, li) || m == st.h.JMP || m == st.h.CMP{
+				flow = true
+			}
+			let n = mut src.ntok(src, li)
+			for t in 1..n{
+				let tk = mut src.tok(src, li, t)
+				if st.h.isStr(st.h, tk){
+					continue
+				}
+				if st.h.isAt(st.h, tk){
+					let nm = mut st.h.nameOfLabel(st.h, tk)
+					if st.labs.has(st.labs, nm) == false{
+						whyC = 16
+						whyA = nm
+						ok = false
+					}
+					continue
+				}
+				let namePos = mut false
+				if t == 1 &&then st.h.isNamepos(st.h, m){
+					if n == 3 || m == st.h.GT_DESTRUCT{
+						namePos = true
+					}
+				}
+				let root = mut st.h.rootOf(st.h, tk)
+				if namePos{
+					if st.locs.has(st.locs, root) == false &&then root != st.h.gtAddr &&then root != st.h.gtMsg &&then st.h.isLiteralish(st.h, tk) == false{
+						if st.globs.has(st.globs, root) == false{
+							? st.globs.put(st.globs, root, 1)
+							? st.glList.push(st.glList, root)
+						}
+					}
+				} else if t == 1 &&then (m == st.h.PUSH_FIELDNAME || m == st.h.CALL || m == st.h.EXTERN_CALL){
+					// a field name, not a variable
+				} else if t >= 2 &&then st.h.isNamepos(st.h, m){
+					// type operand
+				} else if st.locs.has(st.locs, tk) || st.locs.has(st.locs, root){
+					whyC = 17
+					whyA = tk
+					whyB = m
+					ok = false
+				}
+			}
+		}
+		let balanced = mut InlAna.stackBalanced(st, src, codeOff, cn)
+		// returns
+		let nRets = mut 0
+		let firstTail = mut false
+		for ci in 0..cn{
+			let li = mut InlAna.cl(st, codeOff, ci)
+			if IU.mn(st, src, li) != st.h.RET{
+				continue
+			}
+			if src.ntok(src, li) != 2{
+				whyC = 18
+				ok = false
+				continue
+			}
+			let rtype = mut src.tok(src, li, 1)
+			let isVoid = mut 0
+			if rtype == st.h.imutVoid{
+				isVoid = 1
+			}
+			let tailF = mut 0
+			if ci + 1 == cn{
+				tailF = 1
+			}
+			let vStart1 = mut 0
+			let vTail1 = mut 0
+			let pure = mut 0
+			if isVoid == 0{
+				let t1 = mut ci
+				let tIdx = mut 0
+				let have = mut false
+				for g in 0..cn{
+					if t1 == 0{
+						break
+					}
+					let prev = mut (t1 - 1)
+					if IU.mn(st, src, InlAna.cl(st, codeOff, prev)) == st.h.GT_DESTRUCT{
+						t1 = prev
+					} else {
+						break
+					}
+				}
+				if t1 > 0{
+					tIdx = t1 - 1
+					have = true
+				}
+				if have{
+					vTail1 = tIdx + 1
+					vStart1 = InlAna.walkBack(st, src, codeOff, cn, tIdx)
+					if vStart1 > 0{
+						pure = 1
+						let vs = mut (vStart1 - 1)
+						let hiq = mut (tIdx + 1)
+						for q in vs..hiq{
+							if IU.pureLine(st, src, InlAna.cl(st, codeOff, q)) == false{
+								pure = 0
+							}
+						}
+					}
+				}
+			}
+			if nRets == 0 &&then tailF == 1{
+				firstTail = true
+			}
+			nRets += 1
+			? st.retList.push(st.retList, ci)
+			? st.retList.push(st.retList, rtype)
+			? st.retList.push(st.retList, isVoid)
+			? st.retList.push(st.retList, vStart1)
+			? st.retList.push(st.retList, vTail1)
+			? st.retList.push(st.retList, pure)
+			? st.retList.push(st.retList, tailF)
+		}
+		if nRets != 1 || firstTail == false{
+			flow = true
+		}
+		let fl = mut 0
+		if ok{ fl = fl + 1 }
+		if forced{ fl = fl + 2 }
+		if dont{ fl = fl + 4 }
+		if unwinds{ fl = fl + 8 }
+		if usesAddr{ fl = fl + 16 }
+		if usesMsg{ fl = fl + 32 }
+		if hasCatch{ fl = fl + 64 }
+		if balanced{ fl = fl + 128 }
+		if flow{ fl = fl + 256 }
+		st.cFl.set(st.cFl, k, fl)
+		st.cName.set(st.cName, k, name)
+		st.cLines.set(st.cLines, k, lines)
+		st.cPos.set(st.cPos, k, pos)
+		st.cWhyC.set(st.cWhyC, k, whyC)
+		st.cWhyA.set(st.cWhyA, k, whyA)
+		st.cWhyB.set(st.cWhyB, k, whyB)
+		st.cParOff.set(st.cParOff, k, parOff)
+		st.cParN.set(st.cParN, k, np2)
+		st.cAlOff.set(st.cAlOff, k, alOff)
+		st.cAlN.set(st.cAlN, k, na2)
+		st.cCodeOff.set(st.cCodeOff, k, codeOff)
+		st.cCodeN.set(st.cCodeN, k, cn)
+		st.cLbOff.set(st.cLbOff, k, lbOff)
+		st.cLbN.set(st.cLbN, k, st.lbList.n - lbOff)
+		st.cGlOff.set(st.cGlOff, k, glOff)
+		st.cGlN.set(st.cGlN, k, st.glList.n - glOff)
+		st.cRetOff.set(st.cRetOff, k, retOff)
+		st.cRetN.set(st.cRetN, k, nRets)
+		if forced &&then ok == false{
+			? VX.setG(st.fWhyC, name, whyC)
+			? VX.setG(st.fWhyA, name, whyA)
+			? VX.setG(st.fWhyB, name, whyB)
+		}
+		if forced &&then pos != 0{
+			if st.fHas.get(st.fHas, name) == 0{
+				? VX.setG(st.fHas, name, 1)
+				? VX.setG(st.fPos, name, pos)
+				? st.fOrder.push(st.fOrder, name)
+			} else if st.fPos.get(st.fPos, name) == 0{
+				? VX.setG(st.fPos, name, pos)
+			}
+		}
+	}
+}

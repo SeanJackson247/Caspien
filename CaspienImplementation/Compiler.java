@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]\n       java Compiler -i <input.caspien> --fix termination|justify|unsafe-split [--write] [--fix-stdlib]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob | --stage1] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]\n       java Compiler -i <input.caspien> --fix termination|justify|unsafe-split [--write] [--fix-stdlib]";
 
 
 
@@ -108,7 +108,7 @@ public class Compiler {
         String outputArg = null;
         boolean noWarnings = false;
         boolean fsReport = false;
-        boolean stopAsm = false, stopLob = false, stopHob = false;
+        boolean stopAsm = false, stopLob = false, stopHob = false, stage1Host = false;
         boolean noCache = false, cacheReport = false, clearCache = false;
         boolean audit = false, auditNoStdlib = false, viz = false;
         String fixModes = null;
@@ -138,6 +138,11 @@ public class Compiler {
                     break;
                 case "--hob":
                     stopHob = true;
+                    break;
+                case "--stage1":
+                    // the front-end host mode of the Caspien orchestrator (Orchestrator/Compiler.caspien): stage 1 only, no summary line; <output>.meta gets the warning count
+                    stopHob = true;
+                    stage1Host = true;
                     break;
                 case "--audit":
                     audit = true;
@@ -238,10 +243,10 @@ public class Compiler {
         Path optimizerDir = root.resolve("Optimizer");
         Path lowerOrderDir = root.resolve("LowerOrderGenerator");
         Path codegenDir = root.resolve("Codegen");
-        // Stages 1-2 are the reference implementation's Java: classes are loaded from its out/ folders (CODE_ROOT). Stages 3 and 4 are this implementation's own
-        // LowerOrderGenerator and Codegen components, native executables (build.sh). The stage folders here only hold the generated config files, so a run never writes into the reference tree.
+        // Stage 1 is the reference implementation's Java: classes are loaded from its out/ folder (CODE_ROOT). Stages 2-4 are this implementation's own
+        // Optimizer, LowerOrderGenerator and Codegen components, native executables (build.sh). The stage folders here only hold the generated config files, so a run never writes into the reference tree.
         codeRoot = root.resolve(CODE_ROOT).normalize();
-        for (Path p : new Path[]{astGenDir, optimizerDir, lowerOrderDir, codegenDir, codeDir(astGenDir), codeDir(optimizerDir)}) {
+        for (Path p : new Path[]{astGenDir, optimizerDir, lowerOrderDir, codegenDir, codeDir(astGenDir)}) {
             if (!Files.isDirectory(p)) {
                 throw new IOException("expected component folder not found: " + p
                         + " -- this orchestrator must be run from the directory it lives in, "
@@ -409,6 +414,10 @@ public class Compiler {
         if (diag.hasFatalError()) return diag.exitCode();
 
         if (stopHob) {
+            if (stage1Host) {
+                Files.writeString(Paths.get(output + ".meta"), "warnings=" + diag.warningCount() + "\n", StandardCharsets.UTF_8);
+                return diag.exitCode();
+            }
             printSummary(hobOut, "higher-order bytecode", diag);
             return diag.exitCode();
         }
@@ -416,13 +425,11 @@ public class Compiler {
         // ---- Stage 2: Optimizer (bytecode -> bytecode, shallow passes) ----
         buildDir = ensureBuildDir(buildDir, output);
         Path optOut = buildDir.resolve("2_optimizer.hob.txt");
-        String sharedBytecode = cache.bytecodeClassesHash(codeDir(astGenDir));   // stages 1-3 run with this one copy of the program classes
-        String key2 = CompilerCache.sha("S2\n" + cache.classesHash(codeDir(optimizerDir)) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
+        Path optimizerExe = stageExecutable(optimizerDir, "optimizer");
+        String key2 = CompilerCache.sha("S2\n" + CompilerCache.fileHash(optimizerExe) + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(hobOut));
-        // Stages 1-2 run inside this JVM as libraries (see runProgramStage / runFrontend); LowerOrderGenerator and Codegen are run as programs (runStageExecutable), like the assembler and linker.
-        // Stages 1-2 hand the BytecodeProgram itself on; its text (files, cache) is parsed back only when a stage has to run on a cache hit's output.
-        CompilerOut opt = runProgramStage(cache, "s2", key2, optimizerDir, "caspien.optimizer.Optimizer", "optimize", "hob", "compiler.config",
-                hobProgram, hobOut, optOut, diag, "Optimizer");
+        // Stage 1 (front end) runs inside this JVM as a library (see runFrontend); the Optimizer, LowerOrderGenerator and Codegen are run as programs (runStageExecutable), like the assembler and linker.
+        runStageExecutable(cache, "s2", key2, optimizerDir, optimizerExe, hobOut, optOut, diag, "Optimizer");   // the front end's text goes in as a file, the optimised HOB comes out as a file
         if (diag.hasFatalError()) return diag.exitCode();
 
         // ---- Stage 3: LowerOrderGenerator (bytecode -> low-order bytecode) ----

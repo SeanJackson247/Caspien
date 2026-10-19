@@ -1,0 +1,28 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+/** The notes/warnings a pass reports (Java `Messages`): whole lines, printed to stderr by Main in order. */
+@pub
+struct Messages{@pub{
+	lines: owns some mut ObjectList<String>
+}}
+
+@pub
+@throws
+impl constructor for Messages() self{
+	?catch(e){ throw e }
+	let l = mut ? new ObjectList:<String>()
+	return Messages{lines= l}
+}
+
+@pub
+impl Messages{
+	/** Java `add(line)`: appends a copy of `line`. */
+	@pub
+	@throws
+	func add(_self: ref some mut self, line: ref some imut String) void{
+		?catch(e){ throw e }
+		let c = mut ? line.sub(line, 0, line.length(line))
+		? _self.lines.add(_self.lines, c)
+	}
+}

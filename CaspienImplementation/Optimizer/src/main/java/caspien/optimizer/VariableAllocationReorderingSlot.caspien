@@ -1,0 +1,13 @@
+/** One leading ALLOC line with its sort keys (alignment, use weight); `pos` is the program index of the line (Java held the statement). */
+@pub
+struct VariableAllocationReorderingSlot{@pub{
+	idx: mut u64
+	pos: mut u64
+	align: mut u64
+	weight: mut u64
+}}
+
+@pub
+impl constructor for VariableAllocationReorderingSlot(idx: mut u64, pos: mut u64, align: mut u64, weight: mut u64) self{
+	return VariableAllocationReorderingSlot{idx= idx, pos= pos, align= align, weight= weight}
+}

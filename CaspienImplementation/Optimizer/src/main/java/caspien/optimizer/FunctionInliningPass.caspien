@@ -1,0 +1,611 @@
+import "stdlib/string.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "InlineHob.caspien"
+import "InlineState.caspien"
+import "InlineAnalyse.caspien"
+import "InlineExpand.caspien"
+
+/**
+ * Function inlining (port of FunctionInliningPass.java + FunctionInliningCallee/Ctx/Frame/Ret). Worker `inline`.
+ * A direct call "CC_START / args / CALL f / CC_END [PUSH_RET T]" is replaced by the body of f (rules: Java class comment, Optimizer/README.md).
+ * Design of the port: every token text is interned to an id (InlineHob.caspien) and the program is worked on as `Ls` lines of ids; the result is turned
+ * back into statements at the end (lines the pass did not touch are moved over, the others are scanned from their tokens). The pass keeps state between
+ * its calls in the optimizer loop (rounds done, fresh-name counter, growth budgets, @inline bookkeeping): `FunctionInliningState`, created once by the caller.
+ * Not ported: the CASPIEN_INLINE_WHY debug messages (the environment cannot be read), the tokens' file/line of rebuilt lines.
+ */
+@pub
+struct FunctionInliningPass{@pub{
+}}
+
+@pub
+impl constructor for FunctionInliningPass() self{
+	return FunctionInliningPass{}
+}
+
+@pub
+impl FunctionInliningPass{
+	/** A fresh state (one per optimizer run). */
+	@pub
+	@throws
+	static func newState() owns some mut FunctionInliningState{
+		?catch(e){ throw e }
+		let s = mut ? new FunctionInliningState()
+		return s
+	}
+
+	/** Java anyInlineDecorator: some FUNC_DECORATE line names @inline. */
+	static func anyInlineDecorator(program: ref some imut BytecodeProgram) bool{
+		?catch(e){ return false }
+		let n = mut program.size(program)
+		for i in 0..n{
+			if VarAnalysis.isMn(program, i, "FUNC_DECORATE"){
+				let st = mut ? program.items.getSome(program.items, i)
+				if st.size(st) >= 2{
+					let t = mut ? st.items.getSome(st.items, 1)
+					if t.text.equals(t.text, "@inline"){
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+
+	/** Java run(lines): rounds of inlining until the preset's depth is used up or nothing changes. */
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, cfg: ref imut InlineConfig, msgs: ref mut Messages, st: ref mut FunctionInliningState) mut bool{
+		?catch(e){ throw e }
+		let enabled = mut false
+		let mCallee = mut wrap:<s64>(0)
+		let mDepth = mut wrap:<s64>(0)
+		let mGrowth = mut wrap:<s64>(0)
+		let mGFactor = mut wrap:<s64>(0)
+		let mTFactor = mut wrap:<s64>(0)
+		let mMulti = mut wrap:<s64>(0)
+		match Some(cfg){
+			enabled = cfg.enabled
+			mCallee = cfg.maxCalleeLines
+			mDepth = cfg.maxDepth
+			mGrowth = cfg.maxGrowth
+			mGFactor = cfg.growthFactor
+			mTFactor = cfg.totalFactor
+			mMulti = cfg.maxMultiCalleeLines
+		}
+		let anyInl = mut false
+		match Some(program){ anyInl = FunctionInliningPass.anyInlineDecorator(program) }
+		let depthN = mut 0
+		if mDepth > 0{
+			depthN = wrap:<u64>(mDepth)
+		}
+		let maxRounds = mut 0
+		if enabled{
+			maxRounds = depthN
+			if anyInl &&then maxRounds < 8{
+				maxRounds = 8
+			}
+		} else if anyInl{
+			maxRounds = 8
+		}
+		let rd = mut 0
+		match Some(st){ rd = st.roundsDone }
+		if rd >= maxRounds{
+			return false
+		}
+		match Some(st){
+			st.cfgEnabled = enabled
+			st.cfgMaxCallee = FunctionInliningPass.nonNeg(mCallee)
+			st.cfgMaxDepth = depthN
+			st.cfgMaxGrowth = FunctionInliningPass.nonNeg(mGrowth)
+			st.cfgGrowthFactor = FunctionInliningPass.nonNeg(mGFactor)
+			st.cfgTotalFactor = FunctionInliningPass.nonNeg(mTFactor)
+			st.cfgMulti = FunctionInliningPass.nonNeg(mMulti)
+			st.lsA.clear(st.lsA)
+		}
+		match Some(st){
+			match Some(program){ ? HbIO.load(st.h, program, st.lsA) }
+		}
+		let any = mut false
+		for g in 0..4000000000{
+			let rd2 = mut 0
+			match Some(st){ rd2 = st.roundsDone }
+			if rd2 >= maxRounds{
+				break
+			}
+			let ch = mut false
+			match Some(st){
+				ch = ? FunctionInliningPass.round(st)
+			}
+			if ch == false{
+				break
+			}
+			any = true
+			match Some(st){ st.roundsDone += 1 }
+		}
+		if any == false{
+			return false
+		}
+		let built = mut ? new BytecodeProgram()
+		match Some(st){
+			built = ? HbIO.build(st.h, st.lsA, program)
+		}
+		match Some(program){
+			match Some(built){ program.items = built.items }
+		}
+		return true
+	}
+
+	static func nonNeg(v: mut s64) mut u64{
+		if v < 0{
+			return 0
+		}
+		return wrap:<u64>(v)
+	}
+
+	/** Java round(L): every call site whose callee (as it stands now) is eligible is inlined. True when something changed (then `dst` holds the new program). */
+	@pub
+	@throws
+	static func round(st: ref some mut FunctionInliningState) mut bool{
+		?catch(e){ throw e }
+		let nl = mut st.lsA.n(st.lsA)
+		// fresh-name counter: above every numbered label / $for_range_ name
+		let maxNum = mut 0
+		let ntk = mut st.lsA.toks.n
+		for q in 0..ntk{
+			let nv = mut st.h.numOf(st.h, st.lsA.toks.get(st.lsA.toks, q))
+			if nv > 0 &&then nv - 1 > maxNum{
+				maxNum = nv - 1
+			}
+		}
+		if maxNum + 1 > st.fresh{
+			st.fresh = maxNum + 1
+		}
+		// functions
+		st.fnPairs.n = 0
+		let start = mut 0
+		let have = mut false
+		for i in 0..nl{
+			let m = mut IU.mn(st, st.lsA, i)
+			if m == st.h.FUNC_START{
+				start = i
+				have = true
+			} else if m == st.h.FUNC_END &&then have{
+				? st.fnPairs.push(st.fnPairs, start)
+				? st.fnPairs.push(st.fnPairs, i)
+				have = false
+			}
+		}
+		let nf = mut (st.fnPairs.n / 2)
+		if st.hasOrig == false{
+			st.origProgram = nl
+			st.hasOrig = true
+			for k in 0..nf{
+				let f0 = mut st.fnPairs.get(st.fnPairs, k * 2)
+				let f1 = mut st.fnPairs.get(st.fnPairs, k * 2 + 1)
+				? VX.setG(st.origSize, st.lsA.tok(st.lsA, f0, 1), f1 - f0 + 1)
+			}
+		}
+		// name -> function (later duplicates win), call graph
+		let idc = mut (st.h.cnt + 1)
+		? VX.zeroTo(st.byName, idc)
+		? VX.zeroTo(st.cycMk, idc)
+		? VX.zeroTo(st.seenMk, idc)
+		? VX.zeroTo(st.callCnt, idc)
+		for k in 0..nf{
+			let f0 = mut st.fnPairs.get(st.fnPairs, k * 2)
+			st.byName.set(st.byName, st.lsA.tok(st.lsA, f0, 1), k + 1)
+		}
+		st.edgeList.n = 0
+		? VX.zeroTo(st.eOff, nf)
+		? VX.zeroTo(st.eN, nf)
+		for k in 0..nf{
+			let f0 = mut st.fnPairs.get(st.fnPairs, k * 2)
+			let f1 = mut st.fnPairs.get(st.fnPairs, k * 2 + 1)
+			st.eOff.set(st.eOff, k, st.edgeList.n)
+			let lo = mut (f0 + 1)
+			for i in lo..f1{
+				if IU.isN(st, st.lsA, i, 2, st.h.CALL){
+					? st.edgeList.push(st.edgeList, st.lsA.tok(st.lsA, i, 1))
+				}
+			}
+			st.eN.set(st.eN, k, st.edgeList.n - st.eOff.get(st.eOff, k))
+		}
+		// functions on a call cycle
+		st.cycStamp += 1
+		for k in 0..nf{
+			let f0 = mut st.fnPairs.get(st.fnPairs, k * 2)
+			let nm = mut st.lsA.tok(st.lsA, f0, 1)
+			if st.byName.get(st.byName, nm) != k + 1{
+				continue
+			}
+			st.seenStamp += 1
+			st.dfsStack.n = 0
+			let eo = mut st.eOff.get(st.eOff, k)
+			let en = mut st.eN.get(st.eN, k)
+			for q in 0..en{
+				? st.dfsStack.push(st.dfsStack, st.edgeList.get(st.edgeList, eo + q))
+			}
+			let dg = mut (st.edgeList.n * 2 + 16)
+			for g in 0..dg{
+				if st.dfsStack.n == 0{
+					break
+				}
+				let x = mut st.dfsStack.pop(st.dfsStack)
+				if st.seenMk.get(st.seenMk, x) == st.seenStamp{
+					continue
+				}
+				? VX.setG(st.seenMk, x, st.seenStamp)
+				if x == nm{
+					? VX.setG(st.cycMk, nm, st.cycStamp)
+					break
+				}
+				let kx = mut st.byName.get(st.byName, x)
+				if kx > 0{
+					let ko = mut st.eOff.get(st.eOff, kx - 1)
+					let kn = mut st.eN.get(st.eN, kx - 1)
+					for q in 0..kn{
+						? st.dfsStack.push(st.dfsStack, st.edgeList.get(st.edgeList, ko + q))
+					}
+				}
+			}
+		}
+		// callee analysis
+		st.parList.n = 0
+		st.alList.n = 0
+		st.codeList.n = 0
+		st.lbList.n = 0
+		st.glList.n = 0
+		st.retList.n = 0
+		? VX.zeroTo(st.cName, nf)
+		? VX.zeroTo(st.cFl, nf)
+		? VX.zeroTo(st.cLines, nf)
+		? VX.zeroTo(st.cCalls, nf)
+		? VX.zeroTo(st.cPos, nf)
+		? VX.zeroTo(st.cWhyC, nf)
+		? VX.zeroTo(st.cWhyA, nf)
+		? VX.zeroTo(st.cWhyB, nf)
+		? VX.zeroTo(st.cParOff, nf)
+		? VX.zeroTo(st.cParN, nf)
+		? VX.zeroTo(st.cAlOff, nf)
+		? VX.zeroTo(st.cAlN, nf)
+		? VX.zeroTo(st.cCodeOff, nf)
+		? VX.zeroTo(st.cCodeN, nf)
+		? VX.zeroTo(st.cLbOff, nf)
+		? VX.zeroTo(st.cLbN, nf)
+		? VX.zeroTo(st.cGlOff, nf)
+		? VX.zeroTo(st.cGlN, nf)
+		? VX.zeroTo(st.cRetOff, nf)
+		? VX.zeroTo(st.cRetN, nf)
+		for k in 0..nf{
+			let f0 = mut st.fnPairs.get(st.fnPairs, k * 2)
+			let f1 = mut st.fnPairs.get(st.fnPairs, k * 2 + 1)
+			let nm = mut st.lsA.tok(st.lsA, f0, 1)
+			let cyc = mut false
+			if st.cycMk.get(st.cycMk, nm) == st.cycStamp{
+				cyc = true
+			}
+			? InlAna.analyse(st, st.lsA, k, f0, f1, cyc)
+		}
+		for i in 0..nl{
+			if IU.isN(st, st.lsA, i, 2, st.h.CALL){
+				? VX.addG(st.callCnt, st.lsA.tok(st.lsA, i, 1), 1)
+			}
+		}
+		for k in 0..nf{
+			st.cCalls.set(st.cCalls, k, st.callCnt.get(st.callCnt, st.cName.get(st.cName, k)))
+		}
+		// expansion, function by function
+		st.lsB.clear(st.lsB)
+		let changed = mut false
+		let pos = mut 0
+		for k in 0..nf{
+			let f0 = mut st.fnPairs.get(st.fnPairs, k * 2)
+			let f1 = mut st.fnPairs.get(st.fnPairs, k * 2 + 1)
+			? st.lsB.copyRange(st.lsB, st.lsA, pos, f0, true)
+			st.caller = st.lsA.tok(st.lsA, f0, 1)
+			st.callerNames.begin(st.callerNames)
+			let lo = mut (f0 + 1)
+			for i in lo..f1{
+				let m = mut IU.mn(st, st.lsA, i)
+				if m == st.h.ALLOC || m == st.h.ARG{
+					if st.lsA.ntok(st.lsA, i) >= 3{
+						? st.callerNames.put(st.callerNames, st.lsA.tok(st.lsA, i, 1), 1)
+					}
+				}
+			}
+			st.newAllocs.clear(st.newAllocs)
+			st.added = 0
+			st.changed = false
+			? InlExp.expandRange(st, st.lsA, f0 + 1, f1)
+			if st.changed{
+				changed = true
+				? st.lsB.copyLine(st.lsB, st.lsA, f0, true)
+				let bn = mut st.buf.n(st.buf)
+				let p = mut 0
+				for g in 0..bn{
+					if p >= bn{
+						break
+					}
+					let m = mut IU.mn(st, st.buf, p)
+					if m == st.h.FUNC_DECORATE || m == st.h.RETURNS || m == st.h.ARG || m == st.h.ALLOC || m == st.h.ALLOC_STATIC{
+						? st.lsB.copyLine(st.lsB, st.buf, p, true)
+						p += 1
+					} else {
+						break
+					}
+				}
+				let na = mut st.newAllocs.n(st.newAllocs)
+				? st.lsB.copyRange(st.lsB, st.newAllocs, 0, na, true)
+				? st.lsB.copyRange(st.lsB, st.buf, p, bn, true)
+				? st.lsB.copyLine(st.lsB, st.lsA, f1, true)
+				? VX.addG(st.grown, st.caller, st.added)
+			} else {
+				let f1p = mut (f1 + 1)
+				? st.lsB.copyRange(st.lsB, st.lsA, f0, f1p, true)
+			}
+			pos = f1 + 1
+		}
+		? st.lsB.copyRange(st.lsB, st.lsA, pos, nl, true)
+		if changed{
+			let nb = mut st.lsB.n(st.lsB)
+			st.lsA.clear(st.lsA)
+			? st.lsA.copyRange(st.lsA, st.lsB, 0, nb, true)
+		}
+		return changed
+	}
+
+	/** Appends the text of a refusal reason (see InlineAnalyse.caspien for the codes). */
+	@throws
+	static func appendWhy(h: ref some imut Hb, sb: ref some mut String, code: mut u64, a: mut u64, b: mut u64) void{
+		?catch(e){ throw e }
+		if code == 1{ ? sb.append(sb, "non-code line") }
+		else if code == 2{
+			? sb.append(sb, "decorator ")
+			if a == 0{ ? sb.append(sb, "null") } else { ? h.appendTo(h, sb, a) }
+		}
+		else if code == 3{
+			? sb.append(sb, "parameter ")
+			? h.appendTo(h, sb, a)
+			? sb.append(sb, " redeclared with another type")
+		}
+		else if code == 4{
+			? sb.append(sb, "local ")
+			? h.appendTo(h, sb, a)
+			? sb.append(sb, " declared twice with different types")
+		}
+		else if code == 5{ ? sb.append(sb, "GT_UNWIND shape") }
+		else if code == 6{ ? sb.append(sb, "PUSH_LABEL of something other than a landing pad / catch") }
+		else if code == 7{ ? h.appendTo(h, sb, a) }
+		else if code == 8{ ? sb.append(sb, "no RETURNS") }
+		else if code == 9{ ? sb.append(sb, "main") }
+		else if code == 10{ ? sb.append(sb, "call cycle") }
+		else if code == 11{ ? sb.append(sb, "too long") }
+		else if code == 12{ ? sb.append(sb, "@dont(inline)") }
+		else if code == 13{ ? sb.append(sb, "inlining is off and the function is not marked @inline") }
+		else if code == 14{
+			? sb.append(sb, "param type ")
+			? h.appendTo(h, sb, a)
+		}
+		else if code == 15{ ? sb.append(sb, "duplicate parameter names") }
+		else if code == 16{
+			? sb.append(sb, "label ")
+			? h.appendTo(h, sb, a)
+			? sb.append(sb, " not defined in callee")
+		}
+		else if code == 17{
+			? sb.append(sb, "local name ")
+			? h.appendTo(h, sb, a)
+			? sb.append(sb, " used in an unrecognised position (")
+			? h.appendTo(h, sb, b)
+			? sb.append(sb, ")")
+		}
+		else if code == 18{ ? sb.append(sb, "RET shape") }
+	}
+
+	/** Iteration order of a Java HashMap filled by `put` in the order of `keys` (their 32-bit hashes): order[z] = the put index visited z-th. */
+	@throws
+	static func hashOrder(keys: ref some imut Vec, m: mut u64, order: ref some mut Vec, bk: ref some mut Vec) void{
+		?catch(e){ throw e }
+		? VX.zeroTo(order, m + 1)
+		? VX.zeroTo(bk, m + 1)
+		let cap = mut 16
+		for z in 0..m{
+			let hz = mut keys.get(keys, z)
+			let sp = mut bits_xor(hz, bits_right(hz, 16))
+			let bz0 = mut bits_and(sp, cap - 1)
+			let same = mut 0
+			for j in 0..z{
+				let hj = mut keys.get(keys, j)
+				let spj = mut bits_xor(hj, bits_right(hj, 16))
+				if bits_and(spj, cap - 1) == bz0{
+					same += 1
+				}
+			}
+			if same >= 8 &&then cap < 64{
+				cap = cap * 2
+			}
+			if (z + 1) * 4 > cap * 3{
+				cap = cap * 2
+			}
+		}
+		for z in 0..m{
+			let hz = mut keys.get(keys, z)
+			let sp = mut bits_xor(hz, bits_right(hz, 16))
+			order.set(order, z, z)
+			bk.set(bk, z, bits_and(sp, cap - 1))
+		}
+		for z in 1..m{
+			let zz = mut z
+			for q in 0..m{
+				if zz == 0{
+					break
+				}
+				let prev = mut (zz - 1)
+				let bp = mut bk.get(bk, prev)
+				let bz = mut bk.get(bk, zz)
+				if bp > bz{
+					let op = mut order.get(order, prev)
+					let oz = mut order.get(order, zz)
+					order.set(order, prev, oz)
+					order.set(order, zz, op)
+					bk.set(bk, prev, bz)
+					bk.set(bk, zz, bp)
+					zz -= 1
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	/** Fills dfsStack with the names to report (HashMap order, then program order) and callCnt / cycMk / seenMk; returns their number. */
+	@throws
+	static func reportPrep(st: ref some mut FunctionInliningState) mut u64{
+		?catch(e){ throw e }
+		let idc = mut (st.h.cnt + 1)
+		? VX.zeroTo(st.callCnt, idc)
+		? VX.zeroTo(st.cycMk, idc)
+		? VX.zeroTo(st.seenMk, idc)
+		// cycMk = present in the copy, seenMk = its position id, dfsStack = names in iteration order
+		let nf = mut st.fOrder.n
+		? VX.zeroTo(st.eOff, nf + 1)
+		for z in 0..nf{
+			st.eOff.set(st.eOff, z, st.h.javaHash(st.h, st.fOrder.get(st.fOrder, z)))
+		}
+		? FunctionInliningPass.hashOrder(st.eOff, nf, st.eN, st.edgeList)
+		st.dfsStack.n = 0
+		for z in 0..nf{
+			let nm = mut st.fOrder.get(st.fOrder, st.eN.get(st.eN, z))
+			? st.dfsStack.push(st.dfsStack, nm)
+			? VX.setG(st.cycMk, nm, 1)
+			? VX.setG(st.seenMk, nm, st.fPos.get(st.fPos, nm))
+		}
+		let nl = mut st.rep.n(st.rep)
+		for i in 0..nl{
+			if IU.isN(st, st.rep, i, 2, st.h.CALL){
+				? VX.addG(st.callCnt, st.rep.tok(st.rep, i, 1), 1)
+			}
+			if IU.mn(st, st.rep, i) == st.h.FUNC_DECORATE &&then st.rep.ntok(st.rep, i) == 3 &&then st.rep.tok(st.rep, i, 1) == st.h.atInline{
+				let j = mut i
+				for g in 0..i{
+					if j > 0 &&then IU.isN(st, st.rep, j, 2, st.h.FUNC_START) == false{
+						j -= 1
+					} else {
+						break
+					}
+				}
+				let nm = mut st.rep.tok(st.rep, j, 1)
+				let pid = mut ? IU.unq(st, st.rep.tok(st.rep, i, 2))
+				if st.cycMk.get(st.cycMk, nm) == 0{
+					? VX.setG(st.cycMk, nm, 1)
+					? VX.setG(st.seenMk, nm, pid)
+					? st.dfsStack.push(st.dfsStack, nm)
+				} else if st.seenMk.get(st.seenMk, nm) == 0{
+					? VX.setG(st.seenMk, nm, pid)
+				}
+			}
+		}
+		return st.dfsStack.n
+	}
+
+	/**
+	 * Java reportForced: once after the optimizer has settled, what @inline did. "[note] file:line - @inline: f inlined at K call sites"; a call to an
+	 * @inline function that is still a call is a "[warning] ... @inline not honoured at N call sites of f (K inlined): <reason>".
+	 */
+	@pub
+	@throws
+	static func reportForced(program: ref imut BytecodeProgram, cfg: ref imut InlineConfig, msgs: ref mut Messages, st: ref mut FunctionInliningState) void{
+		?catch(e){ throw e }
+		match Some(st){
+			st.rep.clear(st.rep)
+			match Some(program){ ? HbIO.load(st.h, program, st.rep) }
+		}
+		// the map being iterated is a copy of the HashMap of forced positions (hash order), later names are appended in program order
+		let nOrd = mut 0
+		match Some(st){ nOrd = ? FunctionInliningPass.reportPrep(st) }
+		for z in 0..nOrd{
+			let f = mut 0
+			let inl = mut 0
+			let rem = mut 0
+			let pid = mut 0
+			let wc = mut 0
+			let wa = mut 0
+			let wb = mut 0
+			match Some(st){
+				f = st.dfsStack.get(st.dfsStack, z)
+				inl = st.fCnt.get(st.fCnt, f)
+				rem = st.callCnt.get(st.callCnt, f)
+				pid = st.seenMk.get(st.seenMk, f)
+				wc = st.fWhyC.get(st.fWhyC, f)
+				wa = st.fWhyA.get(st.fWhyA, f)
+				wb = st.fWhyB.get(st.fWhyB, f)
+			}
+			if inl > 0 &&then rem == 0{
+				let sb = mut ? String.from("[note] ")
+				match Some(st){
+					if pid != 0{
+						? st.h.appendTo(st.h, sb, pid)
+						? sb.append(sb, " - ")
+					}
+					? sb.append(sb, "@inline: ")
+				}
+				? FunctionInliningPass.appendShown(st, sb, f)
+				? sb.append(sb, " inlined at ")
+				? sb.appendU64(sb, inl)
+				? sb.append(sb, " call site")
+				if inl != 1{
+					? sb.append(sb, "s")
+				}
+				match Some(msgs){ ? msgs.add(msgs, sb) }
+			} else if rem > 0{
+				let sb = mut ? String.from("[warning] ")
+				match Some(st){
+					if pid != 0{
+						? st.h.appendTo(st.h, sb, pid)
+						? sb.append(sb, " - ")
+					}
+				}
+				? sb.append(sb, "@inline not honoured at ")
+				? sb.appendU64(sb, rem)
+				? sb.append(sb, " call site")
+				if rem != 1{
+					? sb.append(sb, "s")
+				}
+				? sb.append(sb, " of ")
+				? FunctionInliningPass.appendShown(st, sb, f)
+				? sb.append(sb, " (")
+				? sb.appendU64(sb, inl)
+				? sb.append(sb, " inlined): ")
+				if wc != 0{
+					match Some(st){ ? FunctionInliningPass.appendWhy(st.h, sb, wc, wa, wb) }
+				} else {
+					? sb.append(sb, "the call is somewhere inlined code cannot go: an enclosing expression with values pending, an argument that is not a scalar, ...")
+				}
+				match Some(msgs){ ? msgs.add(msgs, sb) }
+			}
+		}
+	}
+
+	/** The function name up to the first "__" (generic / copy suffixes are not shown). */
+	@throws
+	static func appendShown(st: ref mut FunctionInliningState, sb: ref some mut String, f: mut u64) void{
+		?catch(e){ throw e }
+		match Some(st){
+			let n = mut st.h.length(st.h, f)
+			let cut = mut n
+			if n >= 2{
+				let hi = mut (n - 1)
+				for q in 0..hi{
+					if st.h.ch(st.h, f, q) == 95 &&then st.h.ch(st.h, f, q + 1) == 95{
+						cut = q
+						break
+					}
+				}
+			}
+			? st.h.appendRangeTo(st.h, sb, f, 0, cut)
+		}
+	}
+}

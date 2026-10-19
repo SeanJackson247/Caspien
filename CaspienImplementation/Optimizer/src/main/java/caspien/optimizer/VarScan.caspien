@@ -1,0 +1,331 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "NumText.caspien"
+import "VarAnalysis.caspien"
+import "ConstsLit.caspien"
+
+/**
+ * Port of VarAnalysis.scan + VarAnalysisVar (second half of VarAnalysis.java), for VariableElisionPass and VariableShiftingPass.
+ * One function's local scalar variables whose every mention is: their own "ALLOC name T", a read "PUSH name T" (not followed by ADDR_OF) or a
+ * constant assignment "ADDR name T / PUSH literal T / ASSIGN". Variables are numbered in order of their first ALLOC (Java LinkedHashMap order);
+ * per variable `allocs`, `allocIdx` (the last ALLOC line), `bad`, `tb` (base index of the ALLOC type), and the sorted line lists of the reads and
+ * assigns (CSR: readsOf(v) = rdLines[rdOff[v] .. rdOff[v+1]) ).
+ */
+@pub
+struct VarScan{@pub{
+	names: owns some mut ObjectList<String>
+	map: owns some mut StringScalarMap<u64>
+	allocs: owns some mut Vec
+	allocIdx: owns some mut Vec
+	bad: owns some mut Vec
+	tb: owns some mut Vec
+	rdVar: owns some mut Vec
+	rdLine: owns some mut Vec
+	asVar: owns some mut Vec
+	asLine: owns some mut Vec
+	rdOff: owns some mut Vec
+	rdLines: owns some mut Vec
+	asOff: owns some mut Vec
+	asLines: owns some mut Vec
+}}
+
+@pub
+@throws
+impl constructor for VarScan() self{
+	?catch(e){ throw e }
+	let names = mut ? new ObjectList:<String>()
+	let map = mut ? new StringScalarMap:<u64>()
+	let a1 = mut ? new Vec()
+	let a2 = mut ? new Vec()
+	let a3 = mut ? new Vec()
+	let a4 = mut ? new Vec()
+	let a5 = mut ? new Vec()
+	let a6 = mut ? new Vec()
+	let a7 = mut ? new Vec()
+	let a8 = mut ? new Vec()
+	let a9 = mut ? new Vec()
+	let a10 = mut ? new Vec()
+	let a11 = mut ? new Vec()
+	let a12 = mut ? new Vec()
+	return VarScan{names= names, map= map, allocs= a1, allocIdx= a2, bad= a3, tb= a4, rdVar= a5, rdLine= a6, asVar= a7, asLine= a8, rdOff= a9, rdLines= a10, asOff= a11, asLines= a12}
+}
+
+@pub
+impl VarScan{
+	/** Number of variables. */
+	@pub
+	static func count(sc: ref some imut VarScan) mut u64{
+		return sc.names.size(sc.names)
+	}
+
+	/** Pass-1 step for line `i`: registers "ALLOC name T" (3 tokens, name not starting with $, T a scalar type). `sc` is nullable: it is re-matched after every mutation. */
+	@pub
+	@throws
+	static func scanAlloc(program: ref some imut BytecodeProgram, i: mut u64, sc: ref mut VarScan) void{
+		?catch(e){ throw e }
+		if VarAnalysis.isMn(program, i, "ALLOC") == false{
+			return
+		}
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) != 3{
+			return
+		}
+		let t1 = mut ? st.items.getSome(st.items, 1)
+		let t2 = mut ? st.items.getSome(st.items, 2)
+		if t1.text.startsWith(t1.text, "$"){
+			return
+		}
+		let bi = mut NumText.baseIndex(t2.text)
+		if bi == 0{
+			return
+		}
+		let exists = mut false
+		let idx = mut 0
+		match Some(sc){
+			if sc.map.containsKey(sc.map, t1.text){
+				exists = true
+				idx = sc.map.getOrDefault(sc.map, t1.text, 0)
+			} else{
+				idx = sc.names.size(sc.names)
+			}
+		}
+		if exists{
+			match Some(sc){
+				sc.allocs.set(sc.allocs, idx, sc.allocs.get(sc.allocs, idx) + 1)
+				sc.allocIdx.set(sc.allocIdx, idx, i)
+				sc.tb.set(sc.tb, idx, bi)
+			}
+			return
+		}
+		let k1 = mut ? t1.text.sub(t1.text, 0, t1.text.length(t1.text))
+		let k2 = mut ? k1.sub(k1, 0, k1.length(k1))
+		match Some(sc){ ? sc.names.add(sc.names, k1) }
+		match Some(sc){ ? sc.map.put(sc.map, k2, idx) }
+		match Some(sc){ ? sc.allocs.push(sc.allocs, 1) }
+		match Some(sc){ ? sc.allocIdx.push(sc.allocIdx, i) }
+		match Some(sc){ ? sc.bad.push(sc.bad, 0) }
+		match Some(sc){ ? sc.tb.push(sc.tb, bi) }
+	}
+
+	/** Number of tokens of statement `i`. */
+	@pub
+	static func sizeOf(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		return st.size(st)
+	}
+
+	/** Which variable (if any) token `t` of line `i` names: 0 none, else (index + 1) * 2 + (1 when the token IS the variable's name, 0 when it is `name.member`). */
+	@pub
+	static func lookupTok(program: ref some imut BytecodeProgram, i: mut u64, t: mut u64, sc: ref some imut VarScan) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		let tk = mut ? st.items.getSome(st.items, t)
+		if tk.kind != BytecodeTokenKind.CODE{
+			return 0
+		}
+		if sc.map.containsKey(sc.map, tk.text){
+			let idx = mut sc.map.getOrDefault(sc.map, tk.text, 0)
+			return (idx + 1) * 2 + 1
+		}
+		let dot = mut tk.text.indexOf(tk.text, mut '.')
+		if dot > 0{
+			let pre = mut ? tk.text.sub(tk.text, 0, wrap:<u64>(dot))
+			if sc.map.containsKey(sc.map, pre){
+				let idx = mut sc.map.getOrDefault(sc.map, pre, 0)
+				return (idx + 1) * 2
+			}
+		}
+		return 0
+	}
+
+	/** Java isConstAssign for "ADDR x T" at i (x of base index `vb`). `tmp` is scratch (nullable: the literal parse may free). */
+	@pub
+	static func isConstAssign(program: ref some imut BytecodeProgram, i: mut u64, vb: mut u64, tmp: ref mut ConstsLit) bool{
+		?catch(e){ return false }
+		if VarAnalysis.isMn(program, i + 2, "ASSIGN") == false{
+			return false
+		}
+		let sa = mut ? program.items.getSome(program.items, i)
+		let ta = mut ? sa.items.getSome(sa.items, 2)
+		if NumText.baseIndex(ta.text) != vb{
+			return false
+		}
+		let s1 = mut ? program.items.getSome(program.items, i + 1)
+		ConstsLit.lit(s1, tmp, false)
+		let ok = mut false
+		let bi = mut 0
+		let iv = mut 0
+		match Some(tmp){
+			ok = tmp.ok
+			bi = tmp.bi
+			iv = tmp.iv
+		}
+		if ok == false{
+			return false
+		}
+		if vb != bi{
+			return false
+		}
+		if ConstsLit.isIntB(vb) && ConstsLit.signedB(vb) && ConstsLit.widthB(vb) < 64{
+			if bits_and(iv, bits_left(1, 63)) != 0{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Pass-2 step: classifies the mention (token t of line i names variable `code`): 0 skip (its own ALLOC), 1 read, 2 constant assignment, 3 bad. */
+	@pub
+	static func mention(program: ref some imut BytecodeProgram, i: mut u64, t: mut u64, e: mut u64, code: mut u64, sc: ref some imut VarScan, tmp: ref mut ConstsLit) mut u64{
+		let idx = mut (code / 2 - 1)
+		let exact = mut (code % 2 == 1)
+		if i == sc.allocIdx.get(sc.allocIdx, idx) && t == 1{
+			return 0
+		}
+		if t != 1 || exact == false{
+			return 3
+		}
+		if VarScan.sizeOf(program, i) != 3{
+			return 3
+		}
+		if VarAnalysis.isMn(program, i, "PUSH"){
+			if i + 1 <= e{
+				if VarAnalysis.isMn(program, i + 1, "ADDR_OF"){
+					return 3
+				}
+			}
+			return 1
+		}
+		if VarAnalysis.isMn(program, i, "ADDR") && i + 2 <= e{
+			let vb = mut sc.tb.get(sc.tb, idx)
+			if VarScan.isConstAssign(program, i, vb, tmp){
+				return 2
+			}
+		}
+		return 3
+	}
+
+	/** Builds the per-variable CSR line lists from the raw event lists. */
+	@pub
+	@throws
+	static func index(sc: ref some mut VarScan) void{
+		?catch(e){ throw e }
+		let nv = mut sc.names.size(sc.names)
+		let nr = mut sc.rdVar.size(sc.rdVar)
+		let na = mut sc.asVar.size(sc.asVar)
+		? sc.rdOff.zero(sc.rdOff, nv + 1)
+		? sc.asOff.zero(sc.asOff, nv + 1)
+		for q in 0..nr{
+			let v = mut sc.rdVar.get(sc.rdVar, q)
+			sc.rdOff.set(sc.rdOff, v + 1, sc.rdOff.get(sc.rdOff, v + 1) + 1)
+		}
+		for q in 0..na{
+			let v = mut sc.asVar.get(sc.asVar, q)
+			sc.asOff.set(sc.asOff, v + 1, sc.asOff.get(sc.asOff, v + 1) + 1)
+		}
+		for v in 0..nv{
+			sc.rdOff.set(sc.rdOff, v + 1, sc.rdOff.get(sc.rdOff, v + 1) + sc.rdOff.get(sc.rdOff, v))
+			sc.asOff.set(sc.asOff, v + 1, sc.asOff.get(sc.asOff, v + 1) + sc.asOff.get(sc.asOff, v))
+		}
+		? sc.rdLines.zero(sc.rdLines, nr)
+		? sc.asLines.zero(sc.asLines, na)
+		let fillR = mut ? new Vec()
+		let fillA = mut ? new Vec()
+		? fillR.zero(fillR, nv)
+		? fillA.zero(fillA, nv)
+		for q in 0..nr{
+			let v = mut sc.rdVar.get(sc.rdVar, q)
+			let at = mut (sc.rdOff.get(sc.rdOff, v) + fillR.get(fillR, v))
+			sc.rdLines.set(sc.rdLines, at, sc.rdLine.get(sc.rdLine, q))
+			fillR.set(fillR, v, fillR.get(fillR, v) + 1)
+		}
+		for q in 0..na{
+			let v = mut sc.asVar.get(sc.asVar, q)
+			let at = mut (sc.asOff.get(sc.asOff, v) + fillA.get(fillA, v))
+			sc.asLines.set(sc.asLines, at, sc.asLine.get(sc.asLine, q))
+			fillA.set(fillA, v, fillA.get(fillA, v) + 1)
+		}
+	}
+
+	/** Java `VarAnalysis.scan(L, s, e)` for the function spanning lines s..e. `program` is nullable: the steps re-match it. */
+	@pub
+	@throws
+	static func scan(program: ref mut BytecodeProgram, s: mut u64, e: mut u64) owns some mut VarScan{
+		?catch(ex){ throw ex }
+		let sc = mut ? new VarScan()
+		let tmp = mut ? new ConstsLit()
+		let span = mut (e + 1 - s)
+		for k in 0..span{
+			match Some(program){ ? VarScan.scanAlloc(program, s + k, sc) }
+		}
+		let nv = mut sc.names.size(sc.names)
+		for v in 0..nv{
+			if sc.allocs.get(sc.allocs, v) != 1{
+				sc.bad.set(sc.bad, v, 1)
+			}
+		}
+		for k in 0..span{
+			let i = mut (s + k)
+			let m = mut 0
+			match Some(program){ m = VarScan.sizeOf(program, i) }
+			for t in 1..m{
+				let code = mut 0
+				match Some(program){ code = VarScan.lookupTok(program, i, t, sc) }
+				if code != 0{
+					let kind = mut 0
+					match Some(program){ kind = VarScan.mention(program, i, t, e, code, sc, tmp) }
+					let idx = mut (code / 2 - 1)
+					if kind == 1{
+						? sc.rdVar.push(sc.rdVar, idx)
+						? sc.rdLine.push(sc.rdLine, i)
+					} else if kind == 2{
+						? sc.asVar.push(sc.asVar, idx)
+						? sc.asLine.push(sc.asLine, i)
+					} else if kind == 3{
+						sc.bad.set(sc.bad, idx, 1)
+					}
+				}
+			}
+		}
+		? VarScan.index(sc)
+		return sc
+	}
+
+	// ---- statement/token helpers for the passes ----
+
+	/** A copy of the text of token `k` of statement `i`. */
+	@pub
+	@throws
+	static func copyTok(program: ref some imut BytecodeProgram, i: mut u64, k: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let st = mut ? program.items.getSome(program.items, i)
+		let tk = mut ? st.items.getSome(st.items, k)
+		let c = mut ? tk.text.sub(tk.text, 0, tk.text.length(tk.text))
+		return c
+	}
+
+	/** Replaces the text of token `k` of statement `i` (Java `withToken`, edited in place: the file/line/kind stay). */
+	@pub
+	@throws
+	static func setTokText(program: ref some mut BytecodeProgram, i: mut u64, k: mut u64, text: owns some mut String) void{
+		?catch(e){ throw e }
+		let st = mut ? program.items.getSome(program.items, i)
+		let tk = mut ? st.items.getSome(st.items, k)
+		tk.text = text
+	}
+
+	/** Statement `i` is a one-token line whose text starts with `@catch_` (Java hasCatchLabel test for one line). */
+	@pub
+	static func isCatchLabel(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		if st.size(st) != 1{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 0)
+		return t.text.startsWith(t.text, "@catch_")
+	}
+}

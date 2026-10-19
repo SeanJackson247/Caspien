@@ -1,0 +1,300 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/string.caspien"
+import "stdlib/fs.caspien"
+import "../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+// Process and file helpers of the Caspien orchestrator (Compiler.caspien). The externs are libc's popen/pclose/fgets/system under private
+// names, so their results can be tested as numbers (a NULL from fgets is 0).
+@link_name(popen)
+extern ioPopen(static imut string, static imut string) raw mut u8
+@link_name(pclose)
+extern ioPclose(raw mut u8) mut u32
+@link_name(fgets)
+extern ioFgets(raw mut char, mut s32, raw mut u8) mut u64
+@link_name(malloc)
+extern ioMalloc(mut u64) raw mut char
+@link_name(strstr)
+extern ioView(raw mut char, static imut string) static imut string
+@link_name(system)
+extern ioSystem(static imut string) mut u32
+
+@pub
+struct Io{@pub{
+}}
+
+@pub
+impl Io{
+	/** Index of the last '/' in `p`, or -1. */
+	@pub
+	static func lastSlash(p: ref some imut String) mut s64{
+		let:<mut s64> at = mut -1
+		let:<mut u64> n = mut 0
+		match Some(p){ n = p.length(p) }
+		for i in 0..n{
+			match Some(p){
+				if p.charAt(p, i) == '/'{
+					at = wrap:<s64>(i)
+				}
+			}
+		}
+		return at
+	}
+
+	/** The part of `p` before its last '/', or "." when there is none. */
+	@pub
+	static func pathDir(p: ref some imut String) owns mut String{
+		?catch(e){ return null }
+		let at = mut Io.lastSlash(p)
+		if at < 0{
+			let dot = mut ? String.from(".")
+			return dot
+		}
+		if at == 0{
+			let sl = mut ? String.from("/")
+			return sl
+		}
+		let head = mut ? new String()
+		match Some(p){ head = ? p.sub(p, 0, wrap:<u64>(at)) }
+		return head
+	}
+
+	/** The part of `p` after its last '/'. */
+	@pub
+	static func pathName(p: ref some imut String) owns mut String{
+		?catch(e){ return null }
+		let at = mut Io.lastSlash(p)
+		if at < 0{
+			let whole = mut ? new String()
+			match Some(p){ whole = ? p.substring(p, 0) }
+			return whole
+		}
+		let tail = mut ? new String()
+		match Some(p){ tail = ? p.sub(p, wrap:<u64>(at + 1), p.length(p)) }
+		return tail
+	}
+
+	/** Writes `s` to stderr. */
+	@pub
+	static func eprint(s: ref imut String) void{
+		?catch(e){ return }
+		match Some(s){
+			let cn = mut ? CName.from(s)
+			match Some(cn){
+				let t = cn.text
+				unsafe extern{
+					write(2, t, strlen(t))
+				}
+			}
+		}
+	}
+
+	@pub
+	static func eprintLit(t: static imut string) void{
+		unsafe extern{
+			write(2, t, strlen(t))
+		}
+	}
+
+	/** Writes `s` to stdout. */
+	@pub
+	static func oprint(s: ref imut String) void{
+		?catch(e){ return }
+		match Some(s){
+			let cn = mut ? CName.from(s)
+			match Some(cn){
+				let t = cn.text
+				unsafe extern{
+					write(1, t, strlen(t))
+				}
+			}
+		}
+	}
+
+	/** Writes `content` to the file `name` of the open directory `dir`, replacing it. */
+	@pub
+	@throws
+	static func writeIn(dir: ref imut Dir, name: ref imut String, content: ref imut String) void{
+		?catch(e){ throw e }
+		let done = mut false
+		match Some(name){
+			let cn = mut ? CName.from(name)
+			match Some(dir){
+				let f = mut ? File.open(dir, cn.text, Open.WRITE_TRUNC)
+				match Some(f){
+					match Some(content){ ? File.writeString(f, content) }
+					done = true
+				}
+			}
+		}
+		if done == false{
+			throw "[io error] cannot write file"
+		}
+	}
+
+	/** Reads the whole file `name` of the open directory `dir`. */
+	@pub
+	@throws
+	static func readIn(dir: ref imut Dir, name: ref imut String) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let done = mut false
+		match Some(name){
+			let cn = mut ? CName.from(name)
+			match Some(dir){
+				let f = mut ? File.open(dir, cn.text, Open.READ)
+				match Some(f){
+					out = ? File.readAll(f)
+					done = true
+				}
+			}
+		}
+		if done == false{
+			throw "[io error] cannot read file"
+		}
+		return out
+	}
+
+	/** The whole file at `path` (relative to the working directory or absolute). */
+	@pub
+	@throws
+	static func readFile(path: ref imut String) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let:<owns mut String> ip = mut null
+		let:<owns mut String> inName = mut null
+		match Some(path){ ip = Io.pathDir(path) }
+		match Some(path){ inName = Io.pathName(path) }
+		if true{
+			match Some(ip){
+				let ipc = mut ? CName.from(ip)
+				match Some(ipc){
+					let rp = mut ? new RootPath(ipc.text)
+					let d = mut ? Dir.root(rp)
+					out = ? Io.readIn(d, inName)
+				}
+			}
+		}
+		return out
+	}
+
+	/** Creates or replaces the file at `path`. */
+	@pub
+	@throws
+	static func writeFile(path: ref imut String, content: ref imut String) void{
+		?catch(e){ throw e }
+		let:<owns mut String> op = mut null
+		let:<owns mut String> outName = mut null
+		match Some(path){ op = Io.pathDir(path) }
+		match Some(path){ outName = Io.pathName(path) }
+		if true{
+			match Some(op){
+				let opc = mut ? CName.from(op)
+				match Some(opc){
+					let rp2 = mut ? new RootPath(opc.text)
+					let d2 = mut ? Dir.rootRW(rp2)
+					? Io.writeIn(d2, outName, content)
+				}
+			}
+		}
+	}
+
+	/** The exit code in a wait status (what `WEXITSTATUS` gives); 255 when the command could not be run. */
+	@pub
+	static func exitCode(status: mut u64) mut u64{
+		if status == 4294967295{
+			return 255
+		}
+		return (status / 256) % 256
+	}
+
+	/** Runs `cmd` through the shell with this process's stdout and stderr; returns its exit code. */
+	@pub
+	static func shell(cmd: ref imut String) mut u64{
+		?catch(e){ return 255 }
+		let code = mut 255
+		match Some(cmd){
+			let cn = mut ? CName.from(cmd)
+			match Some(cn){
+				let t = cn.text
+				let:<mut u32> st = mut 0
+				unsafe extern{ st = mut ioSystem(t) }
+				code = Io.exitCode(wrap:<u64>(st))
+			}
+		}
+		return code
+	}
+
+	/** One buffered line (up to 4095 bytes) of a popen stream into `buf`; 0 at end of file. */
+	static func fill(stream: raw mut u8, buf: raw mut char) mut u64{
+		let got = mut 0
+		unsafe extern{ got = mut ioFgets(buf, 4096, stream) }
+		return got
+	}
+
+	static func view(buf: raw mut char) static imut string{
+		unsafe extern{
+			return ioView(buf, imut "")
+		}
+	}
+
+	/** The text in `buf` as a String, without its trailing line break. */
+	static func lineOf(buf: raw mut char) owns mut String{
+		?catch(e){ return null }
+		let v = imut Io.view(buf)
+		let s = mut ? String.from(v)
+		let n = mut s.length(s)
+		for k in 0..2{
+			if n > 0{
+				let c = mut s.charAt(s, n - 1)
+				if c == '\n' || c == '\r'{
+					n = n - 1
+				}
+			}
+		}
+		let t = mut ? s.sub(s, 0, n)
+		return t
+	}
+
+	/** Runs `cmd` and appends the non-blank lines it prints on stdout to `out` (put `2>&1 >/dev/null` in the command to read stderr instead); returns the exit code. */
+	@pub
+	static func collect(cmd: ref imut String, out: ref mut ObjectList<String>) mut u64{
+		?catch(e){ return 255 }
+		let code = mut 255
+		match Some(cmd){
+			let cn = mut ? CName.from(cmd)
+			match Some(cn){
+				let t = cn.text
+				let:<raw mut u8> stream = null
+				let:<raw mut char> buf = null
+				unsafe extern{
+					buf = mut ioMalloc(4096)
+					stream = mut ioPopen(t, imut "r")
+				}
+				for g in 0..1000000000{
+					let got = mut Io.fill(stream, buf)
+					if got == 0{
+						break
+					}
+					let line = mut Io.lineOf(buf)
+					let blank = mut true
+					match Some(line){
+						let ln = line.length(line)
+						for k in 0..ln{
+							if line.charAt(line, k) != ' ' && line.charAt(line, k) != '\t'{
+								blank = false
+							}
+						}
+					}
+					if blank == false{
+						match Some(out){ ? out.add(out, line) }
+					}
+				}
+				let:<mut u32> st = mut 0
+				unsafe extern{ st = mut ioPclose(stream) }
+				code = Io.exitCode(wrap:<u64>(st))
+			}
+		}
+		return code
+	}
+}

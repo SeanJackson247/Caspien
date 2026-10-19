@@ -1,0 +1,114 @@
+import "stdlib/string.caspien"
+
+/**
+ * Type-text helpers of ConstantFoldingPass.java (`base`, `isInt`, `isFloat`, `signed`, `width`), shared by several passes. A "base" is one of
+ * u8 u16 u32 u64 s8 s16 s32 s64 f32 f64 bool, passed around as a String; "" means Java null.
+ */
+@pub
+struct NumText{@pub{
+}}
+
+@pub
+impl NumText{
+	/** Allocation-free half of `base`: 1-based index into u8 u16 u32 u64 s8 s16 s32 s64 f32 f64 bool of the scalar named by type text `ty`, or 0. */
+	@pub
+	static func baseIndex(ty: ref some imut String) mut u64{
+		if ty.startsWith(ty, "indeterminate_"){
+			if ty.equals(ty, "indeterminate_u8"){ return 1 }
+			if ty.equals(ty, "indeterminate_u16"){ return 2 }
+			if ty.equals(ty, "indeterminate_u32"){ return 3 }
+			if ty.equals(ty, "indeterminate_u64"){ return 4 }
+			if ty.equals(ty, "indeterminate_s8"){ return 5 }
+			if ty.equals(ty, "indeterminate_s16"){ return 6 }
+			if ty.equals(ty, "indeterminate_s32"){ return 7 }
+			if ty.equals(ty, "indeterminate_s64"){ return 8 }
+			if ty.equals(ty, "indeterminate_f32"){ return 9 }
+			if ty.equals(ty, "indeterminate_f64"){ return 10 }
+			if ty.equals(ty, "indeterminate_bool"){ return 11 }
+			return 0
+		}
+		if ty.startsWith(ty, "imut_"){
+			if ty.equals(ty, "imut_u8"){ return 1 }
+			if ty.equals(ty, "imut_u16"){ return 2 }
+			if ty.equals(ty, "imut_u32"){ return 3 }
+			if ty.equals(ty, "imut_u64"){ return 4 }
+			if ty.equals(ty, "imut_s8"){ return 5 }
+			if ty.equals(ty, "imut_s16"){ return 6 }
+			if ty.equals(ty, "imut_s32"){ return 7 }
+			if ty.equals(ty, "imut_s64"){ return 8 }
+			if ty.equals(ty, "imut_f32"){ return 9 }
+			if ty.equals(ty, "imut_f64"){ return 10 }
+			if ty.equals(ty, "imut_bool"){ return 11 }
+			return 0
+		}
+		if ty.startsWith(ty, "mut_"){
+			if ty.equals(ty, "mut_u8"){ return 1 }
+			if ty.equals(ty, "mut_u16"){ return 2 }
+			if ty.equals(ty, "mut_u32"){ return 3 }
+			if ty.equals(ty, "mut_u64"){ return 4 }
+			if ty.equals(ty, "mut_s8"){ return 5 }
+			if ty.equals(ty, "mut_s16"){ return 6 }
+			if ty.equals(ty, "mut_s32"){ return 7 }
+			if ty.equals(ty, "mut_s64"){ return 8 }
+			if ty.equals(ty, "mut_f32"){ return 9 }
+			if ty.equals(ty, "mut_f64"){ return 10 }
+			if ty.equals(ty, "mut_bool"){ return 11 }
+			return 0
+		}
+		return 0
+	}
+
+	/** "indeterminate_u64" / "mut_u64" / "imut_f32" -> "u64"; anything else (pointers, structs, ...) -> "" (Java null). */
+	@pub
+	@throws
+	static func base(ty: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let k = mut NumText.baseIndex(ty)
+		if k == 1{ return ? String.from("u8") }
+		if k == 2{ return ? String.from("u16") }
+		if k == 3{ return ? String.from("u32") }
+		if k == 4{ return ? String.from("u64") }
+		if k == 5{ return ? String.from("s8") }
+		if k == 6{ return ? String.from("s16") }
+		if k == 7{ return ? String.from("s32") }
+		if k == 8{ return ? String.from("s64") }
+		if k == 9{ return ? String.from("f32") }
+		if k == 10{ return ? String.from("f64") }
+		if k == 11{ return ? String.from("bool") }
+		return ? String.from("")
+	}
+
+	/** Java `isInt(b)`: b non-null and starts with u or s. */
+	@pub
+	static func isInt(b: ref some imut String) bool{
+		if b.length(b) == 0{ return false }
+		let c = mut String.charCode(b.charAt(b, 0))
+		return c == 117 || c == 115
+	}
+
+	@pub
+	static func isFloat(b: ref some imut String) bool{
+		if b.length(b) == 0{ return false }
+		return String.charCode(b.charAt(b, 0)) == 102
+	}
+
+	@pub
+	static func signed(b: ref some imut String) bool{
+		if b.length(b) == 0{ return false }
+		return String.charCode(b.charAt(b, 0)) == 115
+	}
+
+	/** Java `width(b)`: the bit width of an integer/float base ("u32" -> 32). bool/"" -> 0. */
+	@pub
+	static func width(b: ref some imut String) mut u64{
+		let n = mut b.length(b)
+		let w = mut 0
+		for k in 1..n{
+			let c = mut String.charCode(b.charAt(b, k))
+			if c >= 48 && c <= 57{
+				w = w * 10 + (c - 48)
+			}
+		}
+		return w
+	}
+}

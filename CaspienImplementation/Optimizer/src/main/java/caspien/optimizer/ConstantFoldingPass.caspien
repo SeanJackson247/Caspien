@@ -1,0 +1,102 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "ConstsLit.caspien"
+
+/**
+ * Folds literal operands (port of ConstantFoldingPass.java; the literal arithmetic is in ConstsLit.caspien): an operator line whose operand
+ * PUSH lines sit directly in front of it (in the output built so far) becomes one PUSH. Off unless enabled.
+ */
+@pub
+struct ConstantFoldingPass{@pub{
+}}
+
+@pub
+impl constructor for ConstantFoldingPass() self{
+	return ConstantFoldingPass{}
+}
+
+@pub
+impl ConstantFoldingPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let out = mut ? new BytecodeProgram()
+		let changed = mut false
+		let info = mut ? new ConstsOp()
+		let la = mut ? new ConstsLit()
+		let lb = mut ? new ConstsLit()
+		let lc = mut ? new ConstsLit()
+		let res = mut ? new ConstsLit()
+		for i in 0..n{
+			info.op = 0
+			match Some(program){ ConstsLit.classify(program, i, info) }
+			let folded = mut false
+			if info.op != 0{
+				let k = mut 2
+				if info.op <= 6{
+					k = 1
+				} else if info.op == 27{
+					k = 3
+				}
+				let on = mut out.size(out)
+				if on >= k{
+					la.ok = false
+					lb.ok = false
+					lc.ok = false
+					for q in 0..k{
+						if q == 0{
+							ConstsLit.litAt(out, on - k + q, la)
+						} else if q == 1{
+							ConstsLit.litAt(out, on - k + q, lb)
+						} else{
+							ConstsLit.litAt(out, on - k + q, lc)
+						}
+					}
+					let allOk = mut la.ok
+					if k >= 2 && lb.ok == false{
+						allOk = false
+					}
+					if k >= 3 && lc.ok == false{
+						allOk = false
+					}
+					if allOk{
+						if ConstsLit.fold(info, la, lb, lc, res){
+							let txt = mut ? ConstsLit.render(res)
+							let typeIdx = mut 3
+							if info.op <= 6{
+								typeIdx = 2
+							}
+							let stmt = mut ? new BytecodeStatement()
+							match Some(program){
+								stmt = ? ConstsLit.pushFrom(program, i, typeIdx, txt)
+							}
+							for q in 0..k{
+								? out.items.removeLast(out.items)
+							}
+							? out.items.add(out.items, stmt)
+							folded = true
+							changed = true
+						}
+					}
+				}
+			}
+			if folded == false{
+				match Some(program){
+					let moved = mut program.items.take(program.items, i)
+					? out.items.add(out.items, moved)
+				}
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return changed
+	}
+}

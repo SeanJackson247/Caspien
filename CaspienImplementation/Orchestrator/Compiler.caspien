@@ -1,0 +1,732 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/make_safe_args.caspien"
+import "stdlib/string.caspien"
+import "stdlib/fs.caspien"
+import "stdlib/print_string.caspien"
+import "Io.caspien"
+import "../Optimizer/src/main/java/caspien/optimizer/Optimizer.caspien"
+import "../LowerOrderGenerator/src/main/java/caspien/lowerorder/LowerOrder.caspien"
+import "../Codegen/src/main/java/caspien/codegen/Codegen.caspien"
+
+/**
+ * The Compiler as a Caspien program (replaces the Java orchestrator's driver role; see docs/Orchestrator.md). Stage 1 (the front end) runs in the
+ * JVM: `java Compiler -i <in> <hob> --stage1` (Compiler.java is now only that host plus --hob/--audit/--viz/--fix and the stage-1 cache). Stages 2-4 are
+ * the imported Caspien components (Optimizer, LowerOrder, Codegen), called in this process with text in and text out; the assembler and linker are
+ * child processes. Everything this program does not handle itself (any other flag, a usage error) is handed to the Java `Compiler` with the same arguments.
+ */
+@pub
+struct Compiler{@pub{
+}}
+
+@pub
+impl Compiler{
+	/** What the command-line word is: 1 -i, 2 --no-warnings, 3 --asm, 4 --lob, 5 --trace-depth, 6 --no-cache, 9 any other flag (the Java host handles it), 0 a plain word. */
+	static func flagCode(a: ref some imut String) mut u64{
+		if a.equals(a, "-i"){ return 1 }
+		if a.equals(a, "--no-warnings"){ return 2 }
+		if a.equals(a, "--asm"){ return 3 }
+		if a.equals(a, "--lob"){ return 4 }
+		if a.equals(a, "--trace-depth"){ return 5 }
+		if a.equals(a, "--no-cache"){ return 6 }
+		if a.startsWith(a, "-"){ return 9 }
+		return 0
+	}
+
+	/** The line kind of a stage message: 1 [info], 2 [note], 3 [warning], 4 anything else. */
+	static func lineKind(l: ref some imut String) mut u64{
+		if l.startsWith(l, "[warning]"){ return 3 }
+		if l.startsWith(l, "[info]"){ return 1 }
+		if l.startsWith(l, "[note]"){ return 2 }
+		return 4
+	}
+
+	/** `list[i]` as a new String (empty when out of range). */
+	static func copyOf(list: ref imut ObjectList<String>, i: mut u64) owns mut String{
+		?catch(e){ return null }
+		let out = mut ? new String()
+		match Some(list){
+			if i < list.size(list){
+				let s = mut ? list.getSome(list, i)
+				out = ? s.sub(s, 0, s.length(s))
+			}
+		}
+		return out
+	}
+
+	/** `a` single-quoted for /bin/sh. */
+	static func quote(a: ref imut String) owns mut String{
+		?catch(e){ return null }
+		let out = mut ? String.from("'")
+		let n = mut 0
+		match Some(a){ n = a.length(a) }
+		for i in 0..n{
+			let c = mut ' '
+			match Some(a){ c = a.charAt(a, i) }
+			if String.charCode(c) == 39{
+				? out.append(out, "'\"'\"'")
+			} else{
+				? out.appendChar(out, c)
+			}
+		}
+		? out.append(out, "'")
+		return out
+	}
+
+	/** Appends ` ` and the quoted `a` to `cmd`. */
+	static func addArg(cmd: ref mut String, a: ref imut String) void{
+		?catch(e){ return }
+		let q = mut Compiler.quote(a)
+		match Some(cmd){ ? cmd.append(cmd, " ") }
+		match Some(cmd){ match Some(q){ ? cmd.append(cmd, q) } }
+	}
+
+	/** First non-blank line `cmd` prints (empty when none). */
+	static func firstLine(cmd: static imut string) owns mut String{
+		?catch(e){ return null }
+		let c = mut ? String.from(cmd)
+		let lines = mut ? new ObjectList:<String>()
+		let rc = mut Io.collect(c, lines)
+		return Compiler.copyOf(lines, 0)
+	}
+
+	/** Absolute, normalised path of `rel` (resolved against `base` unless absolute): no `.` or `..` segments, no trailing slash. */
+	static func absNormal(base: ref imut String, rel: ref imut String) owns mut String{
+		?catch(e){ return null }
+		let full = mut ? new String()
+		let relAbs = mut false
+		match Some(rel){
+			if rel.length(rel) > 0{
+				if rel.charAt(rel, 0) == '/'{ relAbs = true }
+			}
+		}
+		if relAbs{
+			match Some(rel){ ? full.append(full, rel) }
+		} else{
+			match Some(base){ ? full.append(full, base) }
+			? full.append(full, "/")
+			match Some(rel){ ? full.append(full, rel) }
+		}
+		let segs = mut ? new ObjectList:<String>()
+		let seg = mut ? new String()
+		let n = mut full.length(full)
+		let end = mut (n + 1)
+		for i in 0..end{
+			let c = mut '/'
+			if i < n{
+				c = full.charAt(full, i)
+			}
+			if c == '/'{
+				Compiler.applySeg(segs, seg)
+				seg = ? new String()
+			} else{
+				? seg.appendChar(seg, c)
+			}
+		}
+		let out = mut ? new String()
+		let m = mut 0
+		match Some(segs){ m = segs.size(segs) }
+		for k in 0..m{
+			? out.append(out, "/")
+			match Some(segs){
+				let s = mut ? segs.getSome(segs, k)
+				? out.append(out, s)
+			}
+		}
+		if out.length(out) == 0{
+			? out.append(out, "/")
+		}
+		return out
+	}
+
+	static func applySeg(segs: ref mut ObjectList<String>, seg: ref imut String) void{
+		?catch(e){ return }
+		let code = mut 2
+		match Some(seg){
+			if seg.length(seg) == 0 || seg.equals(seg, "."){
+				code = 0
+			} else if seg.equals(seg, ".."){
+				code = 1
+			}
+		}
+		if code == 1{
+			match Some(segs){
+				let m = mut segs.size(segs)
+				if m > 0{
+					? segs.removeLast(segs)
+				}
+			}
+		}
+		if code == 2{
+			let c = mut ? new String()
+			match Some(seg){ c = ? seg.sub(seg, 0, seg.length(seg)) }
+			match Some(segs){ ? segs.add(segs, c) }
+		}
+	}
+
+	/** Prints the stage messages as the Java orchestrator does (infos, notes, warnings unless suppressed, then other lines as `[label] line`); returns how many warnings there were. */
+	static func report(lines: ref imut ObjectList<String>, label: static imut string, noWarn: mut bool) mut u64{
+		?catch(e){ return 0 }
+		let n = mut 0
+		match Some(lines){ n = lines.size(lines) }
+		let warns = mut 0
+		for pass in 1..5{
+			for i in 0..n{
+				let k = mut 0
+				match Some(lines){
+					let l = mut ? lines.getSome(lines, i)
+					k = Compiler.lineKind(l)
+				}
+				if k == pass{
+					if pass == 3{
+						warns = warns + 1
+					}
+					if pass != 3 || noWarn == false{
+						if pass == 4{
+							Io.eprintLit("[")
+							Io.eprintLit(label)
+							Io.eprintLit("] ")
+						}
+						match Some(lines){
+							let l2 = mut ? lines.getSome(lines, i)
+							Io.eprint(l2)
+						}
+						Io.eprintLit("\n")
+					}
+				}
+			}
+		}
+		return warns
+	}
+
+	/** `[error] <label> failed (exit 1):` and the message, as the Java orchestrator prints a crashed stage. */
+	static func stageFailed(label: static imut string, msg: static imut string) void{
+		Io.eprintLit("[error] ")
+		Io.eprintLit(label)
+		Io.eprintLit(" failed (exit 1):\n    ")
+		Io.eprintLit(msg)
+		Io.eprintLit("\n")
+	}
+
+	/** The final `[info] done -- wrote ...` line. */
+	static func summary(kind: static imut string, output: ref imut String, warnings: mut u64, noWarn: mut bool) void{
+		?catch(e){ return }
+		let s = mut ? String.from("\n[info] done -- wrote ")
+		? s.append(s, kind)
+		? s.append(s, " to ")
+		match Some(output){ ? s.append(s, output) }
+		if warnings > 0 && noWarn == false{
+			? s.append(s, " (")
+			? s.appendU64(s, warnings)
+			if warnings == 1{
+				? s.append(s, " warning)")
+			} else{
+				? s.append(s, " warnings)")
+			}
+		}
+		? s.append(s, "\n")
+		Io.eprint(s)
+	}
+
+	/** The value of `key` in a `key value` config text (first match, comments and blank lines skipped), or "" when there is none. */
+	static func configValue(cfg: ref imut String, key: static imut string) owns mut String{
+		?catch(e){ return null }
+		let out = mut ? new String()
+		let n = mut 0
+		match Some(cfg){ n = cfg.length(cfg) }
+		let start = mut 0
+		let found = mut false
+		let nEnd = mut (n + 1)
+		for i in 0..nEnd{
+			let atEnd = mut false
+			if i == n{
+				atEnd = true
+			} else{
+				match Some(cfg){
+					if cfg.charAt(cfg, i) == '\n'{ atEnd = true }
+				}
+			}
+			if atEnd && found == false{
+				let line = mut ? new String()
+				match Some(cfg){ line = ? cfg.sub(cfg, start, i) }
+				let t = mut ? line.trim(line)
+				let isKey = mut false
+				let ws = mut 0
+				if t.length(t) > 0{
+					if t.startsWith(t, "#") == false && t.startsWith(t, key){
+						// the key must be followed by whitespace
+						let kl = mut Compiler.litLength(key)
+						if t.length(t) > kl{
+							let c = mut t.charAt(t, kl)
+							if c == ' ' || c == '\t'{
+								isKey = true
+								ws = kl
+							}
+						}
+					}
+				}
+				if isKey{
+					let rest = mut ? t.substring(t, ws)
+					out = ? rest.trim(rest)
+					found = true
+				}
+			}
+			if atEnd{
+				start = i + 1
+			}
+		}
+		return out
+	}
+
+	static func litLength(t: static imut string) mut u64{
+		let n = mut 0
+		unsafe extern{ n = mut strlen(t) }
+		return n
+	}
+
+	/** True when `cmd --version` succeeds. */
+	static func commandExists(cmd: ref imut String) bool{
+		?catch(e){ return false }
+		let c = mut ? new String()
+		match Some(cmd){ ? c.append(c, cmd) }
+		? c.append(c, " --version >/dev/null 2>&1")
+		return Io.shell(c) == 0
+	}
+
+	/** Runs a tool with stderr captured: each line is shown as `[tool] line`; a failure prints `[error] tool failed (exit N)` and returns the exit code. */
+	static func runTool(cmd: ref imut String, tool: ref imut String) mut u64{
+		?catch(e){ return 1 }
+		let c = mut ? new String()
+		match Some(cmd){ ? c.append(c, cmd) }
+		? c.append(c, " 2>&1 >/dev/null")
+		let lines = mut ? new ObjectList:<String>()
+		let code = mut Io.collect(c, lines)
+		let n = mut 0
+		match Some(lines){ n = lines.size(lines) }
+		for i in 0..n{
+			Io.eprintLit("[")
+			match Some(tool){ Io.eprint(tool) }
+			Io.eprintLit("] ")
+			match Some(lines){
+				let l = mut ? lines.getSome(lines, i)
+				Io.eprint(l)
+			}
+			Io.eprintLit("\n")
+		}
+		if code != 0{
+			let m = mut ? String.from("[error] ")
+			match Some(tool){ ? m.append(m, tool) }
+			? m.append(m, " failed (exit ")
+			? m.appendU64(m, code)
+			? m.append(m, ")\n")
+			Io.eprint(m)
+		}
+		return code
+	}
+
+	/** Turns the assembly file into the binary (Linux host): `as` + `gcc` for target linux, the mingw gcc for windows_gnu. Returns the exit code. */
+	static func assembleAndLink(target: ref imut String, asmPath: ref imut String, outPath: ref imut String, buildDir: ref imut String, jcc: mut bool) mut u64{
+		?catch(e){ return 1 }
+		let isLinux = mut false
+		let isWin = mut false
+		match Some(target){
+			isLinux = target.equals(target, "linux")
+			isWin = target.equals(target, "windows_gnu")
+		}
+		if isLinux{
+			let obj = mut ? new String()
+			match Some(buildDir){ ? obj.append(obj, buildDir) }
+			? obj.append(obj, "/out.o")
+			let asCmd = mut ? String.from("as --64")
+			if jcc{
+				? asCmd.append(asCmd, " -mbranches-within-32B-boundaries")
+			}
+			Compiler.addArg(asCmd, asmPath)
+			? asCmd.append(asCmd, " -o")
+			Compiler.addArg(asCmd, obj)
+			let asName = mut ? String.from("as")
+			let rc1 = mut Compiler.runTool(asCmd, asName)
+			if rc1 != 0{ return rc1 }
+			let ccCmd = mut ? String.from("gcc")
+			Compiler.addArg(ccCmd, obj)
+			? ccCmd.append(ccCmd, " -o")
+			Compiler.addArg(ccCmd, outPath)
+			? ccCmd.append(ccCmd, " -no-pie -pthread -lm")
+			let ccName = mut ? String.from("gcc")
+			return Compiler.runTool(ccCmd, ccName)
+		}
+		if isWin{
+			let compiler = mut ? String.from("x86_64-w64-mingw32-gcc")
+			if Compiler.commandExists(compiler) == false{
+				compiler = ? String.from("gcc")
+			}
+			let ccCmd2 = mut ? new String()
+			match Some(compiler){ ? ccCmd2.append(ccCmd2, compiler) }
+			Compiler.addArg(ccCmd2, asmPath)
+			? ccCmd2.append(ccCmd2, " -o")
+			Compiler.addArg(ccCmd2, outPath)
+			? ccCmd2.append(ccCmd2, " -m64 -pthread -static -lm -lntdll")
+			if jcc{
+				? ccCmd2.append(ccCmd2, " -Wa,-mbranches-within-32B-boundaries")
+			}
+			return Compiler.runTool(ccCmd2, compiler)
+		}
+		Io.eprintLit("[error] unknown codegen target -- expected 'linux' or 'windows_gnu'\n")
+		return 1
+	}
+
+	/** Counts (and prints unless suppressed) the `TODO(codegen)` lines of the assembly text. */
+	static func scanTodos(asm: ref imut String, noWarn: mut bool) mut u64{
+		?catch(e){ return 0 }
+		let n = mut 0
+		match Some(asm){ n = asm.length(asm) }
+		let count = mut 0
+		let start = mut 0
+		let nEnd = mut (n + 1)
+		for i in 0..nEnd{
+			let atEnd = mut false
+			if i == n{
+				atEnd = true
+			} else{
+				match Some(asm){
+					if asm.charAt(asm, i) == '\n'{ atEnd = true }
+				}
+			}
+			if atEnd{
+				let has = mut false
+				if i > start{
+					match Some(asm){
+						let line = mut ? asm.sub(asm, start, i)
+						has = line.contains(line, "TODO(codegen)")
+						if has && noWarn == false{
+							let t = mut ? line.trim(line)
+							let from = mut 0
+							if t.startsWith(t, "#") || t.startsWith(t, ";"){
+								from = 1
+								let tl = mut t.length(t)
+								for sk in 0..tl{
+									if from < tl{
+										let ch = mut t.charAt(t, from)
+										if ch == ' ' || ch == '\t'{ from = from + 1 }
+									}
+								}
+							}
+							let shown = mut ? t.substring(t, from)
+							Io.eprintLit("[warning] codegen: ")
+							Io.eprint(shown)
+							Io.eprintLit("\n")
+						}
+					}
+				}
+				if has{
+					count = count + 1
+				}
+				start = i + 1
+			}
+		}
+		return count
+	}
+
+	/** The warning count in the `<hob>.meta` file the Java host wrote (`warnings=N`). */
+	static func hostWarnings(meta: ref imut String) mut u64{
+		?catch(e){ return 0 }
+		let text = mut ? Io.readFile(meta)
+		let n = mut text.length(text)
+		let v = mut 0
+		let seen = mut false
+		for i in 0..n{
+			let c = mut String.charCode(text.charAt(text, i))
+			if seen && c >= 48 && c <= 57{
+				v = v * 10 + (c - 48)
+			}
+			if c == 61{ seen = true }
+		}
+		return v
+	}
+
+	/** The whole run; returns the process exit code. */
+	@pub
+	static func run(args: owns some mut dynarray(imut dynarray(imut char))) mut u64{
+		?catch(e){
+			Io.eprintLit("[error] ")
+			Io.eprintLit(e.msg)
+			Io.eprintLit("\n")
+			return 1
+		}
+		let argv = mut ? new ObjectList:<String>()
+		let na = mut len(args)
+		for ai in 0..na{
+			let s = mut ? new String()
+			match ai in args{
+				let one = mut args[ai]
+				let m = mut len(one)
+				for k in 0..m{
+					match k in one{ ? s.appendChar(s, one[k]) }
+				}
+			}
+			? argv.add(argv, s)
+		}
+		let n = mut 0
+		match Some(argv){ n = argv.size(argv) }
+		let:<owns mut String> input = mut null
+		let:<owns mut String> output = mut null
+		let:<owns mut String> depth = mut null
+		let haveIn = mut false
+		let haveOut = mut false
+		let noWarn = mut false
+		let noCache = mut false
+		let delegate = mut false
+		let stops = mut 0
+		let stopKind = mut 0
+		let i = mut 1
+		for step in 0..n{
+			if i >= n{
+				break
+			}
+			let code = mut 0
+			match Some(argv){
+				let a = mut ? argv.getSome(argv, i)
+				code = Compiler.flagCode(a)
+			}
+			if code == 1{
+				i = i + 1
+				if i >= n{
+					delegate = true
+				} else{
+					match Some(argv){ input = Compiler.copyOf(argv, i) }
+					haveIn = true
+				}
+			} else if code == 2{
+				noWarn = true
+			} else if code == 3 || code == 4{
+				stops = stops + 1
+				stopKind = code
+			} else if code == 5{
+				i = i + 1
+				if i >= n{
+					delegate = true
+				} else{
+					match Some(argv){ depth = Compiler.copyOf(argv, i) }
+				}
+			} else if code == 6{
+				noCache = true
+			} else if code == 9{
+				delegate = true
+			} else{
+				if haveOut{
+					delegate = true
+				} else{
+					match Some(argv){ output = Compiler.copyOf(argv, i) }
+					haveOut = true
+				}
+			}
+			i = i + 1
+		}
+		if haveIn == false || haveOut == false || stops > 1{
+			delegate = true
+		}
+		if delegate{
+			// anything this program does not do itself: the Java Compiler, same arguments
+			let dcmd = mut ? String.from("java -Xss512m Compiler")
+			for q in 1..n{
+				match Some(argv){
+					let qa = mut ? argv.getSome(argv, q)
+					Compiler.addArg(dcmd, qa)
+				}
+			}
+			return Io.shell(dcmd)
+		}
+
+		// ---- paths ----
+		let cwd = mut Compiler.firstLine("pwd")
+		let outAbs = mut Compiler.absNormal(cwd, output)
+		let:<owns mut String> buildDir = mut null
+		match Some(outAbs){ buildDir = Io.pathDir(outAbs) }
+		match Some(buildDir){ ? buildDir.append(buildDir, "/.build") }
+		let mk = mut ? String.from("mkdir -p")
+		Compiler.addArg(mk, buildDir)
+		let rcm = mut Io.shell(mk)
+		if rcm != 0{
+			Io.eprintLit("[error] cannot create the build folder\n")
+			return 1
+		}
+		let hobPath = mut ? new String()
+		let optPath = mut ? new String()
+		let lobPath = mut ? new String()
+		let asmPath = mut ? new String()
+		match Some(buildDir){ ? hobPath.append(hobPath, buildDir) }
+		match Some(buildDir){ ? optPath.append(optPath, buildDir) }
+		match Some(buildDir){ ? lobPath.append(lobPath, buildDir) }
+		match Some(buildDir){ ? asmPath.append(asmPath, buildDir) }
+		? hobPath.append(hobPath, "/1_ast_generator.hob.txt")
+		? optPath.append(optPath, "/2_optimizer.hob.txt")
+		if stopKind == 4{
+			match Some(outAbs){ lobPath = ? outAbs.substring(outAbs, 0) }
+		} else{
+			? lobPath.append(lobPath, "/3_lower_order_generator.lob.txt")
+		}
+		if stopKind == 3{
+			match Some(outAbs){ asmPath = ? outAbs.substring(outAbs, 0) }
+		} else{
+			? asmPath.append(asmPath, "/4_codegen.s")
+		}
+
+		// ---- stage 1: the front end, in the JVM ----
+		let cmd1 = mut ? String.from("java -Xss512m Compiler -i")
+		Compiler.addArg(cmd1, input)
+		Compiler.addArg(cmd1, hobPath)
+		? cmd1.append(cmd1, " --stage1")
+		if noWarn{
+			? cmd1.append(cmd1, " --no-warnings")
+		}
+		if noCache{
+			? cmd1.append(cmd1, " --no-cache")
+		}
+		let depthLen = mut 0
+		match Some(depth){ depthLen = depth.length(depth) }
+		if depthLen > 0{
+			? cmd1.append(cmd1, " --trace-depth")
+			Compiler.addArg(cmd1, depth)
+		}
+		let rc1 = mut Io.shell(cmd1)
+		if rc1 != 0{
+			return rc1
+		}
+		let meta = mut ? String.from("")
+		match Some(hobPath){ ? meta.append(meta, hobPath) }
+		? meta.append(meta, ".meta")
+		let warnings = mut Compiler.hostWarnings(meta)
+
+		// ---- the three stages' configs (written by the Java host from toolchain.config) ----
+		let optCfgPath = mut ? String.from("Optimizer/compiler.config")
+		let logCfgPath = mut ? String.from("LowerOrderGenerator/compiler.config")
+		let cgCfgPath = mut ? String.from("Codegen/codegen.config")
+		let optCfg = mut ? Io.readFile(optCfgPath)
+		let logCfg = mut ? Io.readFile(logCfgPath)
+		let cgCfg = mut ? Io.readFile(cgCfgPath)
+
+		// ---- stage 2: Optimizer ----
+		let hob = mut ? Io.readFile(hobPath)
+		let msgs = mut ? new Messages()
+		let optText = mut ? new String()
+		let failed2 = mut false
+		match Some(hob){ match Some(hobPath){ match Some(optCfg){
+			optText = try Optimizer.optimize(hob, hobPath, optCfg, msgs) catch(e2){
+				Compiler.stageFailed("Optimizer", e2.msg)
+				return 1
+			}
+		} } }
+		if failed2{
+			return 1
+		}
+		match Some(msgs){ warnings = warnings + Compiler.report(msgs.lines, "Optimizer", noWarn) }
+		? Io.writeFile(optPath, optText)
+
+		// ---- stage 3: LowerOrderGenerator ----
+		let lobText = mut ? new String()
+		let failed3 = mut false
+		let noPass = mut ? new String()
+		match Some(optText){ match Some(logCfg){ match Some(noPass){
+			lobText = try LowerOrder.generate(optText, logCfg, noPass) catch(e3){
+				Compiler.stageFailed("LowerOrderGenerator", e3.msg)
+				return 1
+			}
+		} } }
+		if failed3{
+			return 1
+		}
+		? Io.writeFile(lobPath, lobText)
+		if stopKind == 4{
+			Compiler.summary("low-order bytecode", outAbs, warnings, noWarn)
+			return 0
+		}
+
+		// ---- stage 4: Codegen ----
+		let result = mut ? Codegen.generate(lobText, lobPath, cgCfg)
+		let failed4 = mut true
+		let cm = mut 0
+		match Some(result){
+			if result.failed == false{
+				failed4 = false
+			}
+			cm = result.messages.size(result.messages)
+		}
+		if failed4{
+			Io.eprintLit("[error] Codegen failed (exit 1):\n")
+			for mi in 0..cm{
+				Io.eprintLit("    ")
+				match Some(result){
+					let m = mut ? result.messages.getSome(result.messages, mi)
+					Io.eprint(m)
+				}
+				Io.eprintLit("\n")
+			}
+			return 1
+		}
+		match Some(result){ warnings = warnings + Compiler.report(result.messages, "Codegen", noWarn) }
+		let asm = mut ? new String()
+		match Some(result){ match Some(result.asm){ asm = ? result.asm.substring(result.asm, 0) } }
+		? Io.writeFile(asmPath, asm)
+		warnings = warnings + Compiler.scanTodos(asm, noWarn)
+		if stopKind == 3{
+			Compiler.summary("assembly", outAbs, warnings, noWarn)
+			return 0
+		}
+
+		// ---- stage 5: assemble and link ----
+		let target = mut Compiler.configValue(cgCfg, "target")
+		let jccVal = mut Compiler.configValue(cgCfg, "jcc-padding")
+		let jcc = mut false
+		match Some(jccVal){
+			if jccVal.equals(jccVal, "on") || jccVal.equals(jccVal, "ON") || jccVal.equals(jccVal, "On"){
+				jcc = true
+			}
+		}
+		if jcc{
+			let tool = mut ? String.from("as")
+			match Some(target){
+				if target.equals(target, "windows_gnu"){
+					tool = ? String.from("x86_64-w64-mingw32-as")
+					if Compiler.commandExists(tool) == false{
+						tool = ? String.from("as")
+					}
+				}
+			}
+			let probe = mut ? new String()
+			match Some(tool){ ? probe.append(probe, tool) }
+			? probe.append(probe, " -mbranches-within-32B-boundaries --version >/dev/null 2>&1")
+			if Io.shell(probe) != 0{
+				Io.eprintLit("[warn] codegen.config says 'jcc-padding on', but the assembler does not accept -mbranches-within-32B-boundaries (binutils 2.34 or newer); building without it\n")
+				jcc = false
+			}
+		}
+		let rc5 = mut Compiler.assembleAndLink(target, asmPath, outAbs, buildDir, jcc)
+		if rc5 != 0{
+			return rc5
+		}
+		let kind = mut ? String.from("binary (")
+		match Some(target){ ? kind.append(kind, target) }
+		? kind.append(kind, ")")
+		let sum = mut ? String.from("\n[info] done -- wrote ")
+		match Some(kind){ ? sum.append(sum, kind) }
+		? sum.append(sum, " to ")
+		match Some(outAbs){ ? sum.append(sum, outAbs) }
+		if warnings > 0 && noWarn == false{
+			? sum.append(sum, " (")
+			? sum.appendU64(sum, warnings)
+			if warnings == 1{
+				? sum.append(sum, " warning)")
+			} else{
+				? sum.append(sum, " warnings)")
+			}
+		}
+		? sum.append(sum, "\n")
+		Io.eprint(sum)
+		return 0
+	}
+}
+
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	let code = mut Compiler.run(args)
+	unsafe extern{ exit(wrap:<u32>(code)) } // skip the destructors: the process is done, the OS reclaims everything
+}

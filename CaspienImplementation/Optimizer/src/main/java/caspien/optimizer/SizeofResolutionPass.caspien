@@ -1,0 +1,81 @@
+import "stdlib/string.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+import "SizeofResolutionSizes.caspien"
+
+/**
+ * SIZEOF Name <type> -> PUSH n <type> (always on; port of SizeofResolutionPass.java). A SIZEOF naming a struct with no declaration throws
+ * (Java text "internal error: SIZEOF names struct '<name>' which has no STRUCT declaration (<file>:<line>)" is lost: throw takes a literal).
+ */
+@pub
+struct SizeofResolutionPass{@pub{
+}}
+
+@pub
+impl constructor for SizeofResolutionPass() self{
+	return SizeofResolutionPass{}
+}
+
+@pub
+impl SizeofResolutionPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram) mut bool{
+		?catch(e){ throw e }
+		let n = mut 0
+		let any = mut false
+		match Some(program){
+			n = program.size(program)
+			for i in 0..n{
+				if any == false && VarAnalysis.isMn(program, i, "SIZEOF"){
+					any = true
+				}
+			}
+		}
+		if any == false{
+			return false
+		}
+		let sizes = mut ? SizeofResolutionSizes.build(program)
+		for i in 0..n{
+			let hit = mut false
+			let name = mut ? new String()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, i)
+				if VarAnalysis.stmtIs(st, "SIZEOF") && st.size(st) >= 3{
+					hit = true
+					let t1 = mut ? st.items.getSome(st.items, 1)
+					name = ? t1.text.sub(t1.text, 0, t1.text.length(t1.text))
+				}
+			}
+			if hit{
+				let:<mut s64> v = mut 0
+				match Some(name){ v = ? SizeofResolutionSizes.structSize(sizes, name) }
+				if v < 0{
+					throw "internal error: SIZEOF names a struct which has no STRUCT declaration"
+				}
+				let numText = mut ? String.fromS64(v)
+				let pushText = mut ? String.from("PUSH")
+				let:<mut s32> line0 = mut 0
+				let:<owns mut String> file0 = mut null
+				match Some(program){
+					let st = mut ? program.items.getSome(program.items, i)
+					let t0 = mut ? st.items.getSome(st.items, 0)
+					line0 = t0.line + 0
+					match Some(t0.file){ file0 = mut ? t0.file.sub(t0.file, 0, t0.file.length(t0.file)) }
+				}
+				let nt0 = mut ? new BytecodeToken(pushText, file0, line0, BytecodeTokenKind.CODE)
+				let:<owns mut String> none = mut null
+				let nt1 = mut ? new BytecodeToken(numText, none, line0, BytecodeTokenKind.CODE)
+				match Some(program){
+					let st2 = mut ? program.items.getSome(program.items, i)
+					st2.items.setAt(st2.items, 0, nt0)
+					st2.items.setAt(st2.items, 1, nt1)
+				}
+			}
+		}
+		return true
+	}
+}

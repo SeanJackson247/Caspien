@@ -1,0 +1,228 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+import "VarScan.caspien"
+
+/**
+ * Constant-reassigned locals are split into fresh variables (port of VariableShiftingPass.java): a reassignment "ADDR x T / PUSH lit / ASSIGN" that
+ * every later mention of x is reached through (and that is not in a loop) starts a new variable `x__sN`, whose ALLOC is placed right after x's.
+ */
+@pub
+struct VariableShiftingPass{@pub{
+}}
+
+@pub
+impl constructor for VariableShiftingPass() self{
+	return VariableShiftingPass{}
+}
+
+@pub
+impl VariableShiftingPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let funcs = mut ? new Vec()
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		match Some(program){ funcs = ? VarAnalysis.functions(program) }
+		let nf = mut VarAnalysis.count(funcs)
+		if nf == 0{
+			return false
+		}
+		// rename: line -> index+1 into renNames; insertion: ALLOC line -> (first entry index+1, count) into insNames
+		let renAt = mut ? new Vec()
+		? renAt.zero(renAt, n)
+		let renNames = mut ? new ObjectList:<String>()
+		let insStart = mut ? new Vec()
+		let insCount = mut ? new Vec()
+		? insStart.zero(insStart, n)
+		? insCount.zero(insCount, n)
+		let insNames = mut ? new ObjectList:<String>()
+		let changed = mut false
+		for k in 0..nf{
+			let s = mut VarAnalysis.startOf(funcs, k)
+			let e = mut VarAnalysis.endOf(funcs, k)
+			let skipFn = mut false
+			match Some(program){ skipFn = VarAnalysis.hasMnemonic(program, s, e, "ASM_START") }
+			if skipFn == false{
+				let span0 = mut (e + 1 - s)
+				for d in 0..span0{
+					match Some(program){
+						if VarScan.isCatchLabel(program, s + d){
+							skipFn = true
+						}
+					}
+				}
+			}
+			if skipFn == false{
+				let sc = mut ? VarScan.scan(program, s, e)
+				let nv = mut VarScan.count(sc)
+				// does any variable qualify at all?
+				let any = mut false
+				for v in 0..nv{
+					let na = mut (sc.asOff.get(sc.asOff, v + 1) - sc.asOff.get(sc.asOff, v))
+					if sc.bad.get(sc.bad, v) == 0 && na >= 2{
+						any = true
+					}
+				}
+				if any{
+					let labels = mut ? VarAnalysis.labels(program, s, e)
+					let jumps = mut ? new Vec()
+					match Some(program){ jumps = ? VarAnalysis.jumps(program, s, e, labels) }
+					// every token text of the function (Java `used`)
+					let used = mut ? new StringSet()
+					let span = mut (e + 1 - s)
+					for d in 0..span{
+						let m = mut 0
+						match Some(program){ m = VarScan.sizeOf(program, s + d) }
+						for t in 0..m{
+							let tx = mut ? new String()
+							match Some(program){ tx = ? VarScan.copyTok(program, s + d, t) }
+							let ignored = mut ? used.add(used, tx)
+						}
+					}
+					for v in 0..nv{
+						let r0 = mut sc.rdOff.get(sc.rdOff, v)
+						let nr = mut (sc.rdOff.get(sc.rdOff, v + 1) - r0)
+						let a0 = mut sc.asOff.get(sc.asOff, v)
+						let na = mut (sc.asOff.get(sc.asOff, v + 1) - a0)
+						if sc.bad.get(sc.bad, v) == 0 && na >= 2{
+							let first = mut sc.asLines.get(sc.asLines, a0)
+							let declFirst = mut true
+							for q in 0..nr{
+								if sc.rdLines.get(sc.rdLines, r0 + q) < first{
+									declFirst = false
+								}
+							}
+							if declFirst{
+								// mentions in line order: merge of the sorted read and assign lists
+								let ment = mut ? new Vec()
+								let isAs = mut ? new Vec()
+								let qr = mut 0
+								let qa = mut 0
+								let total = mut (nr + na)
+								for z in 0..total{
+									let takeRead = mut false
+									if qr < nr{
+										if qa >= na{
+											takeRead = true
+										} else if sc.rdLines.get(sc.rdLines, r0 + qr) < sc.asLines.get(sc.asLines, a0 + qa){
+											takeRead = true
+										}
+									}
+									if takeRead{
+										? ment.push(ment, sc.rdLines.get(sc.rdLines, r0 + qr))
+										? isAs.push(isAs, 0)
+										qr += 1
+									} else{
+										? ment.push(ment, sc.asLines.get(sc.asLines, a0 + qa))
+										? isAs.push(isAs, 1)
+										qa += 1
+									}
+								}
+								let baseName = mut ? new String()
+								let nmr = mut ? sc.names.getSome(sc.names, v)
+								baseName = ? nmr.sub(nmr, 0, nmr.length(nmr))
+								let cur = mut ? baseName.sub(baseName, 0, baseName.length(baseName))
+								let serial = mut 0
+								let newCount = mut 0
+								let allocIdx = mut sc.allocIdx.get(sc.allocIdx, v)
+								for z in 0..total{
+									let idx = mut ment.get(ment, z)
+									if isAs.get(isAs, z) == 1 && idx != first && VariableShiftingPass.canSplit(z, ment, jumps){
+										let nn = mut ? new String()
+										let fresh = mut false
+										for tries in 0..1000000{
+											if fresh == false{
+												serial += 1
+												let cand = mut ? baseName.sub(baseName, 0, baseName.length(baseName))
+												? cand.append(cand, "__s")
+												? cand.appendU64(cand, serial)
+												if used.contains(used, cand) == false{
+													nn = ? cand.sub(cand, 0, cand.length(cand))
+													let cand2 = mut ? cand.sub(cand, 0, cand.length(cand))
+													let ign2 = mut ? used.add(used, cand2)
+													fresh = true
+												}
+											}
+										}
+										cur = ? nn.sub(nn, 0, nn.length(nn))
+										if newCount == 0{
+											insStart.set(insStart, allocIdx, insNames.size(insNames) + 1)
+										}
+										newCount += 1
+										? insNames.add(insNames, nn)
+									}
+									if cur.equals(cur, baseName) == false{
+										let cc = mut ? cur.sub(cur, 0, cur.length(cur))
+										? renNames.add(renNames, cc)
+										renAt.set(renAt, idx, renNames.size(renNames))
+									}
+								}
+								if newCount > 0{
+									insCount.set(insCount, allocIdx, newCount)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		let nRen = mut renNames.size(renNames)
+		if nRen == 0{
+			return false
+		}
+		let out = mut ? new BytecodeProgram()
+		for i in 0..n{
+			let ri = mut renAt.get(renAt, i)
+			if ri != 0{
+				let nm = mut ? renNames.getSome(renNames, ri - 1)
+				let cp = mut ? nm.sub(nm, 0, nm.length(nm))
+				match Some(program){ ? VarScan.setTokText(program, i, 1, cp) }
+			}
+			match Some(program){
+				let moved = mut program.items.take(program.items, i)
+				? out.items.add(out.items, moved)
+			}
+			let cnt = mut insCount.get(insCount, i)
+			for z in 0..cnt{
+				let en = mut (insStart.get(insStart, i) - 1 + z)
+				let nm = mut ? insNames.getSome(insNames, en)
+				let cp = mut ? nm.sub(nm, 0, nm.length(nm))
+				let last = mut out.size(out)
+				let lastSt = mut ? out.items.getSome(out.items, last - 1)
+				let al = mut ? BytecodeStatement.copyOf(lastSt)
+				? out.add(out, al)
+				let lastNew = mut out.size(out)
+				? VarScan.setTokText(out, lastNew - 1, 1, cp)
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+
+	/** Java canSplit: reassignment at mention position z is reached by every path to the later mentions and is not in a loop. */
+	static func canSplit(z: mut u64, ment: ref some imut Vec, jumps: ref some imut Vec) bool{
+		let a = mut ment.get(ment, z)
+		if VarAnalysis.inLoop(a, jumps){
+			return false
+		}
+		let total = mut ment.size(ment)
+		let later = mut (total - z - 1)
+		for q in 0..later{
+			let m = mut ment.get(ment, z + 1 + q)
+			if VarAnalysis.dominated(a, m, jumps) == false{
+				return false
+			}
+		}
+		return true
+	}
+}

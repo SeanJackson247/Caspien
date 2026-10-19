@@ -1,0 +1,109 @@
+import "stdlib/string.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "SizeofResolutionPass.caspien"
+import "StructMemberReorderingPass.caspien"
+import "StructUnpackingPass.caspien"
+import "ConstantFoldingPass.caspien"
+import "VariableElisionPass.caspien"
+import "VariableShiftingPass.caspien"
+import "DeadControlFlowRemovalPass.caspien"
+import "DeadFunctionRemovalPass.caspien"
+import "UnusedDeclarationRemovalPass.caspien"
+import "VariableAllocationReorderingPass.caspien"
+import "RegVarHintPass.caspien"
+import "LoopUnrollingPass.caspien"
+import "FunctionInliningPass.caspien"
+
+/**
+ * The pass pipeline (Java `BytecodeOptimizer.optimize`): repeat { struct member reordering, sizeof resolution, struct unpacking,
+ * repeat { constant folding, variable elision, variable shifting }, dead control flow, dead functions, unused declarations,
+ * loop unrolling, function inlining } until nothing changes; then the unroll/inline reports, allocation reordering, REGVAR hints.
+ * Every pass rewrites `program` in place and says whether it changed anything.
+ */
+@pub
+struct BytecodeOptimizer{@pub{
+}}
+
+@pub
+impl constructor for BytecodeOptimizer() self{
+	return BytecodeOptimizer{}
+}
+
+@pub
+impl BytecodeOptimizer{
+	@pub
+	@throws
+	static func optimize(program: ref mut BytecodeProgram, fold: ref imut FoldConfig, vars: ref imut VariableConfig, unroll: ref imut UnrollConfig, inl: ref imut InlineConfig, msgs: ref mut Messages) void{
+		?catch(e){ throw e }
+		let unrollPass = mut ? new LoopUnrollingPass()
+		let inlSt = mut ? FunctionInliningPass.newState()
+		let pins = mut ? new StringSet()
+		// the switches are read once into locals: the pass calls free memory, which ends the proofs on the config references
+		let foldOn = mut false
+		match Some(fold){ foldOn = fold.enabled }
+		let elision = mut false
+		let shifting = mut false
+		let unpacking = mut false
+		let deadFlow = mut false
+		let deadFunctions = mut false
+		let unusedDecls = mut false
+		let allocReorder = mut false
+		let structReorder = mut false
+		match Some(vars){
+			elision = vars.elision
+			shifting = vars.shifting
+			unpacking = vars.unpacking
+			deadFlow = vars.deadFlow
+			deadFunctions = vars.deadFunctions
+			unusedDecls = vars.unusedDecls
+			allocReorder = vars.allocReorder
+			structReorder = vars.structReorder
+		}
+		let outerChanged = mut true
+		for guard in 0..100000000{
+			if outerChanged == false{
+				break
+			}
+			outerChanged = false
+			let r = mut false
+			r = ? StructMemberReorderingPass.runWith(program, structReorder, pins)
+			if r{ outerChanged = true }
+			r = ? SizeofResolutionPass.run(program)
+			if r{ outerChanged = true }
+			r = ? StructUnpackingPass.run(program, unpacking)
+			if r{ outerChanged = true }
+			let innerChanged = mut true
+			let innerAny = mut false
+			for iguard in 0..100000000{
+				if innerChanged == false{
+					break
+				}
+				innerChanged = false
+				r = ? ConstantFoldingPass.run(program, foldOn)
+				if r{ innerChanged = true }
+				r = ? VariableElisionPass.run(program, elision)
+				if r{ innerChanged = true }
+				r = ? VariableShiftingPass.run(program, shifting)
+				if r{ innerChanged = true }
+				if innerChanged{ innerAny = true }
+			}
+			if innerAny{ outerChanged = true }
+			r = ? DeadControlFlowRemovalPass.run(program, deadFlow)
+			if r{ outerChanged = true }
+			r = ? DeadFunctionRemovalPass.run(program, deadFunctions)
+			if r{ outerChanged = true }
+			r = ? UnusedDeclarationRemovalPass.run(program, unusedDecls)
+			if r{ outerChanged = true }
+			r = ? unrollPass.run(unrollPass, program, unroll, msgs)
+			if r{ outerChanged = true }
+			r = ? FunctionInliningPass.run(program, inl, msgs, inlSt)
+			if r{ outerChanged = true }
+		}
+		? LoopUnrollingPass.reportUnhonoured(program, unroll, msgs)
+		? FunctionInliningPass.reportForced(program, inl, msgs, inlSt)
+		let ignored = mut ? VariableAllocationReorderingPass.run(program, allocReorder)
+		let ignored2 = mut ? RegVarHintPass.run(program)
+	}
+}

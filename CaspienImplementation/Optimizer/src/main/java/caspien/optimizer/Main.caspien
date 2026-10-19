@@ -1,0 +1,231 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/make_safe_args.caspien"
+import "stdlib/string.caspien"
+import "stdlib/fs.caspien"
+import "stdlib/print_string.caspien"
+import "Optimizer.caspien"
+import "Messages.caspien"
+
+struct Main{@pub{
+}}
+
+@pub
+impl Main{
+	@pub
+	@throws
+	static func run(args: owns some mut dynarray(imut dynarray(imut char))) void{
+		?catch(e){ throw e }
+		let n = mut len(args)
+		if n < 4{
+			throw "Usage: optimizer -i <input.txt> <output>"
+		}
+		let flag = mut ? new String()
+		match 1 in args{
+			let one1 = mut args[1]
+			let m1 = mut len(one1)
+			for k1 in 0..m1{
+				match k1 in one1{ ? flag.appendChar(flag, one1[k1]) }
+			}
+		}
+		let inputPath = mut ? new String()
+		match 2 in args{
+			let one2 = mut args[2]
+			let m2 = mut len(one2)
+			for k2 in 0..m2{
+				match k2 in one2{ ? inputPath.appendChar(inputPath, one2[k2]) }
+			}
+		}
+		let outputPath = mut ? new String()
+		match 3 in args{
+			let one3 = mut args[3]
+			let m3 = mut len(one3)
+			for k3 in 0..m3{
+				match k3 in one3{ ? outputPath.appendChar(outputPath, one3[k3]) }
+			}
+		}
+		match Some(flag){
+			if flag.equals(flag, "-i") == false{
+				throw "Usage: optimizer -i <input.txt> <output>"
+			}
+		}
+		let cfgDir = mut ? Dir.root(".")
+		let cfgName = mut ? String.from("compiler.config")
+		let config = mut ? new String()
+		config = ? Main.readFile(cfgDir, cfgName)
+		let input = mut ? new String()
+		match Some(inputPath){
+			let ip = mut Main.pathDir(inputPath)
+			let inName = mut Main.pathName(inputPath)
+			match Some(ip){
+				let ipc = mut ? CName.from(ip)
+				match Some(ipc){
+					let rp = mut ? new RootPath(ipc.text)
+					let d = mut ? Dir.root(rp)
+					input = ? Main.readFile(d, inName)
+				}
+			}
+		}
+		let msgs = mut ? new Messages()
+		// test mode: `-i in out --pass NAME` runs one pass only
+		let pass = mut ? new String()
+		match 5 in args{
+			let one5 = mut args[5]
+			let m5 = mut len(one5)
+			for k5 in 0..m5{
+				match k5 in one5{ ? pass.appendChar(pass, one5[k5]) }
+			}
+		}
+		let hob = mut ? new String()
+		let passLen = mut 0
+		match Some(pass){ passLen = pass.length(pass) }
+		if passLen > 0{
+			match Some(input){ match Some(config){ match Some(inputPath){ hob = ? Optimizer.runPass(pass, input, inputPath, config, msgs) } } }
+		} else{
+			match Some(input){ match Some(config){ match Some(inputPath){ hob = ? Optimizer.optimize(input, inputPath, config, msgs) } } }
+		}
+		let mn = mut msgs.lines.size(msgs.lines)
+		for mi in 0..mn{
+			let ml = mut ? msgs.lines.getSome(msgs.lines, mi)
+			Main.eprint(ml)
+			Main.eprintLit("\n")
+		}
+		match Some(outputPath){
+			let op = mut Main.pathDir(outputPath)
+			let outName = mut Main.pathName(outputPath)
+			match Some(op){
+				let opc = mut ? CName.from(op)
+				match Some(opc){
+					let rp2 = mut ? new RootPath(opc.text)
+					let d2 = mut ? Dir.rootRW(rp2)
+					? Main.writeFile(d2, outName, hob)
+				}
+			}
+		}
+		unsafe extern{ exit(0) } // skip the destructors: the process is done, the OS reclaims everything
+	}
+
+	/** Index of the last '/' in `p`, or -1 (helper of the port). */
+	@pub
+	static func lastSlash(p: ref imut String) mut s64{
+		let:<mut s64> at = mut -1
+		let:<mut u64> n = mut 0
+		match Some(p){ n = p.length(p) }
+		for i in 0..n{
+			match Some(p){
+				if p.charAt(p, i) == '/'{
+					at = wrap:<s64>(i)
+				}
+			}
+		}
+		return at
+	}
+
+	/** The part of `p` before its last '/', or "." when there is none (helper of the port). */
+	@pub
+	static func pathDir(p: ref imut String) owns mut String{
+		?catch(e){ return null }
+		let at = mut Main.lastSlash(p)
+		if at < 0{
+			let dot = mut ? String.from(".")
+			return dot
+		}
+		if at == 0{
+			let sl = mut ? String.from("/")
+			return sl
+		}
+		let head = mut ? new String()
+		match Some(p){ head = ? p.sub(p, 0, wrap:<u64>(at)) }
+		return head
+	}
+
+	/** The part of `p` after its last '/' (helper of the port). */
+	@pub
+	static func pathName(p: ref imut String) owns mut String{
+		?catch(e){ return null }
+		let at = mut Main.lastSlash(p)
+		if at < 0{
+			let whole = mut ? new String()
+			match Some(p){ whole = ? p.substring(p, 0) }
+			return whole
+		}
+		let tail = mut ? new String()
+		match Some(p){ tail = ? p.sub(p, wrap:<u64>(at + 1), p.length(p)) }
+		return tail
+	}
+
+	/** Writes `s` to stderr (helper of the port; the one `unsafe` of this file). */
+	@pub
+	static func eprint(s: ref imut String) void{
+		?catch(e){ return }
+		match Some(s){
+			let cn = mut ? CName.from(s)
+			match Some(cn){
+				let t = cn.text
+				unsafe extern{
+					write(2, t, strlen(t))
+				}
+			}
+		}
+	}
+
+	@pub
+	static func eprintLit(t: static imut string) void{
+		unsafe extern{
+			write(2, t, strlen(t))
+		}
+	}
+
+	/** Writes `content` to the file `name` of the open directory `dir`, replacing it. The directory comes from the build's `fs-roots`, so the port writes only where it was compiled to (the Java wrote to any path). */
+	@pub
+	@throws
+	static func writeFile(dir: ref imut Dir, name: ref imut String, content: ref imut String) void{
+		?catch(e){ throw e }
+		let done = mut false
+		match Some(name){
+			let cn = mut ? CName.from(name)
+			match Some(dir){
+				let f = mut ? File.open(dir, cn.text, Open.WRITE_TRUNC)
+				match Some(f){
+					match Some(content){ ? File.writeString(f, content) }
+					done = true
+				}
+			}
+		}
+		if done == false{
+			throw "[io error] cannot write file"
+		}
+	}
+
+	/** Reads the whole file `name` of the open directory `dir` (Java `Files.readString`). */
+	@pub
+	@throws
+	static func readFile(dir: ref imut Dir, name: ref imut String) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let done = mut false
+		match Some(name){
+			let cn = mut ? CName.from(name)
+			match Some(dir){
+				let f = mut ? File.open(dir, cn.text, Open.READ)
+				match Some(f){
+					out = ? File.readAll(f)
+					done = true
+				}
+			}
+		}
+		if done == false{
+			throw "[io error] cannot read file"
+		}
+		return out
+	}
+}
+
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	try Main.run(args) catch(e){
+		Main.eprintLit(e.msg)
+		Main.eprintLit("\n")
+		unsafe extern{ exit(1) }
+		return
+	}
+}

@@ -1,0 +1,849 @@
+import "stdlib/string.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "InlineHob.caspien"
+import "InlineState.caspien"
+import "InlineAnalyse.caspien"
+
+/**
+ * Call-site expansion of FunctionInliningPass (port of expandRange / classify / tryInline / rename). Worker `inline`.
+ * The output of a function body is built in `st.buf`: a call bracket's CC_START line goes into the buffer before its argument region is expanded,
+ * so the argument region is simply the tail of the buffer when the child frame is done. Modes of a site: 0 DISCARD, 1 STACK, 2 TEMP.
+ */
+@pub
+struct InlExp{@pub{
+}}
+
+@pub
+impl InlExp{
+	/** Java matchEnd: index + 1 of the CC_END matching the CC_START at k (looking below `to`), or 0. */
+	static func matchEnd1(st: ref some imut FunctionInliningState, src: ref some imut Ls, k: mut u64, to: mut u64) mut u64{
+		let depth = mut 0
+		for i in k..to{
+			let m = mut IU.mn(st, src, i)
+			if m == st.h.CC_START{
+				depth += 1
+			} else if m == st.h.CC_END{
+				if depth > 0{
+					depth -= 1
+				}
+				if depth == 0{
+					return i + 1
+				}
+			}
+		}
+		return 0
+	}
+
+	/** The label staged for this call site by "ADDR gt_routine_address / PUSH_LABEL X / ASSIGN" at the end of buf[ps..], or 0. */
+	static func stagedLabel(st: ref some imut FunctionInliningState, ps: mut u64) mut u64{
+		let n = mut (st.buf.n(st.buf) - ps)
+		if n < 3{
+			return 0
+		}
+		let a = mut (ps + n - 3)
+		let b = mut (ps + n - 2)
+		let c = mut (ps + n - 1)
+		if IU.isN(st, st.buf, a, 3, st.h.ADDR) == false{
+			return 0
+		}
+		if st.buf.tok(st.buf, a, 1) != st.h.gtAddr{
+			return 0
+		}
+		if IU.isN(st, st.buf, b, 3, st.h.PUSH_LABEL) == false{
+			return 0
+		}
+		let lab = mut st.buf.tok(st.buf, b, 1)
+		if st.h.isCallsitep(st.h, lab) == false &&then st.h.isCatchp(st.h, lab) == false{
+			return 0
+		}
+		if IU.isN(st, st.buf, c, 4, st.h.ASSIGN) == false{
+			return 0
+		}
+		return lab
+	}
+
+	/** Java classify: what is on the operand stack beneath a call site whose CC_START would be appended: 0 = nothing, 1 = one address, 2 = other. */
+	static func classify(st: ref some imut FunctionInliningState, ps: mut u64, cut: mut u64, baseClean: mut bool) mut u64{
+		let n = mut (st.buf.n(st.buf) - ps - cut)
+		if baseClean == false{
+			return 2
+		}
+		if n == 0{
+			return 0
+		}
+		if IU.boundary(st, st.buf, ps + n - 1){
+			return 0
+		}
+		if IU.isN(st, st.buf, ps + n - 1, 3, st.h.ADDR) &&then n >= 2 &&then IU.boundary(st, st.buf, ps + n - 2){
+			return 1
+		}
+		return 2
+	}
+
+	/** Java argRegisterLoaded: a depth-0 "POP ARGn" / "POP FARGn" of the bracket being built has put a value in an argument register. */
+	static func argRegisterLoaded(st: ref some imut FunctionInliningState, ps: mut u64) bool{
+		let:<mut s64> depth = mut 0
+		let hi = mut st.buf.n(st.buf)
+		for i in ps..hi{
+			let m = mut IU.mn(st, st.buf, i)
+			if m == st.h.CC_START{
+				depth = depth + 1
+			} else if m == st.h.CC_END{
+				depth = depth - 1
+			} else if depth == 0 &&then m == st.h.POP &&then st.buf.ntok(st.buf, i) == 3{
+				if st.h.isArgpop(st.h, st.buf.tok(st.buf, i, 1)){
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	/** Java moveNullOuts on buf[from..to): empty or only "ADDR n T / PUSH null T / ASSIGN T T T" triples. */
+	static func moveNullOuts(st: ref some imut FunctionInliningState, from: mut u64, to: mut u64) bool{
+		let cnt = mut (to - from)
+		if cnt % 3 != 0{
+			return false
+		}
+		let tri = mut (cnt / 3)
+		for q in 0..tri{
+			let a = mut (from + q * 3)
+			if IU.isN(st, st.buf, a, 3, st.h.ADDR) == false{
+				return false
+			}
+			if IU.isN(st, st.buf, a + 1, 3, st.h.PUSH) == false{
+				return false
+			}
+			if st.buf.tok(st.buf, a + 1, 1) != st.h.nullT{
+				return false
+			}
+			if IU.isN(st, st.buf, a + 2, 4, st.h.ASSIGN) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/**
+	 * Java expandRange for the body of one function (src lines from..to): the result is left in st.buf. A call's argument region is expanded first as a
+	 * frame of its own; the call itself is handled when that frame is done.
+	 */
+	@pub
+	@throws
+	static func expandRange(st: ref some mut FunctionInliningState, src: ref some imut Ls, from: mut u64, to: mut u64) void{
+		?catch(ex){ throw ex }
+		st.buf.clear(st.buf)
+		let d = mut 0
+		? VX.setG(st.fK, 0, from)
+		? VX.setG(st.fTo, 0, to)
+		? VX.setG(st.fBase, 0, 1)
+		? VX.setG(st.fRegs, 0, 0)
+		? VX.setG(st.fPs, 0, 0)
+		let fin = mut false
+		let limit = mut (src.n(src) * 4 + 64)
+		for iter in 0..limit{
+			if fin{
+				fin = false
+				let k = mut st.fK.get(st.fK, d)
+				let e = mut st.fE.get(st.fE, d)
+				let hasRet = mut false
+				if e + 1 < st.fTo.get(st.fTo, d) &&then IU.isN(st, src, e + 1, 2, st.h.PUSH_RET){
+					hasRet = true
+				}
+				let done = mut false
+				if st.fIsCall.get(st.fIsCall, d) == 1{
+					let callName = mut src.tok(src, e - 1, 1)
+					let c1 = mut st.byName.get(st.byName, callName)
+					if c1 > 0{
+						let c = mut (c1 - 1)
+						let fl = mut st.cFl.get(st.cFl, c)
+						if bits_and(fl, 1) != 0 &&then callName != st.caller &&then st.fLoaded.get(st.fLoaded, d) == 0{
+							done = ? InlExp.tryInline(st, src, c, d, hasRet)
+						}
+					}
+				}
+				if done{
+					let nk = mut (e + 1)
+					if hasRet{
+						nk += 1
+					}
+					? VX.setG(st.fK, d, nk)
+				} else {
+					if st.fIsCall.get(st.fIsCall, d) == 1{
+						? st.buf.copyLine(st.buf, src, e - 1, true)
+					}
+					? st.buf.copyLine(st.buf, src, e, true)
+					? VX.setG(st.fK, d, e + 1)
+				}
+			}
+			let descended = mut false
+			let capv = mut (st.fTo.get(st.fTo, d) + 1 - st.fK.get(st.fK, d))
+			for step in 0..capv{
+				let k = mut st.fK.get(st.fK, d)
+				let toNow = mut st.fTo.get(st.fTo, d)
+				if k >= toNow{
+					break
+				}
+				if IU.isN(st, src, k, 2, st.h.CC_START) == false{
+					? st.buf.copyLine(st.buf, src, k, true)
+					? VX.setG(st.fK, d, k + 1)
+					continue
+				}
+				let e1 = mut InlExp.matchEnd1(st, src, k, toNow)
+				if e1 == 0{
+					? st.buf.copyLine(st.buf, src, k, true)
+					? VX.setG(st.fK, d, k + 1)
+					continue
+				}
+				let e = mut (e1 - 1)
+				? VX.setG(st.fE, d, e)
+				let isCall = mut 0
+				if e - 1 > k &&then IU.isN(st, src, e - 1, 2, st.h.CALL){
+					isCall = 1
+				}
+				let argsEnd = mut e
+				if isCall == 1{
+					argsEnd = e - 1
+				}
+				let ps = mut st.fPs.get(st.fPs, d)
+				let cut = mut 0
+				if InlExp.stagedLabel(st, ps) != 0{
+					cut = 3
+				}
+				let baseClean = mut false
+				if st.fBase.get(st.fBase, d) == 1{
+					baseClean = true
+				}
+				let cls = mut InlExp.classify(st, ps, cut, baseClean)
+				let loaded = mut 0
+				if st.fRegs.get(st.fRegs, d) == 1{
+					loaded = 1
+				}
+				if loaded == 0 &&then InlExp.argRegisterLoaded(st, ps){
+					loaded = 1
+				}
+				let csPos = mut st.buf.n(st.buf)
+				? st.buf.copyLine(st.buf, src, k, true)
+				? VX.setG(st.fIsCall, d, isCall)
+				? VX.setG(st.fCut, d, cut)
+				? VX.setG(st.fCls, d, cls)
+				? VX.setG(st.fLoaded, d, loaded)
+				? VX.setG(st.fCs, d, csPos)
+				let nd = mut (d + 1)
+				? VX.setG(st.fK, nd, k + 1)
+				? VX.setG(st.fTo, nd, argsEnd)
+				let childBase = mut 0
+				if cls == 0{
+					childBase = 1
+				}
+				? VX.setG(st.fBase, nd, childBase)
+				? VX.setG(st.fRegs, nd, loaded)
+				? VX.setG(st.fPs, nd, st.buf.n(st.buf))
+				d = nd
+				descended = true
+				break
+			}
+			if descended{
+				continue
+			}
+			if d == 0{
+				break
+			}
+			d = d - 1
+			fin = true
+		}
+	}
+
+	/** putIfAbsent(name, pos) of the forced-position map (a null value counts as absent). */
+	@pub
+	@throws
+	static func putPos(st: ref some mut FunctionInliningState, name: mut u64, pos: mut u64) void{
+		?catch(ex){ throw ex }
+		if st.fHas.get(st.fHas, name) == 0{
+			? VX.setG(st.fHas, name, 1)
+			? VX.setG(st.fPos, name, pos)
+			? st.fOrder.push(st.fOrder, name)
+		} else if st.fPos.get(st.fPos, name) == 0{
+			? VX.setG(st.fPos, name, pos)
+		}
+	}
+
+	/** Java renameVar. */
+	@throws
+	static func renameVar(st: ref some mut FunctionInliningState, name: mut u64, inst: mut u64) mut u64{
+		?catch(ex){ throw ex }
+		st.h.tmpClear(st.h)
+		if st.h.isForrange(st.h, name){
+			? st.h.tmpApp(st.h, st.h.forRange)
+			? st.h.tmpAppNum(st.h, st.fresh)
+			st.fresh += 1
+		} else {
+			? st.h.tmpApp(st.h, name)
+			? st.h.tmpApp(st.h, st.h.sufI)
+			? st.h.tmpAppNum(st.h, inst)
+		}
+		let id = mut ? st.h.internTmp(st.h)
+		return id
+	}
+
+	/** Java renameLabel (lb starts with '@'). */
+	@throws
+	static func renameLabel(st: ref some mut FunctionInliningState, lb: mut u64, inst: mut u64) mut u64{
+		?catch(ex){ throw ex }
+		st.h.tmpClear(st.h)
+		let n = mut st.h.length(st.h, lb)
+		let us1 = mut st.h.lastIndexOf1(st.h, lb, 95)
+		let numeric = mut false
+		if us1 > 1{
+			if st.h.digitsIn(st.h, lb, us1, n){
+				numeric = true
+			}
+		}
+		if numeric{
+			? st.h.tmpAppRange(st.h, lb, 0, us1)
+			? st.h.tmpAppNum(st.h, st.fresh)
+			st.fresh += 1
+		} else {
+			? st.h.tmpApp(st.h, lb)
+			? st.h.tmpApp(st.h, st.h.sufLabI)
+			? st.h.tmpAppNum(st.h, inst)
+			? st.h.tmpApp(st.h, st.h.under)
+			? st.h.tmpAppNum(st.h, st.fresh)
+			st.fresh += 1
+		}
+		let id = mut ? st.h.internTmp(st.h)
+		return id
+	}
+
+	/** The id of "text" + ":" . */
+	@throws
+	static func withColon(st: ref some mut FunctionInliningState, id: mut u64) mut u64{
+		?catch(ex){ throw ex }
+		st.h.tmpClear(st.h)
+		? st.h.tmpApp(st.h, id)
+		? st.h.tmpApp(st.h, st.h.colon)
+		let r = mut ? st.h.internTmp(st.h)
+		return r
+	}
+
+	/** Java renameRangeText over the names in st.localRen. */
+	@pub
+	@throws
+	static func renameRange(st: ref some mut FunctionInliningState, x: mut u64) mut u64{
+		?catch(ex){ throw ex }
+		if st.h.isHasrange(st.h, x) == false{
+			return x
+		}
+		let n = mut st.h.length(st.h, x)
+		st.h.tmpClear(st.h)
+		let i = mut 0
+		let guard = mut (n + 2)
+		for g in 0..guard{
+			let q1 = mut st.h.indexOfRange1(st.h, x, i)
+			let close1 = mut 0
+			if q1 > 0{
+				close1 = st.h.indexOf1(st.h, x, 41, q1 - 1 + 6)
+			}
+			if q1 == 0 || close1 == 0{
+				? st.h.tmpAppRange(st.h, x, i, n)
+				break
+			}
+			let q = mut (q1 - 1)
+			let close = mut (close1 - 1)
+			? st.h.tmpAppRange(st.h, x, i, q + 6)
+			let p0 = mut (q + 6)
+			let first = mut true
+			let pguard = mut (close + 2 - p0)
+			for pg in 0..pguard{
+				let c1 = mut st.h.indexOf1(st.h, x, 44, p0)
+				let pend = mut close
+				let more = mut false
+				if c1 > 0 &&then c1 - 1 < close{
+					pend = c1 - 1
+					more = true
+				}
+				if first == false{
+					? st.h.tmpPush(st.h, 44)
+				}
+				first = false
+				let handled = mut false
+				let pid = mut st.h.findSub(st.h, x, p0, pend)
+				if pid != 0 &&then st.localRen.has(st.localRen, pid){
+					? st.h.tmpApp(st.h, st.localRen.get(st.localRen, pid))
+					handled = true
+				}
+				if handled == false{
+					let plen = mut (pend - p0)
+					let pl = mut 0
+					if plen >= 4 &&then st.h.pk(st.h, x, p0, 4) == 1601467757{
+						pl = 4
+					}
+					if plen >= 5 &&then st.h.pk(st.h, x, p0, 5) == 409975745897{
+						pl = 5
+					}
+					if plen >= 14 &&then st.h.pk(st.h, x, p0, 8) == 7886477448070852201 &&then st.h.pk(st.h, x, p0 + 8, 6) == 104889348877929{
+						pl = 14
+					}
+					if pl > 0{
+						let rid = mut st.h.findSub(st.h, x, p0 + pl, pend)
+						if rid != 0 &&then st.localRen.has(st.localRen, rid){
+							? st.h.tmpAppRange(st.h, x, p0, p0 + pl)
+							? st.h.tmpApp(st.h, st.localRen.get(st.localRen, rid))
+							handled = true
+						}
+					}
+				}
+				if handled == false{
+					? st.h.tmpAppRange(st.h, x, p0, pend)
+				}
+				if more == false{
+					break
+				}
+				p0 = pend + 1
+			}
+			? st.h.tmpPush(st.h, 41)
+			i = close + 1
+		}
+		let r = mut ? st.h.internTmp(st.h)
+		return r
+	}
+
+	/** Java rename(l, local, lab): src line li copied into blk with the callee's names replaced. */
+	@throws
+	static func renameLine(st: ref some mut FunctionInliningState, src: ref some imut Ls, li: mut u64) void{
+		?catch(ex){ throw ex }
+		? st.blk.addLine(st.blk, 0)
+		let n = mut src.ntok(src, li)
+		let ld = mut IU.isLabelDef(st, src, li)
+		let m = mut IU.mn(st, src, li)
+		for t in 0..n{
+			let tk = mut src.tok(src, li, t)
+			if st.h.isStr(st.h, tk){
+				? st.blk.addTok(st.blk, tk)
+				continue
+			}
+			if t == 0 &&then ld == false{
+				? st.blk.addTok(st.blk, tk)
+				continue
+			}
+			if st.h.isAt(st.h, tk){
+				let colon = mut st.h.isColon(st.h, tk)
+				let nm = mut tk
+				if colon{
+					nm = st.h.nameOfLabel(st.h, tk)
+				}
+				if st.labRen.has(st.labRen, nm){
+					if colon{
+						? st.blk.addTok(st.blk, st.labRenC.get(st.labRenC, nm))
+					} else {
+						? st.blk.addTok(st.blk, st.labRen.get(st.labRen, nm))
+					}
+				} else {
+					? st.blk.addTok(st.blk, tk)
+				}
+				continue
+			}
+			if t == 1 &&then m != 0 &&then st.h.isNamepos(st.h, m){
+				let rt = mut st.h.rootOf(st.h, tk)
+				if st.localRen.has(st.localRen, rt){
+					let r = mut st.localRen.get(st.localRen, rt)
+					if st.h.isHasdot(st.h, tk){
+						let dot1 = mut st.h.indexOf1(st.h, tk, 46, 0)
+						let tl = mut st.h.length(st.h, tk)
+						st.h.tmpClear(st.h)
+						? st.h.tmpApp(st.h, r)
+						? st.h.tmpAppRange(st.h, tk, dot1 - 1, tl)
+						let nid = mut ? st.h.internTmp(st.h)
+						? st.blk.addTok(st.blk, nid)
+					} else {
+						? st.blk.addTok(st.blk, r)
+					}
+					continue
+				}
+			}
+			if st.h.isHasrange(st.h, tk){
+				let y = mut ? InlExp.renameRange(st, tk)
+				? st.blk.addTok(st.blk, y)
+				continue
+			}
+			? st.blk.addTok(st.blk, tk)
+		}
+	}
+
+	/** Java tryInline: true when the call bracket of frame `d` (callee c, `hasRet` = a PUSH_RET follows) was replaced by the callee's body in st.buf. */
+	@pub
+	@throws
+	static func tryInline(st: ref some mut FunctionInliningState, src: ref some imut Ls, c: mut u64, d: mut u64, hasRet: mut bool) mut bool{
+		?catch(ex){ throw ex }
+		let ps = mut st.fPs.get(st.fPs, d)
+		let csPos = mut st.fCs.get(st.fCs, d)
+		let cut = mut st.fCut.get(st.fCut, d)
+		let cls = mut st.fCls.get(st.fCls, d)
+		let aFrom = mut (csPos + 1)
+		let aTo = mut st.buf.n(st.buf)
+		let parOff = mut st.cParOff.get(st.cParOff, c)
+		let parN = mut st.cParN.get(st.cParN, c)
+		let alOff = mut st.cAlOff.get(st.cAlOff, c)
+		let alN = mut st.cAlN.get(st.cAlN, c)
+		let codeOff = mut st.cCodeOff.get(st.cCodeOff, c)
+		let codeN = mut st.cCodeN.get(st.cCodeN, c)
+		let lbOff = mut st.cLbOff.get(st.cLbOff, c)
+		let lbN = mut st.cLbN.get(st.cLbN, c)
+		let glOff = mut st.cGlOff.get(st.cGlOff, c)
+		let glN = mut st.cGlN.get(st.cGlN, c)
+		let retOff = mut st.cRetOff.get(st.cRetOff, c)
+		let retN = mut st.cRetN.get(st.cRetN, c)
+		let cfl = mut st.cFl.get(st.cFl, c)
+		let forced = mut (bits_and(cfl, 2) != 0)
+		let unwinds = mut (bits_and(cfl, 8) != 0)
+		let usesAddr = mut (bits_and(cfl, 16) != 0)
+		let usesMsg = mut (bits_and(cfl, 32) != 0)
+		let hasCatch = mut (bits_and(cfl, 64) != 0)
+		let balanced = mut (bits_and(cfl, 128) != 0)
+		let controlFlow = mut (bits_and(cfl, 256) != 0)
+		let cname = mut st.cName.get(st.cName, c)
+		// ---- split the argument region into per-parameter segments
+		st.segFrom.n = 0
+		st.segTo.n = 0
+		st.popAt.n = 0
+		let:<mut s64> depth = mut 0
+		let curStart = mut aFrom
+		for idx in aFrom..aTo{
+			let m = mut IU.mn(st, st.buf, idx)
+			if m == st.h.CC_START{
+				depth = depth + 1
+			}
+			if depth == 0{
+				if m == st.h.VARARGS_XMM_COUNT || m == st.h.DUP_TOP || m == st.h.CALL || m == st.h.EXTERN_CALL || m == st.h.INVOKE{
+					return false
+				}
+				if m == st.h.POP{
+					if st.buf.ntok(st.buf, idx) != 3{
+						return false
+					}
+					if st.h.isArgpop(st.h, st.buf.tok(st.buf, idx, 1)) == false{
+						return false
+					}
+					? st.segFrom.push(st.segFrom, curStart)
+					? st.segTo.push(st.segTo, idx)
+					? st.popAt.push(st.popAt, idx)
+					curStart = idx + 1
+					continue
+				}
+			}
+			if m == st.h.CC_END{
+				depth = depth - 1
+			}
+		}
+		let postFrom = mut curStart
+		if depth != 0{
+			return false
+		}
+		if InlExp.moveNullOuts(st, postFrom, aTo) == false{
+			return false
+		}
+		let words = mut 0
+		for j in 0..parN{
+			words += IU.wordsOf(st, st.parList.get(st.parList, parOff + j * 2 + 1))
+		}
+		let nsegs = mut st.segFrom.n
+		if nsegs != words{
+			return false
+		}
+		for j in 0..nsegs{
+			let pl = mut st.popAt.get(st.popAt, j)
+			if IU.scalarType(st, st.buf.tok(st.buf, pl, 2)) == false{
+				return false
+			}
+		}
+		// ---- site context
+		let valueMode = mut hasRet
+		let addr1 = mut false
+		if cls == 1{
+			addr1 = true
+		}
+		let nn = mut (csPos - ps - cut)
+		let addrIdx = mut 0
+		if addr1{
+			addrIdx = ps + nn - 1
+		}
+		if addr1 &&then valueMode == false{
+			return false
+		}
+		// ---- callee shape vs. site
+		let voidCallee = mut true
+		if retN > 0{
+			voidCallee = (st.retList.get(st.retList, retOff + 2) == 1)
+		}
+		for r in 0..retN{
+			let rv = mut (st.retList.get(st.retList, retOff + r * 7 + 2) == 1)
+			if rv != voidCallee{
+				return false
+			}
+		}
+		if valueMode &&then voidCallee &&then retN > 0{
+			return false
+		}
+		if valueMode &&then retN == 0{
+			return false
+		}
+		let mode = mut 0
+		if valueMode == false{
+			mode = 0
+			if voidCallee == false{
+				for r in 0..retN{
+					let vs = mut st.retList.get(st.retList, retOff + r * 7 + 3)
+					let pu = mut st.retList.get(st.retList, retOff + r * 7 + 5)
+					if vs == 0 || pu == 0{
+						return false
+					}
+				}
+			}
+		} else {
+			let stackOk = mut false
+			if controlFlow == false &&then retN == 1{
+				if st.retList.get(st.retList, retOff + 6) == 1 &&then st.retList.get(st.retList, retOff + 3) > 0{
+					stackOk = true
+				}
+			}
+			if addr1 &&then controlFlow{
+				stackOk = false
+			}
+			if addr1 &&then balanced == false{
+				stackOk = false
+			}
+			if stackOk{
+				mode = 1
+			} else {
+				mode = 2
+				for r in 0..retN{
+					if st.retList.get(st.retList, retOff + r * 7 + 3) == 0{
+						return false
+					}
+				}
+			}
+		}
+		if balanced == false &&then cls != 0{
+			let tempOk = mut false
+			if cls == 1 &&then mode == 2{
+				tempOk = true
+			}
+			if tempOk == false{
+				return false
+			}
+		}
+		// ---- growth
+		let est = mut (codeN + alN + words + parN * 2 + 4)
+		let cap = mut st.cfgMaxGrowth
+		if st.cfgGrowthFactor > 0{
+			let os = mut st.origSize.get(st.origSize, st.caller)
+			if os == 0{
+				os = 1
+			}
+			cap = VX.min(cap, VX.max(2000, st.cfgGrowthFactor * os))
+		}
+		let unlimited = mut forced
+		let used = mut (st.grown.get(st.grown, st.caller) + st.added + est)
+		if unlimited == false &&then used > cap{
+			return false
+		}
+		if forced == false &&then st.cfgTotalFactor > 0{
+			let tcap = mut VX.max(50000, st.cfgTotalFactor * st.origProgram)
+			if st.totalAdded + est > tcap{
+				return false
+			}
+		}
+		if forced == false &&then st.cfgMulti > 0 &&then st.cLines.get(st.cLines, c) > st.cfgMulti &&then st.cCalls.get(st.cCalls, c) > 1{
+			return false
+		}
+		if hasCatch &&then cls == 2{
+			return false
+		}
+		let unwindTo = mut 0
+		if cut == 3{
+			unwindTo = st.buf.tok(st.buf, csPos - 2, 1)
+		}
+		if unwinds &&then unwindTo == 0{
+			return false
+		}
+		if usesAddr &&then st.callerNames.has(st.callerNames, st.h.gtAddr) == false{
+			return false
+		}
+		if usesMsg &&then st.callerNames.has(st.callerNames, st.h.gtMsg) == false{
+			return false
+		}
+		for j in 0..glN{
+			if st.callerNames.has(st.callerNames, st.glList.get(st.glList, glOff + j)){
+				return false
+			}
+		}
+
+		// ---- build
+		let inst = mut st.fresh
+		st.fresh += 1
+		st.localRen.begin(st.localRen)
+		for j in 0..parN{
+			let nm = mut st.parList.get(st.parList, parOff + j * 2)
+			let nid = mut ? InlExp.renameVar(st, nm, inst)
+			? st.localRen.put(st.localRen, nm, nid)
+		}
+		for j in 0..alN{
+			let nm = mut st.alList.get(st.alList, alOff + j * 2)
+			let nid = mut ? InlExp.renameVar(st, nm, inst)
+			? st.localRen.put(st.localRen, nm, nid)
+		}
+		st.labRen.begin(st.labRen)
+		st.labRenC.begin(st.labRenC)
+		for j in 0..lbN{
+			let lb = mut st.lbList.get(st.lbList, lbOff + j)
+			let nl = mut ? InlExp.renameLabel(st, lb, inst)
+			? st.labRen.put(st.labRen, lb, nl)
+			let nlc = mut ? InlExp.withColon(st, nl)
+			? st.labRenC.put(st.labRenC, lb, nlc)
+		}
+		// the end label: "@inl_end_" + (fresh++)
+		st.h.tmpClear(st.h)
+		? st.h.tmpApp(st.h, st.h.inlEnd)
+		? st.h.tmpAppNum(st.h, st.fresh)
+		st.fresh += 1
+		let endLabel = mut ? st.h.internTmp(st.h)
+		let endLabelC = mut ? InlExp.withColon(st, endLabel)
+		st.h.tmpClear(st.h)
+		? st.h.tmpApp(st.h, st.h.retPre)
+		? st.h.tmpAppNum(st.h, inst)
+		let retVar = mut ? st.h.internTmp(st.h)
+
+		st.blk.clear(st.blk)
+		let sg = mut 0
+		for j in 0..parN{
+			let pnOld = mut st.parList.get(st.parList, parOff + j * 2)
+			let pt = mut st.parList.get(st.parList, parOff + j * 2 + 1)
+			let pn = mut st.localRen.get(st.localRen, pnOld)
+			? st.blk.add5(st.blk, st.h.ADDR, pn, pt, 0, 0)
+			if IU.rangeParam(st, pt){
+				? st.blk.copyRange(st.blk, st.buf, st.segFrom.get(st.segFrom, sg), st.segTo.get(st.segTo, sg), true)
+				? st.blk.copyRange(st.blk, st.buf, st.segFrom.get(st.segFrom, sg + 1), st.segTo.get(st.segTo, sg + 1), true)
+				? st.blk.add5(st.blk, st.h.ASSIGN, pt, pt, pt, 0)
+				sg += 2
+			} else {
+				? st.blk.copyRange(st.blk, st.buf, st.segFrom.get(st.segFrom, sg), st.segTo.get(st.segTo, sg), true)
+				let popTy = mut st.buf.tok(st.buf, st.popAt.get(st.popAt, sg), 2)
+				? st.blk.add5(st.blk, st.h.ASSIGN, pt, popTy, pt, 0)
+				sg += 1
+			}
+		}
+		? st.blk.copyRange(st.blk, st.buf, postFrom, aTo, true)
+		let retT = mut 0
+		for r in 0..retN{
+			if st.retList.get(st.retList, retOff + r * 7 + 2) == 0{
+				retT = st.retList.get(st.retList, retOff + r * 7 + 1)
+			}
+		}
+		? VX.zeroTo(st.skipV, codeN + 1)
+		? VX.zeroTo(st.bef, codeN + 1)
+		? VX.zeroTo(st.aft, codeN + 1)
+		let usesEnd = mut false
+		for r in 0..retN{
+			let ridx = mut st.retList.get(st.retList, retOff + r * 7)
+			let rvoid = mut st.retList.get(st.retList, retOff + r * 7 + 2)
+			let vs1 = mut st.retList.get(st.retList, retOff + r * 7 + 3)
+			let vt1 = mut st.retList.get(st.retList, retOff + r * 7 + 4)
+			let rtail = mut st.retList.get(st.retList, retOff + r * 7 + 6)
+			if rvoid == 0 &&then mode == 0{
+				let lo = mut (vs1 - 1)
+				for q in lo..vt1{
+					st.skipV.set(st.skipV, q, 1)
+				}
+			}
+			if rvoid == 0 &&then mode == 2{
+				? VX.addG(st.bef, vs1 - 1, 1)
+				? VX.addG(st.aft, vt1 - 1, 1)
+			}
+			if mode == 1{
+				st.skipV.set(st.skipV, ridx, 1)
+			} else if rtail == 1{
+				st.skipV.set(st.skipV, ridx, 1)
+			} else {
+				usesEnd = true
+			}
+		}
+		for i in 0..codeN{
+			let nb = mut st.bef.get(st.bef, i)
+			for q in 0..nb{
+				? st.blk.add5(st.blk, st.h.ADDR, retVar, retT, 0, 0)
+			}
+			if st.skipV.get(st.skipV, i) == 0{
+				let li = mut InlAna.cl(st, codeOff, i)
+				let isRet = mut false
+				for r in 0..retN{
+					if st.retList.get(st.retList, retOff + r * 7) == i{
+						isRet = true
+					}
+				}
+				if isRet{
+					? st.blk.add5(st.blk, st.h.JMP, endLabel, 0, 0, 0)
+				} else if IU.mn(st, src, li) == st.h.GT_UNWIND{
+					? st.blk.add5(st.blk, st.h.JMP, unwindTo, 0, 0, 0)
+				} else {
+					? InlExp.renameLine(st, src, li)
+				}
+			}
+			let na = mut st.aft.get(st.aft, i)
+			for q in 0..na{
+				? st.blk.add5(st.blk, st.h.ASSIGN, retT, retT, retT, 0)
+			}
+		}
+		if usesEnd{
+			? st.blk.add5(st.blk, endLabelC, 0, 0, 0, 0)
+		}
+		if mode == 2{
+			if addr1{
+				? st.blk.copyLine(st.blk, st.buf, addrIdx, true)
+			}
+			? st.blk.add5(st.blk, st.h.PUSH, retVar, retT, 0, 0)
+		}
+
+		// ---- commit
+		let newEnd = mut (csPos - cut)
+		if mode == 2 &&then addr1{
+			newEnd = newEnd - 1
+		}
+		st.buf.truncate(st.buf, newEnd)
+		let bn = mut st.blk.n(st.blk)
+		? st.buf.copyRange(st.buf, st.blk, 0, bn, true)
+		let newLocals = mut (parN + alN)
+		if mode == 2{
+			newLocals += 1
+		}
+		for j in 0..parN{
+			let pnOld = mut st.parList.get(st.parList, parOff + j * 2)
+			let pt = mut st.parList.get(st.parList, parOff + j * 2 + 1)
+			let rt = mut ? InlExp.renameRange(st, pt)
+			? st.newAllocs.add5(st.newAllocs, st.h.ALLOC, st.localRen.get(st.localRen, pnOld), rt, 0, 0)
+		}
+		for j in 0..alN{
+			let anOld = mut st.alList.get(st.alList, alOff + j * 2)
+			let at = mut st.alList.get(st.alList, alOff + j * 2 + 1)
+			let rt = mut ? InlExp.renameRange(st, at)
+			? st.newAllocs.add5(st.newAllocs, st.h.ALLOC, st.localRen.get(st.localRen, anOld), rt, 0, 0)
+		}
+		if mode == 2{
+			? st.newAllocs.add5(st.newAllocs, st.h.ALLOC, retVar, retT, 0, 0)
+		}
+		for j in 0..parN{
+			? st.callerNames.put(st.callerNames, st.localRen.get(st.localRen, st.parList.get(st.parList, parOff + j * 2)), 1)
+		}
+		for j in 0..alN{
+			? st.callerNames.put(st.callerNames, st.localRen.get(st.localRen, st.alList.get(st.alList, alOff + j * 2)), 1)
+		}
+		st.added = st.added + bn + newLocals
+		st.totalAdded = st.totalAdded + bn + newLocals
+		st.changed = true
+		st.inlinedSites += 1
+		if forced{
+			? VX.addG(st.fCnt, cname, 1)
+			? InlExp.putPos(st, cname, st.cPos.get(st.cPos, c))
+		}
+		return true
+	}
+}

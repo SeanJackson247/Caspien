@@ -1,0 +1,905 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+import "NumText.caspien"
+
+/**
+ * Scalar-only local structs become one local per member (port of StructUnpackingPass.java).
+ * Java's plan(...) built sets of removed/replaced/renamed line indices; here the ANALYSIS (StructUnpackingPass.analyze) only reads and writes a recipe of
+ * scalars into a StructUnpackingPlan, and the new lines are built afterwards (materialize) for the plans that succeeded.
+ * Recipe records: [1, line, memberOrdinal] member read renamed; [2, line, memberOrdinal] member write; [3, line, assignLine, start of member 0 .. start of member n-1] construction.
+ * Members are statement indices of the STRUCT_MEMBER lines (read from the program, which is not modified until the final rebuild).
+ */
+@pub
+struct StructUnpackingPlan{@pub{
+	recipe: owns some mut Vec
+}}
+
+@pub
+@throws
+impl constructor for StructUnpackingPlan() self{
+	?catch(e){ throw e }
+	let r = mut ? new Vec()
+	return StructUnpackingPlan{recipe= r}
+}
+
+@pub
+struct StructUnpackingPass{@pub{
+}}
+
+@pub
+impl constructor for StructUnpackingPass() self{
+	return StructUnpackingPass{}
+}
+
+@pub
+impl StructUnpackingPass{
+	// ------------------------------------------------------------ small readers (never allocate)
+
+	/** 1 STRUCT_START (2 tokens), 2 STRUCT_MEMBER (3 tokens), 3 STRUCT_END, else 0. */
+	static func lineKind(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		let sz = mut st.size(st)
+		if VarAnalysis.stmtIs(st, "STRUCT_START") && sz == 2{
+			return 1
+		}
+		if VarAnalysis.stmtIs(st, "STRUCT_MEMBER") && sz == 3{
+			return 2
+		}
+		if VarAnalysis.stmtIs(st, "STRUCT_END"){
+			return 3
+		}
+		return 0
+	}
+
+	/** For a STRUCT_MEMBER line: 0 the hidden ___type, 1 a scalar member, 2 anything else (blocks the struct). */
+	static func memberClass(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 2 }
+		let st = mut ? program.items.getSome(program.items, i)
+		let nm = mut ? st.items.getSome(st.items, 1)
+		if nm.text.equals(nm.text, "___type"){
+			return 0
+		}
+		let ty = mut ? st.items.getSome(st.items, 2)
+		if NumText.baseIndex(ty.text) == 0 || ty.text.startsWith(ty.text, "indeterminate_"){
+			return 2
+		}
+		return 1
+	}
+
+	static func flatAt(flat: ref imut Vec, i: mut u64) mut u64{
+		match Some(flat){ return flat.get(flat, i) }
+		return 0
+	}
+
+	static func tokEq(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64, sj: mut u64, tj: mut u64) bool{
+		?catch(e){ return false }
+		let sa = mut ? program.items.getSome(program.items, si)
+		let sb = mut ? program.items.getSome(program.items, sj)
+		let ta = mut ? sa.items.getSome(sa.items, ti)
+		let tb = mut ? sb.items.getSome(sb.items, tj)
+		return ta.text.equals(ta.text, tb.text)
+	}
+
+	static func tokIs(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		let sa = mut ? program.items.getSome(program.items, si)
+		let ta = mut ? sa.items.getSome(sa.items, ti)
+		return ta.text.equals(ta.text, lit)
+	}
+
+	static func sizeOf(program: ref some imut BytecodeProgram, si: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let sa = mut ? program.items.getSome(program.items, si)
+		return sa.size(sa)
+	}
+
+	static func stmtIsAt(program: ref some imut BytecodeProgram, si: mut u64, m: static imut string) bool{
+		return VarAnalysis.isMn(program, si, m)
+	}
+
+	/** Token ti of statement si starts with "<v>." where v is token 1 of statement vs. */
+	static func startsDotAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64, vs: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let sv = mut ? program.items.getSome(program.items, vs)
+		let v = mut ? sv.items.getSome(sv.items, 1)
+		let vl = mut v.text.length(v.text)
+		if t.text.length(t.text) <= vl{
+			return false
+		}
+		if t.text.startsWith(t.text, v.text) == false{
+			return false
+		}
+		return t.text.charAt(t.text, vl) == '.'
+	}
+
+	/** Java mentions(l, v): some token equals v or starts with "v.". */
+	static func mentionsAt(program: ref some imut BytecodeProgram, si: mut u64, vs: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let sz = mut st.size(st)
+		let sv = mut ? program.items.getSome(program.items, vs)
+		let v = mut ? sv.items.getSome(sv.items, 1)
+		for k in 0..sz{
+			let t = mut ? st.items.getSome(st.items, k)
+			if t.text.equals(t.text, v.text){
+				return true
+			}
+			if StructUnpackingPass.startsDotAt(program, si, k, vs){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** 1-based ordinal (last wins) of the member whose name is the tail of token ti after "<v>.", 0 if none. */
+	static func memberOrdByTail(program: ref some imut BytecodeProgram, flat: ref imut Vec, mbase: mut u64, mcount: mut u64, si: mut u64, ti: mut u64, vs: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let sv = mut ? program.items.getSome(program.items, vs)
+		let v = mut ? sv.items.getSome(sv.items, 1)
+		let from = mut (v.text.length(v.text) + 1)
+		let tl = mut t.text.length(t.text)
+		let rest = mut (tl - from)
+		for r in 0..mcount{
+			let k = mut (mcount - 1 - r)
+			let ms = mut StructUnpackingPass.flatAt(flat, mbase + k)
+			let sm = mut ? program.items.getSome(program.items, ms)
+			let nm = mut ? sm.items.getSome(sm.items, 1)
+			if nm.text.length(nm.text) == rest{
+				let same = mut true
+				for q in 0..rest{
+					if t.text.charAt(t.text, from + q) != nm.text.charAt(nm.text, q){
+						same = false
+						break
+					}
+				}
+				if same{
+					return k + 1
+				}
+			}
+		}
+		return 0
+	}
+
+	/** 1-based ordinal (last wins) of the member named by token ti of statement si, 0 if none. */
+	static func memberOrdByName(program: ref some imut BytecodeProgram, flat: ref imut Vec, mbase: mut u64, mcount: mut u64, si: mut u64, ti: mut u64) mut u64{
+		for r in 0..mcount{
+			let k = mut (mcount - 1 - r)
+			let ms = mut StructUnpackingPass.flatAt(flat, mbase + k)
+			if StructUnpackingPass.tokEq(program, si, ti, ms, 1){
+				return k + 1
+			}
+		}
+		return 0
+	}
+
+	static func isBinaryText(t: ref some imut String) bool{
+		return t.equals(t, "ADD") || t.equals(t, "SUB") || t.equals(t, "MUL") || t.equals(t, "DIV") || t.equals(t, "MOD") || t.equals(t, "SHL") || t.equals(t, "SHR") || t.equals(t, "ROTL") || t.equals(t, "ROTR") || t.equals(t, "BITS_OR") || t.equals(t, "BITS_AND") || t.equals(t, "BITS_XOR") || t.equals(t, "AND") || t.equals(t, "OR") || t.equals(t, "EQ") || t.equals(t, "NEQ") || t.equals(t, "LT") || t.equals(t, "LT_EQ") || t.equals(t, "GT") || t.equals(t, "GT_EQ")
+	}
+
+	static func isUnaryText(t: ref some imut String) bool{
+		return t.equals(t, "NEG") || t.equals(t, "NOT") || t.equals(t, "BITS_NOT") || t.equals(t, "TRUNC") || t.equals(t, "SEXT") || t.equals(t, "ZEXT") || t.equals(t, "FCONV")
+	}
+
+	/** Stack effect of one expression line: 1 push, 2 binary (-1), 0 unary, 9 not understood. */
+	static func effectAt(program: ref some imut BytecodeProgram, i: mut u64) mut u64{
+		?catch(e){ return 9 }
+		let st = mut ? program.items.getSome(program.items, i)
+		if VarAnalysis.hasMnemonic1(st) == false{
+			return 9
+		}
+		let t0 = mut ? st.items.getSome(st.items, 0)
+		if t0.text.equals(t0.text, "PUSH") && st.size(st) == 3{
+			return 1
+		}
+		if StructUnpackingPass.isBinaryText(t0.text) && st.size(st) == 4{
+			return 2
+		}
+		if StructUnpackingPass.isUnaryText(t0.text){
+			return 0
+		}
+		return 9
+	}
+
+	static func isDigitsAt(program: ref some imut BytecodeProgram, si: mut u64, ti: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, si)
+		let t = mut ? st.items.getSome(st.items, ti)
+		let n = mut t.text.length(t.text)
+		if n == 0{
+			return false
+		}
+		for q in 0..n{
+			if String.isDigit(t.text.charAt(t.text, q)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Table index + 1 of the struct named by the type of an ALLOC line (T = imut_S or mut_S), last definition wins; 0 if none / not an ALLOC of a plain local. */
+	static func candTable(program: ref some imut BytecodeProgram, i: mut u64, tabName: ref imut Vec, nt: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		if VarAnalysis.stmtIs(st, "ALLOC") == false || st.size(st) != 3{
+			return 0
+		}
+		let v = mut ? st.items.getSome(st.items, 1)
+		if v.text.startsWith(v.text, "$"){
+			return 0
+		}
+		let ty = mut ? st.items.getSome(st.items, 2)
+		let off = mut 0
+		if ty.text.startsWith(ty.text, "imut_"){
+			off = 5
+		} else if ty.text.startsWith(ty.text, "mut_"){
+			off = 4
+		} else {
+			return 0
+		}
+		let tl = mut ty.text.length(ty.text)
+		let rest = mut (tl - off)
+		for r in 0..nt{
+			let t = mut (nt - 1 - r)
+			let ns = mut StructUnpackingPass.flatAt(tabName, t)
+			let sn = mut ? program.items.getSome(program.items, ns)
+			let nm = mut ? sn.items.getSome(sn.items, 1)
+			if nm.text.length(nm.text) == rest{
+				let same = mut true
+				for q in 0..rest{
+					if ty.text.charAt(ty.text, off + q) != nm.text.charAt(nm.text, q){
+						same = false
+						break
+					}
+				}
+				if same{
+					return t + 1
+				}
+			}
+		}
+		return 0
+	}
+
+	static func allocCountOf(program: ref some imut BytecodeProgram, i: mut u64, allocCount: ref some imut StringScalarMap<u64>) mut u64{
+		?catch(e){ return 0 }
+		let st = mut ? program.items.getSome(program.items, i)
+		let v = mut ? st.items.getSome(st.items, 1)
+		return allocCount.getOrDefault(allocCount, v.text, 0)
+	}
+
+	// ------------------------------------------------------------ per-function name sets
+
+	@throws
+	static func buildSets(program: ref imut BytecodeProgram, s: mut u64, e: mut u64, allocCount: ref mut StringScalarMap<u64>, allNames: ref mut StringSet) void{
+		?catch(ex){ throw ex }
+		let span = mut (e + 1 - s)
+		for k in 0..span{
+			let i = mut (s + k)
+			let nt = mut 0
+			match Some(program){ nt = StructUnpackingPass.sizeOf(program, i) }
+			for q in 0..nt{
+				let key = mut ? new String()
+				match Some(program){
+					let st = mut ? program.items.getSome(program.items, i)
+					let t = mut ? st.items.getSome(st.items, q)
+					key = ? t.text.sub(t.text, 0, t.text.length(t.text))
+				}
+				match Some(allNames){ let added = mut ? allNames.add(allNames, key) }
+			}
+			let isAlloc = mut false
+			match Some(program){
+				if VarAnalysis.isMn(program, i, "ALLOC") && StructUnpackingPass.sizeOf(program, i) == 3{
+					isAlloc = true
+				}
+			}
+			if isAlloc{
+				let key2 = mut ? new String()
+				let cur = mut 0
+				match Some(program){
+					let st = mut ? program.items.getSome(program.items, i)
+					let t = mut ? st.items.getSome(st.items, 1)
+					key2 = ? t.text.sub(t.text, 0, t.text.length(t.text))
+				}
+				match Some(allocCount){
+					cur = allocCount.getOrDefault(allocCount, key2, 0)
+					? allocCount.put(allocCount, key2, cur + 1)
+				}
+			}
+		}
+	}
+
+	/** Some member's new name v__m is already a token of the function. */
+	@throws
+	static func nameClash(program: ref imut BytecodeProgram, allNames: ref imut StringSet, vs: mut u64, flat: ref imut Vec, mbase: mut u64, mcount: mut u64) mut bool{
+		?catch(e){ throw e }
+		for k in 0..mcount{
+			let ms = mut StructUnpackingPass.flatAt(flat, mbase + k)
+			let nn = mut ? StructUnpackingPass.newNameFor(program, vs, ms)
+			let hit = mut false
+			match Some(allNames){ hit = allNames.contains(allNames, nn) }
+			if hit{
+				return true
+			}
+		}
+		return false
+	}
+
+	@throws
+	static func rec(plan: ref mut StructUnpackingPlan, v: mut u64) void{
+		?catch(e){ throw e }
+		match Some(plan){ ? plan.recipe.push(plan.recipe, v) }
+	}
+
+	// ------------------------------------------------------------ analysis (Java plan(...), reads only)
+
+	/** True when every mention of the variable allocated at line allocIdx is understood; the rewrite recipe is in plan.recipe. */
+	@throws
+	static func analyze(program: ref imut BytecodeProgram, flat: ref imut Vec, mbase: mut u64, mcount: mut u64, s: mut u64, e: mut u64, allocIdx: mut u64, plan: ref mut StructUnpackingPlan) mut bool{
+		?catch(ex){ throw ex }
+		let starts = mut ? new Vec()
+		let nextFree = mut s
+		let span = mut (e + 1 - s)
+		for k in 0..span{
+			let i = mut (s + k)
+			if i == allocIdx || i < nextFree{
+				continue
+			}
+			let mentioned = mut false
+			match Some(program){ mentioned = StructUnpackingPass.mentionsAt(program, i, allocIdx) }
+			if mentioned == false{
+				continue
+			}
+			let isRead = mut false
+			match Some(program){
+				if VarAnalysis.isMn(program, i, "PUSH") && StructUnpackingPass.sizeOf(program, i) == 3 && StructUnpackingPass.startsDotAt(program, i, 1, allocIdx){
+					isRead = true
+				}
+			}
+			if isRead{
+				let ord = mut 0
+				match Some(program){ ord = StructUnpackingPass.memberOrdByTail(program, flat, mbase, mcount, i, 1, allocIdx) }
+				if ord == 0{
+					return false
+				}
+				let ms = mut StructUnpackingPass.flatAt(flat, mbase + ord - 1)
+				let bad = mut false
+				match Some(program){
+					if i + 1 <= e && VarAnalysis.isMn(program, i + 1, "ADDR_OF"){
+						bad = true
+					}
+					if StructUnpackingPass.tokEq(program, i, 2, ms, 2) == false{
+						bad = true
+					}
+				}
+				if bad{
+					return false
+				}
+				? StructUnpackingPass.rec(plan, 1)
+				? StructUnpackingPass.rec(plan, i)
+				? StructUnpackingPass.rec(plan, ord - 1)
+				continue
+			}
+			let isAddr = mut false
+			match Some(program){
+				if VarAnalysis.isMn(program, i, "ADDR") && StructUnpackingPass.sizeOf(program, i) == 3 && StructUnpackingPass.tokEq(program, i, 1, allocIdx, 1) && StructUnpackingPass.tokEq(program, i, 2, allocIdx, 2){
+					isAddr = true
+				}
+			}
+			if isAddr == false{
+				return false
+			}
+			// member write: ADDR v T ; PUSH_FIELDNAME m MT ; DOT_LHS T MT MT
+			let isWrite = mut false
+			if i + 2 <= e{
+				match Some(program){
+					if VarAnalysis.isMn(program, i + 1, "PUSH_FIELDNAME") && StructUnpackingPass.sizeOf(program, i + 1) == 3{
+						isWrite = true
+					}
+				}
+			}
+			if isWrite{
+				let ord = mut 0
+				match Some(program){ ord = StructUnpackingPass.memberOrdByName(program, flat, mbase, mcount, i + 1, 1) }
+				if ord == 0{
+					return false
+				}
+				let ms = mut StructUnpackingPass.flatAt(flat, mbase + ord - 1)
+				let bad = mut false
+				match Some(program){
+					if VarAnalysis.isMn(program, i + 2, "DOT_LHS") == false || StructUnpackingPass.sizeOf(program, i + 2) != 4 || StructUnpackingPass.tokEq(program, i + 2, 1, allocIdx, 2) == false{
+						bad = true
+					} else if StructUnpackingPass.tokEq(program, i + 1, 2, ms, 2) == false || StructUnpackingPass.tokEq(program, i + 2, 2, ms, 2) == false || StructUnpackingPass.tokEq(program, i + 2, 3, ms, 2) == false{
+						bad = true
+					}
+				}
+				if bad{
+					return false
+				}
+				? StructUnpackingPass.rec(plan, 2)
+				? StructUnpackingPass.rec(plan, i)
+				? StructUnpackingPass.rec(plan, ord - 1)
+				nextFree = i + 3
+				continue
+			}
+			// construction: ADDR v T ; PUSH lit imut_u64 ; n expressions ; STACK_LOCK k ; ASSIGN T T T
+			let p = mut (i + 1)
+			if p > e{
+				return false
+			}
+			let tyOk = mut false
+			match Some(program){
+				if VarAnalysis.isMn(program, p, "PUSH") && StructUnpackingPass.sizeOf(program, p) == 3 && StructUnpackingPass.tokIs(program, p, 2, "imut_u64") && StructUnpackingPass.isDigitsAt(program, p, 1){
+					tyOk = true
+				}
+			}
+			if tyOk == false{
+				return false
+			}
+			p += 1
+			starts.clear(starts)
+			let guard = mut (span + 1)
+			for g in 0..guard{
+				if p > e{
+					return false
+				}
+				let isAssign = mut false
+				let isLock = mut false
+				match Some(program){
+					isAssign = VarAnalysis.isMn(program, p, "ASSIGN")
+					isLock = VarAnalysis.isMn(program, p, "STACK_LOCK")
+				}
+				if isAssign{
+					break
+				}
+				if isLock == false{
+					let ef = mut 9
+					let ment = mut false
+					match Some(program){
+						ef = StructUnpackingPass.effectAt(program, p)
+						ment = StructUnpackingPass.mentionsAt(program, p, allocIdx)
+					}
+					if ef == 9 || ment{
+						return false
+					}
+					if ef == 1{
+						? starts.push(starts, p)
+					} else if ef == 2{
+						if starts.size(starts) < 2{
+							return false
+						}
+						let dropped = mut starts.pop(starts)
+					} else if starts.size(starts) == 0{
+						return false
+					}
+				}
+				p += 1
+			}
+			if starts.size(starts) != mcount{
+				return false
+			}
+			let asOk = mut false
+			match Some(program){
+				if VarAnalysis.isMn(program, p, "ASSIGN") && StructUnpackingPass.sizeOf(program, p) == 4 && StructUnpackingPass.tokEq(program, p, 1, allocIdx, 2) && StructUnpackingPass.tokEq(program, p, 2, allocIdx, 2) && StructUnpackingPass.tokEq(program, p, 3, allocIdx, 2){
+					asOk = true
+				}
+			}
+			if asOk == false{
+				return false
+			}
+			? StructUnpackingPass.rec(plan, 3)
+			? StructUnpackingPass.rec(plan, i)
+			? StructUnpackingPass.rec(plan, p)
+			for q in 0..mcount{
+				let sq = mut starts.get(starts, q)
+				? StructUnpackingPass.rec(plan, sq)
+			}
+			nextFree = p + 1
+		}
+		return true
+	}
+
+	// ------------------------------------------------------------ building new lines
+
+	/** The string v__m: token 1 of statement vs, "__", token 1 of statement ms. */
+	@throws
+	static func newNameFor(program: ref imut BytecodeProgram, vs: mut u64, ms: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		match Some(program){
+			let sv = mut ? program.items.getSome(program.items, vs)
+			let v = mut ? sv.items.getSome(sv.items, 1)
+			? r.append(r, v.text)
+		}
+		? r.append(r, "__")
+		match Some(program){
+			let sm = mut ? program.items.getSome(program.items, ms)
+			let m = mut ? sm.items.getSome(sm.items, 1)
+			? r.append(r, m.text)
+		}
+		return r
+	}
+
+	/** A copy of token ti of statement si as a String. */
+	@throws
+	static func textOf(program: ref imut BytecodeProgram, si: mut u64, ti: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, si)
+			let t = mut ? st.items.getSome(st.items, ti)
+			r = ? t.text.sub(t.text, 0, t.text.length(t.text))
+		}
+		return r
+	}
+
+	/** Appends a token to a statement: text, the file (only given for the first token), line of statement near's first token. */
+	@throws
+	static func addTok(st: ref mut BytecodeStatement, text: owns some mut String, file: owns mut String, line: mut s32) void{
+		?catch(e){ throw e }
+		let tk = mut ? new BytecodeToken(text, file, line, BytecodeTokenKind.CODE)
+		match Some(st){ ? st.add(st, tk) }
+	}
+
+	@throws
+	static func nearLine(program: ref imut BytecodeProgram, near: mut u64) mut s32{
+		?catch(e){ throw e }
+		let:<mut s32> line = mut 0
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, near)
+			let t = mut ? st.items.getSome(st.items, 0)
+			line = t.line + 0
+		}
+		return line
+	}
+
+	/** A copy of the file name of statement near's first token (null when it has none). */
+	@throws
+	static func nearFile(program: ref imut BytecodeProgram, near: mut u64) owns mut String{
+		?catch(e){ throw e }
+		let:<owns mut String> f = mut null
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, near)
+			let t = mut ? st.items.getSome(st.items, 0)
+			match Some(t.file){
+				f = ? t.file.sub(t.file, 0, t.file.length(t.file))
+			}
+		}
+		return f
+	}
+
+	/** `mn name type` where type = token 2 of statement ts; file/line like statement near's first token. */
+	@throws
+	static func mkNamed(program: ref imut BytecodeProgram, near: mut u64, mn: static imut string, name: owns some mut String, ts: mut u64) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let line = mut ? StructUnpackingPass.nearLine(program, near)
+		let f = mut ? StructUnpackingPass.nearFile(program, near)
+		let ty = mut ? StructUnpackingPass.textOf(program, ts, 2)
+		let a = mut ? String.from(mn)
+		let st = mut ? new BytecodeStatement()
+		let:<owns mut String> n1 = mut null
+		let:<owns mut String> n2 = mut null
+		? StructUnpackingPass.addTok(st, a, f, line)
+		? StructUnpackingPass.addTok(st, name, n1, line)
+		? StructUnpackingPass.addTok(st, ty, n2, line)
+		return st
+	}
+
+	/** `ASSIGN t t t` where t = token 2 of statement ts. */
+	@throws
+	static func mkAssign(program: ref imut BytecodeProgram, near: mut u64, ts: mut u64) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let line = mut ? StructUnpackingPass.nearLine(program, near)
+		let f = mut ? StructUnpackingPass.nearFile(program, near)
+		let t1 = mut ? StructUnpackingPass.textOf(program, ts, 2)
+		let t2 = mut ? StructUnpackingPass.textOf(program, ts, 2)
+		let t3 = mut ? StructUnpackingPass.textOf(program, ts, 2)
+		let a = mut ? String.from("ASSIGN")
+		let st = mut ? new BytecodeStatement()
+		let:<owns mut String> n1 = mut null
+		let:<owns mut String> n2 = mut null
+		let:<owns mut String> n3 = mut null
+		? StructUnpackingPass.addTok(st, a, f, line)
+		? StructUnpackingPass.addTok(st, t1, n1, line)
+		? StructUnpackingPass.addTok(st, t2, n2, line)
+		? StructUnpackingPass.addTok(st, t3, n3, line)
+		return st
+	}
+
+	/** Copy of statement si with token 1 replaced by text (Java VarAnalysis.withToken). */
+	@throws
+	static func withToken1(program: ref imut BytecodeProgram, si: mut u64, text: owns some mut String) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let:<mut s32> line = mut 0
+		let isStr = mut false
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, si)
+			let t = mut ? st.items.getSome(st.items, 1)
+			line = t.line + 0
+			if t.kind == BytecodeTokenKind.STRING{
+				isStr = true
+			}
+		}
+		let c = mut ? StructUnpackingPass.copyOfStmt(program, si)
+		let:<owns mut String> nf = mut null
+		if isStr{
+			let nt = mut ? new BytecodeToken(text, nf, line, BytecodeTokenKind.STRING)
+			match Some(c){ c.set(c, 1, nt) }
+		} else {
+			let nt2 = mut ? new BytecodeToken(text, nf, line, BytecodeTokenKind.CODE)
+			match Some(c){ c.set(c, 1, nt2) }
+		}
+		return c
+	}
+
+	@throws
+	static func copyOfStmt(program: ref imut BytecodeProgram, si: mut u64) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let r = mut ? new BytecodeStatement()
+		match Some(program){
+			let st = mut ? program.items.getSome(program.items, si)
+			r = ? BytecodeStatement.copyOf(st)
+		}
+		return r
+	}
+
+	/** Builds the new lines for one successful plan and records them in the global tables. */
+	@throws
+	static func materialize(program: ref imut BytecodeProgram, flat: ref imut Vec, mbase: mut u64, mcount: mut u64, allocIdx: mut u64, plan: ref imut StructUnpackingPlan, removeFlag: ref mut Vec, replAt: ref mut Vec, renAt: ref mut Vec, repls: ref mut ObjectList<BytecodeProgram>, rens: ref mut ObjectList<BytecodeStatement>) void{
+		?catch(e){ throw e }
+		// ALLOC v T  ->  one ALLOC per member
+		let ap = mut ? new BytecodeProgram()
+		for k in 0..mcount{
+			let ms = mut StructUnpackingPass.flatAt(flat, mbase + k)
+			let nm = mut ? StructUnpackingPass.newNameFor(program, allocIdx, ms)
+			let line = mut ? StructUnpackingPass.mkNamed(program, allocIdx, "ALLOC", nm, ms)
+			? ap.items.add(ap.items, line)
+		}
+		let ri = mut 0
+		match Some(repls){
+			ri = repls.size(repls)
+			? repls.add(repls, ap)
+		}
+		match Some(removeFlag){ removeFlag.set(removeFlag, allocIdx, 1) }
+		match Some(replAt){ replAt.set(replAt, allocIdx, ri + 1) }
+		let rn = mut 0
+		match Some(plan){ rn = plan.recipe.size(plan.recipe) }
+		let pos = mut 0
+		let guard = mut (rn + 1)
+		for g in 0..guard{
+			if pos >= rn{
+				break
+			}
+			let kind = mut 0
+			let li = mut 0
+			let aux = mut 0
+			match Some(plan){
+				kind = plan.recipe.get(plan.recipe, pos)
+				li = plan.recipe.get(plan.recipe, pos + 1)
+				aux = plan.recipe.get(plan.recipe, pos + 2)
+			}
+			if kind == 1{
+				let ms = mut StructUnpackingPass.flatAt(flat, mbase + aux)
+				let nm = mut ? StructUnpackingPass.newNameFor(program, allocIdx, ms)
+				let ns = mut ? StructUnpackingPass.withToken1(program, li, nm)
+				let ni = mut 0
+				match Some(rens){
+					ni = rens.size(rens)
+					? rens.add(rens, ns)
+				}
+				match Some(renAt){ renAt.set(renAt, li, ni + 1) }
+				pos += 3
+			} else if kind == 2{
+				let ms = mut StructUnpackingPass.flatAt(flat, mbase + aux)
+				let nm = mut ? StructUnpackingPass.newNameFor(program, allocIdx, ms)
+				let line = mut ? StructUnpackingPass.mkNamed(program, li, "ADDR", nm, ms)
+				let rp = mut ? new BytecodeProgram()
+				? rp.items.add(rp.items, line)
+				let ri2 = mut 0
+				match Some(repls){
+					ri2 = repls.size(repls)
+					? repls.add(repls, rp)
+				}
+				match Some(replAt){ replAt.set(replAt, li, ri2 + 1) }
+				match Some(removeFlag){
+					removeFlag.set(removeFlag, li, 1)
+					removeFlag.set(removeFlag, li + 1, 1)
+					removeFlag.set(removeFlag, li + 2, 1)
+				}
+				pos += 3
+			} else {
+				// construction: aux = ASSIGN line; the member starts follow
+				let rp = mut ? new BytecodeProgram()
+				for k in 0..mcount{
+					let ms = mut StructUnpackingPass.flatAt(flat, mbase + k)
+					let nm = mut ? StructUnpackingPass.newNameFor(program, allocIdx, ms)
+					let line = mut ? StructUnpackingPass.mkNamed(program, li, "ADDR", nm, ms)
+					? rp.items.add(rp.items, line)
+					let gs = mut 0
+					let ge = mut aux
+					match Some(plan){
+						gs = plan.recipe.get(plan.recipe, pos + 3 + k)
+						if k + 1 < mcount{
+							ge = plan.recipe.get(plan.recipe, pos + 3 + k + 1)
+						}
+					}
+					let cntG = mut 0
+					if ge > gs{
+						cntG = ge - gs
+					}
+					for q in 0..cntG{
+						let isLock = mut false
+						match Some(program){ isLock = VarAnalysis.isMn(program, gs + q, "STACK_LOCK") }
+						if isLock == false{
+							let cp = mut ? StructUnpackingPass.copyOfStmt(program, gs + q)
+							? rp.items.add(rp.items, cp)
+						}
+					}
+					let asg = mut ? StructUnpackingPass.mkAssign(program, li, ms)
+					? rp.items.add(rp.items, asg)
+				}
+				let ri3 = mut 0
+				match Some(repls){
+					ri3 = repls.size(repls)
+					? repls.add(repls, rp)
+				}
+				match Some(replAt){ replAt.set(replAt, li, ri3 + 1) }
+				let span = mut (aux + 1 - li)
+				match Some(removeFlag){
+					for q in 0..span{
+						removeFlag.set(removeFlag, li + q, 1)
+					}
+				}
+				pos += 3 + mcount
+			}
+		}
+	}
+
+	// ------------------------------------------------------------ the pass
+
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		// struct table: tabName = STRUCT_START line, tabBase/tabCount = slice of flat (member line indices, ___type excluded)
+		let flat = mut ? new Vec()
+		let tabName = mut ? new Vec()
+		let tabBase = mut ? new Vec()
+		let tabCount = mut ? new Vec()
+		let inCur = mut false
+		let curStart = mut 0
+		let memBase = mut 0
+		let okStruct = mut true
+		for i in 0..n{
+			let kind = mut 0
+			match Some(program){ kind = StructUnpackingPass.lineKind(program, i) }
+			if kind == 1{
+				curStart = i
+				memBase = flat.size(flat)
+				okStruct = true
+				inCur = true
+			} else if kind == 2 && inCur{
+				let mc = mut 2
+				match Some(program){ mc = StructUnpackingPass.memberClass(program, i) }
+				if mc != 0{
+					if mc == 2{
+						okStruct = false
+					}
+					? flat.push(flat, i)
+				}
+			} else if kind == 3 && inCur{
+				let cnt = mut (flat.size(flat) - memBase)
+				if okStruct && cnt > 0{
+					? tabName.push(tabName, curStart)
+					? tabBase.push(tabBase, memBase)
+					? tabCount.push(tabCount, cnt)
+				}
+				inCur = false
+			}
+		}
+		let nt = mut tabName.size(tabName)
+		if nt == 0{
+			return false
+		}
+		let funcs = mut ? new Vec()
+		match Some(program){ funcs = ? VarAnalysis.functions(program) }
+		let nf = mut VarAnalysis.count(funcs)
+		let removeFlag = mut ? new Vec()
+		? removeFlag.zero(removeFlag, n)
+		let replAt = mut ? new Vec()
+		? replAt.zero(replAt, n)
+		let renAt = mut ? new Vec()
+		? renAt.zero(renAt, n)
+		let repls = mut ? new ObjectList:<BytecodeProgram>()
+		let rens = mut ? new ObjectList:<BytecodeStatement>()
+		let changed = mut false
+		for fi in 0..nf{
+			let s = mut VarAnalysis.startOf(funcs, fi)
+			let e = mut VarAnalysis.endOf(funcs, fi)
+			let hasAsm = mut false
+			match Some(program){ hasAsm = VarAnalysis.hasMnemonic(program, s, e, "ASM_START") }
+			if hasAsm == false{
+				let allocCount = mut ? new StringScalarMap:<u64>()
+				let allNames = mut ? new StringSet()
+				let built = mut false
+				let span = mut (e + 1 - s)
+				for k in 0..span{
+					let i = mut (s + k)
+					let ti = mut 0
+					match Some(program){ ti = StructUnpackingPass.candTable(program, i, tabName, nt) }
+					if ti > 0{
+						if built == false{
+							? StructUnpackingPass.buildSets(program, s, e, allocCount, allNames)
+							built = true
+						}
+						let cntV = mut 0
+						match Some(program){ cntV = StructUnpackingPass.allocCountOf(program, i, allocCount) }
+						if cntV == 1{
+							let mbase = mut tabBase.get(tabBase, ti - 1)
+							let mcount = mut tabCount.get(tabCount, ti - 1)
+							let clash = mut ? StructUnpackingPass.nameClash(program, allNames, i, flat, mbase, mcount)
+							if clash == false{
+								let plan = mut ? new StructUnpackingPlan()
+								let ok = mut ? StructUnpackingPass.analyze(program, flat, mbase, mcount, s, e, i, plan)
+								if ok{
+									changed = true
+									? StructUnpackingPass.materialize(program, flat, mbase, mcount, i, plan, removeFlag, replAt, renAt, repls, rens)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if changed == false{
+			return false
+		}
+		let out = mut ? new BytecodeProgram()
+		for i in 0..n{
+			let ra = mut replAt.get(replAt, i)
+			if ra > 0{
+				let cnt = mut 0
+				match Some(repls){
+					let rp = mut ? repls.getSome(repls, ra - 1)
+					cnt = rp.size(rp)
+				}
+				for q in 0..cnt{
+					match Some(repls){
+						let rp = mut ? repls.getSome(repls, ra - 1)
+						let moved = mut rp.items.take(rp.items, q)
+						match Some(out){ ? out.items.add(out.items, moved) }
+					}
+				}
+			}
+			if removeFlag.get(removeFlag, i) == 0{
+				let na = mut renAt.get(renAt, i)
+				if na > 0{
+					match Some(rens){
+						let moved = mut rens.take(rens, na - 1)
+						match Some(out){ ? out.items.add(out.items, moved) }
+					}
+				} else {
+					match Some(program){
+						let moved = mut program.items.take(program.items, i)
+						match Some(out){ ? out.items.add(out.items, moved) }
+					}
+				}
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+}

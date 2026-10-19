@@ -1,6 +1,6 @@
 import "stdlib/string.caspien"
 import "Prog.caspien"
-import "FloatText.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/FloatText.caspien"
 
 /**
  * Port of RegisterFormPass ("deferred operands"): a compile-time model of the operand stack turns the stack-form lines into three-address `R_*` lines.

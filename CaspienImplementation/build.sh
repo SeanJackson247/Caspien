@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds this implementation: 1) the LowerOrderGenerator and Codegen components as native executables (compiled by the reference compiler), 2) the Java orchestrator.
-# Output: LowerOrderGenerator/out/lowerorder and Codegen/out/codegen (.exe off Linux). Linux builds use the SysV target; elsewhere the shipped toolchain.config target.
+# Builds this implementation: 1) the Optimizer, LowerOrderGenerator and Codegen components as native executables (compiled by the reference compiler), 2) the Java orchestrator.
+# Output: Optimizer/out/optimizer, LowerOrderGenerator/out/lowerorder and Codegen/out/codegen (.exe off Linux). Linux builds use the SysV target; elsewhere the shipped toolchain.config target.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REF="$HERE/../ReferenceImplementation"
@@ -13,13 +13,19 @@ W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 tar -C "$REF" --exclude=.cache --exclude=output --exclude=benchmarks --exclude=tests -cf - . | tar -C "$W" -xf -
 EXE=codegen
 LOEXE=lowerorder
+OPEXE=optimizer
 if [ "$(uname -s)" = Linux ]; then
     sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' "$W/toolchain.config"
 else
     EXE=codegen.exe
     LOEXE=lowerorder.exe
+    OPEXE=optimizer.exe
 fi
-mkdir -p "$HERE/Codegen/out" "$HERE/LowerOrderGenerator/out"
+mkdir -p "$HERE/Codegen/out" "$HERE/LowerOrderGenerator/out" "$HERE/Optimizer/out"
+(cd "$W" && java Compiler -i "$HERE/Optimizer/src/main/java/caspien/optimizer/Main.caspien" "$W/$OPEXE" > "$W/build_op.log" 2>&1) \
+    || { echo "build.sh: building the Optimizer executable failed:"; tail -20 "$W/build_op.log"; exit 1; }
+cp "$W/$OPEXE" "$HERE/Optimizer/out/$OPEXE"
+echo "built Optimizer/out/$OPEXE"
 (cd "$W" && java Compiler -i "$HERE/LowerOrderGenerator/src/main/java/caspien/lowerorder/Main.caspien" "$W/$LOEXE" > "$W/build_lo.log" 2>&1) \
     || { echo "build.sh: building the LowerOrderGenerator executable failed:"; tail -20 "$W/build_lo.log"; exit 1; }
 cp "$W/$LOEXE" "$HERE/LowerOrderGenerator/out/$LOEXE"

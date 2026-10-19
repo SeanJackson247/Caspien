@@ -169,6 +169,16 @@ impl<T> ObjectList<T>{
 		_self.items = shrunk
 	}
 
+	/** Moves element `i` out of the list (the slot stays in place, empty): null when `i` is out of range. A pass that rebuilds a program takes the unchanged statements from the old list this way instead of copying them. */
+	@pub
+	func take(_self: ref some mut self, i: imut u64) owns mut T{
+		let:<owns mut T> moved = mut null
+		match i into _self.items{
+			moved = _self.items[i].v
+		}
+		return moved
+	}
+
 	/** Replaces element `i` (the old one is dropped); nothing when `i` is out of range. */
 	@pub
 	func setAt(_self: ref some mut self, i: imut u64, item: owns mut T) void{

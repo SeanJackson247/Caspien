@@ -1,0 +1,314 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+import "VariableAllocationReorderingAlign.caspien"
+import "VariableAllocationReorderingSlot.caspien"
+
+/**
+ * Sorts the leading ALLOC run of each function by alignment (largest first), then use weight, then original order (port of
+ * VariableAllocationReorderingPass.java). The reorder is a permutation inside the function, so it is done in place.
+ */
+@pub
+struct VariableAllocationReorderingPass{@pub{
+}}
+
+@pub
+impl constructor for VariableAllocationReorderingPass() self{
+	return VariableAllocationReorderingPass{}
+}
+
+@pub
+impl VariableAllocationReorderingPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let table = mut ? VariableAllocationReorderingAlign.build(program)
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let changed = mut false
+		let i = mut 0
+		let nsteps = mut (n + 1)
+		for step in 0..nsteps{
+			if i >= n{
+				break
+			}
+			let isStart = mut false
+			match Some(program){ isStart = VarAnalysis.isMn(program, i, "FUNC_START") }
+			if isStart == false{
+				i += 1
+				continue
+			}
+			let end = mut i
+			let found = mut false
+			for q in i..n{
+				let isEnd = mut false
+				match Some(program){ isEnd = VarAnalysis.isMn(program, q, "FUNC_END") }
+				if isEnd{
+					end = q
+					found = true
+					break
+				}
+			}
+			if found == false{
+				end = n - 1
+			}
+			let did = mut false
+			did = ? VariableAllocationReorderingPass.reorderFunction(program, i, end, table)
+			if did{
+				changed = true
+			}
+			i = end + 1
+		}
+		return changed
+	}
+
+	static func isAllocAt(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		return VarAnalysis.stmtIs(st, "ALLOC") && st.size(st) == 3
+	}
+
+	/** Token 1 of statement i equals the literal (i is an ALLOC line, so the token exists). */
+	static func nameIs(program: ref some imut BytecodeProgram, i: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		let t = mut ? st.items.getSome(st.items, 1)
+		return t.text.equals(t.text, lit)
+	}
+
+	static func nameStarts(program: ref some imut BytecodeProgram, i: mut u64, lit: static imut string) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		let t = mut ? st.items.getSome(st.items, 1)
+		return t.text.startsWith(t.text, lit)
+	}
+
+	static func pinnedName(program: ref some imut BytecodeProgram, i: mut u64) bool{
+		return VariableAllocationReorderingPass.nameIs(program, i, "gt_routine_address") || VariableAllocationReorderingPass.nameIs(program, i, "gt_error_message") || VariableAllocationReorderingPass.nameStarts(program, i, "gt_trace_")
+	}
+
+	/** True when `a` (Java compareSlots(a, b) > 0) sorts after `b`. */
+	static func after(slots: ref some imut ObjectList<VariableAllocationReorderingSlot>, a: mut u64, b: mut u64) bool{
+		?catch(e){ return false }
+		let sa = mut ? slots.getSome(slots, a)
+		let sb = mut ? slots.getSome(slots, b)
+		if sa.align != sb.align{
+			return sb.align > sa.align
+		}
+		if sa.weight != sb.weight{
+			return sb.weight > sa.weight
+		}
+		return sa.idx > sb.idx
+	}
+
+	/** Java reorderFunction over program[s..=e], in place. */
+	@throws
+	static func reorderFunction(program: ref mut BytecodeProgram, s: mut u64, e: mut u64, table: ref mut VariableAllocationReorderingAlign) mut bool{
+		?catch(ex){ throw ex }
+		let cnt = mut (e + 1 - s)
+		let hasAsm = mut false
+		let first = mut 0
+		let haveFirst = mut false
+		let bad = mut false
+		let last = mut 0
+		let p = mut 0
+		match Some(program){
+			for k in 0..cnt{
+				if VarAnalysis.isMn(program, s + k, "ASM_START"){
+					hasAsm = true
+				}
+			}
+			for k in 0..cnt{
+				if haveFirst == false && bad == false{
+					if VariableAllocationReorderingPass.isAllocAt(program, s + k){
+						first = k
+						haveFirst = true
+					} else if VarAnalysis.isMn(program, s + k, "FUNC_START") == false && VarAnalysis.isMn(program, s + k, "FUNC_DECORATE") == false && VarAnalysis.isMn(program, s + k, "RETURNS") == false && VarAnalysis.isMn(program, s + k, "ARG") == false && VarAnalysis.isMn(program, s + k, "ALLOC_STATIC") == false{
+						bad = true
+					}
+				}
+			}
+			if hasAsm == false && bad == false && haveFirst{
+				last = first
+				for q in first..cnt{
+					if q == last + 1 && VariableAllocationReorderingPass.isAllocAt(program, s + q){
+						last = q
+					}
+				}
+				p = first
+				if p <= last && VariableAllocationReorderingPass.nameIs(program, s + p, "gt_routine_address"){
+					p += 1
+					if p <= last && VariableAllocationReorderingPass.nameIs(program, s + p, "gt_error_message"){
+						p += 1
+						for q in p..cnt{
+							if q == p && q <= last && VariableAllocationReorderingPass.nameStarts(program, s + q, "gt_trace_"){
+								p += 1
+							}
+						}
+					}
+				}
+				for k in p..cnt{
+					if k <= last{
+						if VariableAllocationReorderingPass.pinnedName(program, s + k){
+							bad = true
+						}
+					} else if VariableAllocationReorderingPass.isAllocAt(program, s + k){
+						if VariableAllocationReorderingPass.pinnedName(program, s + k){
+							bad = true
+						}
+					}
+				}
+			}
+		}
+		if hasAsm || bad || haveFirst == false{
+			return false
+		}
+		let count = mut 0
+		if last + 1 > p{
+			count = last + 1 - p
+		}
+		if count < 2{
+			return false
+		}
+		// loop depth per line
+		let delta = mut ? new Vec()
+		? delta.zero(delta, cnt + 1)
+		let labelAt = mut ? new StringScalarMap:<u64>()
+		for k in 0..cnt{
+			let lab = mut ? new String()
+			let isLabel = mut false
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, s + k)
+				if st.size(st) == 1{
+					let t0 = mut ? st.items.getSome(st.items, 0)
+					let tl = mut t0.text.length(t0.text)
+					if t0.text.startsWith(t0.text, "@") && t0.text.endsWith(t0.text, ":"){
+						lab = ? t0.text.sub(t0.text, 0, tl - 1)
+						isLabel = true
+					}
+				} else if VarAnalysis.stmtIs(st, "JMP") && st.size(st) >= 2{
+					let jt = mut ? st.items.getSome(st.items, 1)
+					if labelAt.containsKey(labelAt, jt.text){
+						let at = mut labelAt.getOrDefault(labelAt, jt.text, 0)
+						delta.set(delta, at, delta.get(delta, at) + 1)
+						delta.set(delta, k + 1, delta.get(delta, k + 1) - 1)
+					}
+				}
+			}
+			if isLabel{
+				? labelAt.put(labelAt, lab, k)
+			}
+		}
+		// slots: name -> weight id, per-slot alignment
+		let wid = mut ? new StringScalarMap:<u64>()
+		let slotWid = mut ? new Vec()
+		let slotAlign = mut ? new Vec()
+		for q in 0..count{
+			let nm = mut ? new String()
+			let ty = mut ? new String()
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, s + p + q)
+				let a = mut ? st.items.getSome(st.items, 1)
+				nm = ? a.text.sub(a.text, 0, a.text.length(a.text))
+				let b = mut ? st.items.getSome(st.items, 2)
+				ty = ? b.text.sub(b.text, 0, b.text.length(b.text))
+			}
+			let al = mut 0
+			al = ? VariableAllocationReorderingAlign.of(table, ty)
+			let id = mut wid.size(wid)
+			if wid.containsKey(wid, nm){
+				id = wid.getOrDefault(wid, nm, 0)
+			} else {
+				? wid.put(wid, nm, id)
+			}
+			? slotWid.push(slotWid, id)
+			? slotAlign.push(slotAlign, al)
+		}
+		let nw = mut wid.size(wid)
+		let wvals = mut ? new Vec()
+		? wvals.zero(wvals, nw)
+		let run = mut 0
+		match Some(program){
+			for k in 0..cnt{
+				run = run + delta.get(delta, k)
+				let st = mut ? program.items.getSome(program.items, s + k)
+				if VarAnalysis.stmtIs(st, "ALLOC") || VarAnalysis.stmtIs(st, "FUNC_START"){
+					continue
+				}
+				let d = mut run
+				if d > 4{
+					d = 4
+				}
+				let w = mut bits_left(1, 3 * d)
+				let sz = mut st.size(st)
+				for t in 1..sz{
+					let tk = mut ? st.items.getSome(st.items, t)
+					if tk.kind == BytecodeTokenKind.CODE{
+						if wid.containsKey(wid, tk.text){
+							let id = mut wid.getOrDefault(wid, tk.text, 0)
+							wvals.set(wvals, id, wvals.get(wvals, id) + w)
+						}
+					}
+				}
+			}
+		}
+		let slots = mut ? new ObjectList:<VariableAllocationReorderingSlot>()
+		for q in 0..count{
+			let sl = mut ? new VariableAllocationReorderingSlot(q, p + q, slotAlign.get(slotAlign, q), wvals.get(wvals, slotWid.get(slotWid, q)))
+			? slots.add(slots, sl)
+		}
+		// stable insertion sort of the slot indices
+		let order = mut ? new Vec()
+		for q in 0..count{
+			? order.push(order, q)
+		}
+		for a in 1..count{
+			let x = mut order.get(order, a)
+			let j = mut a
+			for q in 0..a{
+				if j == 0{
+					break
+				}
+				let y = mut order.get(order, j - 1)
+				if VariableAllocationReorderingPass.after(slots, y, x){
+					order.set(order, j, y)
+					j -= 1
+				} else {
+					break
+				}
+			}
+			order.set(order, j, x)
+		}
+		let same = mut true
+		for q in 0..count{
+			if order.get(order, q) != q{
+				same = false
+			}
+		}
+		if same{
+			return false
+		}
+		// permute the statements program[s+p .. s+p+count)
+		let tmp = mut ? new ObjectList:<BytecodeStatement>()
+		for q in 0..count{
+			match Some(program){
+				let moved = mut program.items.take(program.items, s + p + q)
+				? tmp.add(tmp, moved)
+			}
+		}
+		for q in 0..count{
+			let src = mut order.get(order, q)
+			let back = mut tmp.take(tmp, src)
+			match Some(program){ program.items.setAt(program.items, s + p + q, back) }
+		}
+		return true
+	}
+}

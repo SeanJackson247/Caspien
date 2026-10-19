@@ -1,0 +1,180 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+
+/**
+ * Shared helpers of the passes (port of the first half of VarAnalysis.java): function spans, mnemonic tests, labels, jumps.
+ * A function span list is a Vec holding start,end pairs (see count/startOf/endOf). All predicates are plain functions that answer false
+ * on any problem, so a pass never has to `?`-guard them.
+ */
+@pub
+struct VarAnalysis{@pub{
+}}
+
+@pub
+impl VarAnalysis{
+	/** True when statement `i` of `program` is non-empty, its first token is a CODE token and its text is exactly `m` (Java `"M".equals(mnemonic(L.get(i)))`). */
+	@pub
+	static func isMn(program: ref some imut BytecodeProgram, i: mut u64, m: static imut string) bool{
+		?catch(e){ return false }
+		let st = mut ? program.items.getSome(program.items, i)
+		return VarAnalysis.stmtIs(st, m)
+	}
+
+	/** Same test on a statement. */
+	@pub
+	static func stmtIs(st: ref some imut BytecodeStatement, m: static imut string) bool{
+		?catch(e){ return false }
+		if st.size(st) == 0{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 0)
+		if t.kind != BytecodeTokenKind.CODE{
+			return false
+		}
+		return t.text.equals(t.text, m)
+	}
+
+	/** Java `mnemonic(l) != null`: the first token exists and is a CODE token. */
+	@pub
+	static func hasMnemonic1(st: ref some imut BytecodeStatement) bool{
+		?catch(e){ return false }
+		if st.size(st) == 0{
+			return false
+		}
+		let t = mut ? st.items.getSome(st.items, 0)
+		return t.kind == BytecodeTokenKind.CODE
+	}
+
+	/** Java `hasMnemonic(L, s, e, m)`: some statement s..=e has mnemonic `m`. */
+	@pub
+	static func hasMnemonic(program: ref some imut BytecodeProgram, s: mut u64, e: mut u64, m: static imut string) bool{
+		let span = mut (e + 1 - s)
+		for k in 0..span{
+			if VarAnalysis.isMn(program, s + k, m){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** Java `functions(L)`: the [FUNC_START, FUNC_END] index pairs (inclusive), in order, as start,end,start,end,... */
+	@pub
+	@throws
+	static func functions(program: ref some imut BytecodeProgram) owns some mut Vec{
+		?catch(e){ throw e }
+		let out = mut ? new Vec()
+		let n = mut program.size(program)
+		let start = mut 0
+		let have = mut false
+		for i in 0..n{
+			if VarAnalysis.isMn(program, i, "FUNC_START"){
+				start = i
+				have = true
+			} else if VarAnalysis.isMn(program, i, "FUNC_END") && have{
+				? out.push(out, start)
+				? out.push(out, i)
+				have = false
+			}
+		}
+		return out
+	}
+
+	/** Number of functions in a `functions()` result. */
+	@pub
+	static func count(funcs: ref some imut Vec) mut u64{
+		return funcs.size(funcs) / 2
+	}
+
+	@pub
+	static func startOf(funcs: ref some imut Vec, k: mut u64) mut u64{
+		return funcs.get(funcs, k * 2)
+	}
+
+	@pub
+	static func endOf(funcs: ref some imut Vec, k: mut u64) mut u64{
+		return funcs.get(funcs, k * 2 + 1)
+	}
+
+	/** Java `labels(L, s, e)`: label name (without the trailing colon) -> line index; a label line is one CODE token "@name:". Later definitions win. */
+	@pub
+	@throws
+	static func labels(program: ref imut BytecodeProgram, s: mut u64, e: mut u64) owns some mut StringScalarMap<u64>{
+		?catch(ex){ throw ex }
+		let out = mut ? new StringScalarMap:<u64>()
+		let span = mut (e + 1 - s)
+		for k in 0..span{
+			let i = mut (s + k)
+			let name = mut ? new String()
+			let have = mut false
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, i)
+				if st.size(st) == 1{
+					let t = mut ? st.items.getSome(st.items, 0)
+					if t.kind == BytecodeTokenKind.CODE{
+						let n = mut t.text.length(t.text)
+						if n >= 2 && t.text.startsWith(t.text, "@") && t.text.charAt(t.text, n - 1) == ':'{
+							name = ? t.text.sub(t.text, 0, n - 1)
+							have = true
+						}
+					}
+				}
+			}
+			if have{
+				? out.put(out, name, i)
+			}
+		}
+		return out
+	}
+
+	/** Java `jumps(L, s, e, labels)`: every two-token "JMP @label" whose target label is in `labels`, as line,target,line,target,... in line order. */
+	@pub
+	@throws
+	static func jumps(program: ref some imut BytecodeProgram, s: mut u64, e: mut u64, labels: ref some imut StringScalarMap<u64>) owns some mut Vec{
+		?catch(ex){ throw ex }
+		let out = mut ? new Vec()
+		let span = mut (e + 1 - s)
+		for k in 0..span{
+			let i = mut (s + k)
+			let st = mut ? program.items.getSome(program.items, i)
+			if st.size(st) == 2 && VarAnalysis.stmtIs(st, "JMP"){
+				let t = mut ? st.items.getSome(st.items, 1)
+				if labels.containsKey(labels, t.text){
+					let target = mut labels.getOrDefault(labels, t.text, 0)
+					? out.push(out, i)
+					? out.push(out, target)
+				}
+			}
+		}
+		return out
+	}
+
+	/** Java `dominated(a, m, jumps)`: false when a forward jump sitting before `a` lands in (a, m]. */
+	@pub
+	static func dominated(a: mut u64, m: mut u64, jumps: ref some imut Vec) bool{
+		let n = mut (jumps.size(jumps) / 2)
+		for q in 0..n{
+			let from = mut jumps.get(jumps, q * 2)
+			let to = mut jumps.get(jumps, q * 2 + 1)
+			if from < a && to > a && to <= m{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** Java `inLoop(a, jumps)`: a backward jump after `a` lands before it. */
+	@pub
+	static func inLoop(a: mut u64, jumps: ref some imut Vec) bool{
+		let n = mut (jumps.size(jumps) / 2)
+		for q in 0..n{
+			let from = mut jumps.get(jumps, q * 2)
+			let to = mut jumps.get(jumps, q * 2 + 1)
+			if from > a && to < a{
+				return true
+			}
+		}
+		return false
+	}
+}

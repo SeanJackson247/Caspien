@@ -1,0 +1,219 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeProgram.caspien"
+import "Messages.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "VarAnalysis.caspien"
+
+/**
+ * Dead function removal (port of DeadFunctionRemovalPass.java): reachability from `main`, the five gt_ hooks, EXPORTed functions and specially
+ * decorated functions over the names mentioned in each function body; no-op without `main` or with any INVOKE. Docs: README.md "Dead function removal".
+ */
+@pub
+struct DeadFunctionRemovalPass{@pub{
+}}
+
+@pub
+impl DeadFunctionRemovalPass{
+	@pub
+	@throws
+	static func run(program: ref mut BytecodeProgram, enabled: mut bool) mut bool{
+		?catch(e){ throw e }
+		if enabled == false{
+			return false
+		}
+		let funcs = mut ? new Vec()
+		match Some(program){ funcs = ? VarAnalysis.functions(program) }
+		let nf = mut VarAnalysis.count(funcs)
+		if nf == 0{
+			return false
+		}
+		// function name -> index (later duplicates win, like HashMap.put)
+		let byName = mut ? new StringScalarMap:<u64>()
+		for k in 0..nf{
+			let s = mut VarAnalysis.startOf(funcs, k)
+			let key = mut ? new String()
+			let have = mut false
+			match Some(program){
+				let st = mut ? program.items.getSome(program.items, s)
+				if st.size(st) >= 2{
+					let t = mut ? st.items.getSome(st.items, 1)
+					key = ? t.text.sub(t.text, 0, t.text.length(t.text))
+					have = true
+				}
+			}
+			if have{
+				? byName.put(byName, key, k)
+			}
+		}
+		if byName.containsKey(byName, "main") == false{
+			return false
+		}
+		let n = mut 0
+		match Some(program){ n = program.size(program) }
+		let hasInvoke = mut false
+		match Some(program){
+			for i in 0..n{
+				if VarAnalysis.isMn(program, i, "INVOKE"){
+					hasInvoke = true
+				}
+			}
+		}
+		if hasInvoke{
+			return false
+		}
+		let live = mut ? new Vec()
+		? live.zero(live, nf)
+		let work = mut ? new Vec()
+		// roots
+		let nb = mut byName.size(byName)
+		for q in 0..nb{
+			let k = mut byName.valueAt(byName, q, 0)
+			let isRoot = mut false
+			let name = mut byName.keyAt(byName, q)
+			match Some(name){
+				if name.equals(name, "main") || name.equals(name, "gt_init") || name.equals(name, "gt_register") || name.equals(name, "gt_alive_check") || name.equals(name, "gt_destruct") || name.equals(name, "gt_moved"){
+					isRoot = true
+				}
+			}
+			match Some(program){
+				if isRoot == false && DeadFunctionRemovalPass.hasActiveDecorator(program, VarAnalysis.startOf(funcs, k), VarAnalysis.endOf(funcs, k)){
+					isRoot = true
+				}
+				if isRoot == false && DeadFunctionRemovalPass.isExported(program, VarAnalysis.startOf(funcs, k), VarAnalysis.endOf(funcs, k)){
+					isRoot = true
+				}
+			}
+			if isRoot{
+				? DeadFunctionRemovalPass.markLive(live, work, k)
+			}
+		}
+		// references from outside every function
+		let fi = mut 0
+		for i in 0..n{
+			for adv in 0..nf{
+				if fi < nf && VarAnalysis.endOf(funcs, fi) < i{
+					fi += 1
+				}
+			}
+			let inside = mut false
+			if fi < nf && VarAnalysis.startOf(funcs, fi) <= i && i <= VarAnalysis.endOf(funcs, fi){
+				inside = true
+			}
+			if inside == false{
+				match Some(program){ ? DeadFunctionRemovalPass.markRefs(program, i, byName, live, work) }
+			}
+		}
+		// worklist: names mentioned inside live functions
+		let guard = mut (nf * 2 + 4)
+		for g in 0..guard{
+			if work.size(work) == 0{
+				break
+			}
+			let k = mut work.pop(work)
+			let s = mut VarAnalysis.startOf(funcs, k)
+			let e = mut VarAnalysis.endOf(funcs, k)
+			let span = mut 0
+			if e > s + 1{
+				span = e - s - 1
+			}
+			for d in 0..span{
+				match Some(program){ ? DeadFunctionRemovalPass.markRefs(program, s + 1 + d, byName, live, work) }
+			}
+		}
+		let any = mut false
+		for k in 0..nf{
+			if live.get(live, k) == 0{
+				any = true
+			}
+		}
+		if any == false{
+			return false
+		}
+		let drop = mut ? new Vec()
+		? drop.zero(drop, n)
+		for k in 0..nf{
+			if live.get(live, k) == 0{
+				let s = mut VarAnalysis.startOf(funcs, k)
+				let e = mut VarAnalysis.endOf(funcs, k)
+				let span = mut (e + 1 - s)
+				for d in 0..span{
+					drop.set(drop, s + d, 1)
+				}
+			}
+		}
+		let out = mut ? new BytecodeProgram()
+		for i in 0..n{
+			if drop.get(drop, i) == 0{
+				match Some(program){
+					let moved = mut program.items.take(program.items, i)
+					? out.items.add(out.items, moved)
+				}
+			}
+		}
+		match Some(program){ program.items = out.items }
+		return true
+	}
+
+	/** Marks every function named by a CODE token of statement `i` (Java: `byName.get(t.text)` then `markLive`). */
+	@throws
+	static func markRefs(program: ref some imut BytecodeProgram, i: mut u64, byName: ref some imut StringScalarMap<u64>, live: ref some mut Vec, work: ref some mut Vec) void{
+		?catch(e){ throw e }
+		let st = mut ? program.items.getSome(program.items, i)
+		let m = mut st.size(st)
+		for t in 0..m{
+			let tk = mut ? st.items.getSome(st.items, t)
+			if tk.kind == BytecodeTokenKind.CODE{
+				if byName.containsKey(byName, tk.text){
+					let c = mut byName.getOrDefault(byName, tk.text, 0)
+					? DeadFunctionRemovalPass.markLive(live, work, c)
+				}
+			}
+		}
+	}
+
+	@throws
+	static func markLive(live: ref some mut Vec, work: ref some mut Vec, k: mut u64) void{
+		?catch(e){ throw e }
+		if live.get(live, k) == 0{
+			live.set(live, k, 1)
+			? work.push(work, k)
+		}
+	}
+
+	/** An `export`ed function (it carries an EXPORT line) is a root. */
+	static func isExported(program: ref some imut BytecodeProgram, s: mut u64, e: mut u64) bool{
+		let span = mut 0
+		if e > s + 1{
+			span = e - s - 1
+		}
+		for d in 0..span{
+			if VarAnalysis.isMn(program, s + 1 + d, "EXPORT"){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** A function is a root when one of the FUNC_DECORATE lines right after FUNC_START is not one of the inert ones. */
+	static func hasActiveDecorator(program: ref some imut BytecodeProgram, s: mut u64, e: mut u64) bool{
+		?catch(ex){ return false }
+		let span = mut 0
+		if e > s + 1{
+			span = e - s - 1
+		}
+		for d in 0..span{
+			if VarAnalysis.isMn(program, s + 1 + d, "FUNC_DECORATE") == false{
+				break
+			}
+			let st = mut ? program.items.getSome(program.items, s + 1 + d)
+			if st.size(st) >= 2{
+				let t = mut ? st.items.getSome(st.items, 1)
+				if t.text.equals(t.text, "@pub") == false && t.text.equals(t.text, "@throws") == false && t.text.equals(t.text, "@recursive") == false && t.text.equals(t.text, "@pure") == false && t.text.equals(t.text, "@pure(rt)") == false && t.text.equals(t.text, "@non(deterministic)") == false && t.text.equals(t.text, "@inline") == false && t.text.equals(t.text, "@dont(inline)") == false{
+					return true
+				}
+			}
+		}
+		return false
+	}
+}

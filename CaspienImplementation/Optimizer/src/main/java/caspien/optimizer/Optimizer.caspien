@@ -1,0 +1,147 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeParser.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeSerializer.caspien"
+import "Messages.caspien"
+import "Config.caspien"
+import "NumText.caspien"
+import "BytecodeOptimizer.caspien"
+import "SizeofResolutionPass.caspien"
+import "StructMemberReorderingPass.caspien"
+import "StructUnpackingPass.caspien"
+import "ConstantFoldingPass.caspien"
+import "VariableElisionPass.caspien"
+import "VariableShiftingPass.caspien"
+import "DeadControlFlowRemovalPass.caspien"
+import "DeadFunctionRemovalPass.caspien"
+import "UnusedDeclarationRemovalPass.caspien"
+import "VariableAllocationReorderingPass.caspien"
+import "RegVarHintPass.caspien"
+import "LoopUnrollingPass.caspien"
+import "FunctionInliningPass.caspien"
+
+/** Java `Optimizer.optimize(hobText, origin, configText)`: HOB text in, optimized HOB text out; notes/warnings go to `msgs`. */
+@pub
+struct Optimizer{@pub{
+}}
+
+@pub
+impl constructor for Optimizer() self{
+	return Optimizer{}
+}
+
+@pub
+impl Optimizer{
+	@pub
+	@throws
+	static func optimize(hobText: ref imut String, origin: ref imut String, configText: ref imut String, msgs: ref mut Messages) owns some mut String{
+		?catch(e){ throw e }
+		let parser = mut ? new BytecodeParser()
+		let program = mut ? new BytecodeProgram()
+		match Some(hobText){ match Some(origin){ program = ? parser.parseText(parser, hobText, origin) } }
+		let cfg = mut ? new ObjectList:<String>()
+		match Some(configText){ cfg = ? OptConfig.lines(configText) }
+		let fold = mut ? OptConfig.parseFold(cfg)
+		let vars = mut ? OptConfig.parseVariable(cfg)
+		let unroll = mut ? OptConfig.parseUnroll(cfg)
+		let inl = mut ? OptConfig.parseInline(cfg)
+		let info = mut ? OptConfig.describe(fold, vars, unroll, inl)
+		match Some(msgs){ ? msgs.add(msgs, info) }
+		? BytecodeOptimizer.optimize(program, fold, vars, unroll, inl, msgs)
+		let ser = mut ? new BytecodeSerializer()
+		let text = mut ? ser.serialize(ser, program)
+		return text
+	}
+
+	/**
+	 * Test mode (`-i in out --pass NAME`): runs ONE pass once (no fixed-point loop) and writes the program, then `[changed] true|false` goes to the messages.
+	 * Names: sizeof structreorder structunpack constfold varelision varshift deadflow deadfunc unuseddecl allocreorder regvar unroll inline.
+	 */
+	@pub
+	@throws
+	static func runPass(name: ref imut String, hobText: ref imut String, origin: ref imut String, configText: ref imut String, msgs: ref mut Messages) owns some mut String{
+		?catch(e){ throw e }
+		let parser = mut ? new BytecodeParser()
+		let program = mut ? new BytecodeProgram()
+		match Some(hobText){ match Some(origin){ program = ? parser.parseText(parser, hobText, origin) } }
+		let cfg = mut ? new ObjectList:<String>()
+		match Some(configText){ cfg = ? OptConfig.lines(configText) }
+		let fold = mut ? OptConfig.parseFold(cfg)
+		let vars = mut ? OptConfig.parseVariable(cfg)
+		let unroll = mut ? OptConfig.parseUnroll(cfg)
+		let inl = mut ? OptConfig.parseInline(cfg)
+		let foldOn = mut false
+		match Some(fold){ foldOn = fold.enabled }
+		let elision = mut false
+		let shifting = mut false
+		let unpacking = mut false
+		let deadFlow = mut false
+		let deadFunctions = mut false
+		let unusedDecls = mut false
+		let allocReorder = mut false
+		let structReorder = mut false
+		match Some(vars){
+			elision = vars.elision
+			shifting = vars.shifting
+			unpacking = vars.unpacking
+			deadFlow = vars.deadFlow
+			deadFunctions = vars.deadFunctions
+			unusedDecls = vars.unusedDecls
+			allocReorder = vars.allocReorder
+			structReorder = vars.structReorder
+		}
+		let changed = mut false
+		let code = mut Optimizer.passCode(name)
+		if code == 1{ changed = ? SizeofResolutionPass.run(program) }
+		else if code == 2{ changed = ? StructMemberReorderingPass.run(program, structReorder) }
+		else if code == 3{ changed = ? StructUnpackingPass.run(program, unpacking) }
+		else if code == 4{ changed = ? ConstantFoldingPass.run(program, foldOn) }
+		else if code == 5{ changed = ? VariableElisionPass.run(program, elision) }
+		else if code == 6{ changed = ? VariableShiftingPass.run(program, shifting) }
+		else if code == 7{ changed = ? DeadControlFlowRemovalPass.run(program, deadFlow) }
+		else if code == 8{ changed = ? DeadFunctionRemovalPass.run(program, deadFunctions) }
+		else if code == 9{ changed = ? UnusedDeclarationRemovalPass.run(program, unusedDecls) }
+		else if code == 10{ changed = ? VariableAllocationReorderingPass.run(program, allocReorder) }
+		else if code == 11{ changed = ? RegVarHintPass.run(program) }
+		else if code == 12{
+			let unrollPass = mut ? new LoopUnrollingPass()
+			changed = ? unrollPass.run(unrollPass, program, unroll, msgs)
+			? LoopUnrollingPass.reportUnhonoured(program, unroll, msgs)
+		}
+		else if code == 13{
+			let inlSt = mut ? FunctionInliningPass.newState()
+			changed = ? FunctionInliningPass.run(program, inl, msgs, inlSt)
+			? FunctionInliningPass.reportForced(program, inl, msgs, inlSt)
+		}
+		else{
+			throw "unknown pass name"
+		}
+		let ch = mut ? String.from("[changed] ")
+		if changed{ ? ch.append(ch, "true") } else{ ? ch.append(ch, "false") }
+		match Some(msgs){ ? msgs.add(msgs, ch) }
+		let ser = mut ? new BytecodeSerializer()
+		let text = mut ? ser.serialize(ser, program)
+		return text
+	}
+
+	/** Test-mode pass name -> number (0 unknown). */
+	static func passCode(name: ref imut String) mut u64{
+		let code = mut 0
+		match Some(name){
+			if name.equals(name, "sizeof"){ code = 1 }
+			else if name.equals(name, "structreorder"){ code = 2 }
+			else if name.equals(name, "structunpack"){ code = 3 }
+			else if name.equals(name, "constfold"){ code = 4 }
+			else if name.equals(name, "varelision"){ code = 5 }
+			else if name.equals(name, "varshift"){ code = 6 }
+			else if name.equals(name, "deadflow"){ code = 7 }
+			else if name.equals(name, "deadfunc"){ code = 8 }
+			else if name.equals(name, "unuseddecl"){ code = 9 }
+			else if name.equals(name, "allocreorder"){ code = 10 }
+			else if name.equals(name, "regvar"){ code = 11 }
+			else if name.equals(name, "unroll"){ code = 12 }
+			else if name.equals(name, "inline"){ code = 13 }
+		}
+		return code
+	}
+}
