@@ -1,9 +1,0 @@
-W	[warning] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline not honoured at 8 call sites of DynamicArray_u64_get (0 inlined): the call is somewhere inlined code cannot go: an enclosing expression with values pending, an argument that is not a scalar, ...
-W	[warning] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline not honoured at 1 call site of DynamicArray_char_get (0 inlined): the call is somewhere inlined code cannot go: an enclosing expression with values pending, an argument that is not a scalar, ...
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:197 - @inline: DynamicArray_u64_setPtr inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_Mixed_get inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:197 - @inline: DynamicArray_Outer_setPtr inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_Outer_get inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:197 - @inline: DynamicArray_Edge_setPtr inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:102 - @inline: DynamicArray_Edge_get inlined at 3 call sites
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:110 - @inline: DynamicArray_u64_set inlined at 1 call site

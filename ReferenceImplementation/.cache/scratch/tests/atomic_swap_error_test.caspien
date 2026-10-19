@@ -1,9 +1,0 @@
-// Must NOT compile: `swap` on an atomic in safe code.
-import "stdlib/libc.caspien"
-
-let static flag = mut atomic 0
-
-func main() void{
-	let old = mut (flag swap 5)
-	unsafe extern{ printf("%llu\n", old) }
-}

@@ -1,3 +1,0 @@
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:110 - @inline: DynamicArray_char_set inlined at 3 call sites
-N	[note] /home/claude/caspien/stdlib/string.caspien:283 - @inline: String_setCharAt inlined at 2 call sites
-N	[note] /home/claude/caspien/stdlib/string.caspien:264 - @inline: String_charAt inlined at 2 call sites

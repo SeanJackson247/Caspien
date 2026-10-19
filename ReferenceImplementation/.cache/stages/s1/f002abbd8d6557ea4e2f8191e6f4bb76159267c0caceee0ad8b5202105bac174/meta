@@ -1,2 +1,0 @@
-W	[warning] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/instanceof_warn_test.caspien:26 - 'instanceof Other' can never be true -- 'Other' does not implement 'Shape'
-W	[warning] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/instanceof_warn_test.caspien:37 - 'implements Shape' can never be true -- 'Other' does not implement 'Shape'

@@ -1,4 +1,0 @@
-N	[note] /home/claude/caspien/stdlib/linked_hash_map.caspien:48 - @inline: LinkedHashMap_u64_bool_isLive inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/linked_hash_map.caspien:48 - @inline: LinkedHashMap_u8_bool_isLive inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/linked_hash_map.caspien:55 - @inline: LinkedHashMap_u64_bool_keyAt inlined at 1 call site
-N	[note] /home/claude/caspien/stdlib/linked_hash_map.caspien:55 - @inline: LinkedHashMap_u8_bool_keyAt inlined at 1 call site

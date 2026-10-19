@@ -1,3 +1,0 @@
-N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/inline_decorator_test.caspien:24 - @inline: big inlined at 1 call site
-N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/inline_decorator_test.caspien:42 - @inline: twice inlined at 1 call site
-N	[note] /home/claude/caspien/ReferenceImplementation/.cache/scratch/tests/inline_decorator_test.caspien:18 - @inline: add3 inlined at 7 call sites

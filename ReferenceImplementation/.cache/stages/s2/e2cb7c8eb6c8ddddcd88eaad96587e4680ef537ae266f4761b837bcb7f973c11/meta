@@ -1,3 +1,0 @@
-W	[warning] /home/claude/caspien/stdlib/string.caspien:264 - @inline not honoured at 1 call site of String_charAt (6 inlined): the call is somewhere inlined code cannot go: an enclosing expression with values pending, an argument that is not a scalar, ...
-N	[note] /home/claude/caspien/stdlib/dynamic_array.caspien:110 - @inline: DynamicArray_char_set inlined at 3 call sites
-N	[note] /home/claude/caspien/stdlib/string.caspien:283 - @inline: String_setCharAt inlined at 2 call sites
