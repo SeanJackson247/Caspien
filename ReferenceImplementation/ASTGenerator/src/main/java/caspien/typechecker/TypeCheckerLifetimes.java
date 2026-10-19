@@ -1,5 +1,6 @@
 package caspien.typechecker;
 
+import caspien.bytecode.Text;
 import caspien.config.CompilerException;
 import caspien.token.Decorator;
 import caspien.token.Token;
@@ -504,7 +505,7 @@ public final class TypeCheckerLifetimes {
         }
         Map<String, Boolean> rel = contractOf(callee);
         for (Map.Entry<String, Boolean> e : rel.entrySet()) {
-            String[] lr = e.getKey().split(">");
+            String[] lr = Text.split(e.getKey(), '>', 0);
             int li = callee.paramNames.indexOf(lr[0]);
             int ri = callee.paramNames.indexOf(lr[1]);
             if (li < 0 || ri < 0 || li >= argNodes.size() || ri >= argNodes.size()) {
