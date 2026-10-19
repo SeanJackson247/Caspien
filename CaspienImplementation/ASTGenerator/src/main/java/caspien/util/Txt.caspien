@@ -1,0 +1,120 @@
+import "stdlib/string.caspien"
+
+/**
+ * Null-safe text helpers for the front end. A `ref some` parameter dies at the first allocation (ProofKills), so the stages take their text
+ * as plain nullable `ref imut String` parameters and read it through these one-call accessors, each of which proves the reference itself and
+ * returns scalars or fresh owned Strings. See docs/ASTGeneratorPort.md, "Conventions".
+ */
+@pub
+struct Txt{@pub{
+}}
+
+@pub
+impl Txt{
+	/** Byte `i` of `s`, NUL when out of range or `s` is null. */
+	@pub
+	static func ch(s: ref imut String, i: mut u64) mut char{
+		match Some(s){
+			if i < s.length(s){
+				return s.charAt(s, i)
+			}
+		}
+		return '\0'
+	}
+
+	@pub
+	static func len(s: ref imut String) mut u64{
+		match Some(s){
+			return s.length(s)
+		}
+		return 0
+	}
+
+	@pub
+	static func eqLit(s: ref imut String, lit: static imut string) mut bool{
+		match Some(s){
+			return s.equals(s, lit)
+		}
+		return false
+	}
+
+	@pub
+	static func eq(a: ref imut String, b: ref imut String) mut bool{
+		match Some(a){
+			match Some(b){
+				return a.equals(a, b)
+			}
+		}
+		return false
+	}
+
+	@pub
+	static func startsWithLit(s: ref imut String, lit: static imut string) mut bool{
+		match Some(s){
+			return s.startsWith(s, lit)
+		}
+		return false
+	}
+
+	/** A copy of `s` (empty when `s` is null). */
+	@pub
+	@throws
+	static func copy(s: ref imut String) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		match Some(s){
+			out = ? s.sub(s, 0, s.length(s))
+		}
+		return out
+	}
+
+	/** Bytes `a..b` of `s`. */
+	@pub
+	@throws
+	static func sub(s: ref imut String, a: mut u64, b: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		match Some(s){
+			out = ? s.sub(s, a, b)
+		}
+		return out
+	}
+
+	@pub
+	@throws
+	static func appendStr(dst: ref mut String, src: ref imut String) void{
+		?catch(e){ throw e }
+		match Some(src){
+			match Some(dst){
+				? dst.append(dst, src)
+			}
+		}
+	}
+
+	@pub
+	@throws
+	static func appendCh(dst: ref mut String, c: mut char) void{
+		?catch(e){ throw e }
+		match Some(dst){
+			? dst.appendChar(dst, c)
+		}
+	}
+
+	@pub
+	@throws
+	static func appendLit(dst: ref mut String, lit: static imut string) void{
+		?catch(e){ throw e }
+		match Some(dst){
+			? dst.append(dst, lit)
+		}
+	}
+
+	@pub
+	@throws
+	static func appendU64(dst: ref mut String, v: mut u64) void{
+		?catch(e){ throw e }
+		match Some(dst){
+			? dst.appendU64(dst, v)
+		}
+	}
+}

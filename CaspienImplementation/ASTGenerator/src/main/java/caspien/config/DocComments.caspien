@@ -1,0 +1,61 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+/** One validated doc comment (the slash-star-bang form): the keyword it labels and where it stands (port of caspien.config.DocComment). */
+@pub
+struct DocComment{@pub{
+	key: owns some mut String
+	text: owns some mut String
+	file: owns some mut String
+	kind: owns some mut String
+	commentLine: mut u64
+	targetLine: mut u64
+}}
+
+@pub
+impl constructor for DocComment(key: owns some mut String, text: owns some mut String, file: owns some mut String, kind: owns some mut String, commentLine: mut u64, targetLine: mut u64) self{
+	return DocComment{key= key, text= text, file= file, kind= kind, commentLine= commentLine, targetLine= targetLine}
+}
+
+/** The registry of doc comments by `file:line:key` of the keyword they label (Java: static `DocComments.BY_TARGET`; here one value per compile). */
+@pub
+struct DocComments{@pub{
+	byTarget: owns some mut StringMap<DocComment>
+}}
+
+@pub
+@throws
+impl constructor for DocComments() self{
+	?catch(e){ throw e }
+	let m = mut ? new StringMap:<DocComment>()
+	return DocComments{byTarget= m}
+}
+
+@pub
+impl DocComments{
+	/** `file:line:key`. */
+	@pub
+	@throws
+	static func keyOf(file: ref some imut String, line: mut u64, docKey: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let k = mut ? new String()
+		? k.append(k, file)
+		? k.appendChar(k, ':')
+		? k.appendU64(k, line)
+		? k.appendChar(k, ':')
+		match Some(docKey){ ? k.append(k, docKey) }
+		return k
+	}
+
+	/** True when `value` is one of the termination classes. */
+	@pub
+	static func isClass(value: ref some imut String) mut bool{
+		if value.equals(value, "bound"){ return true }
+		if value.equals(value, "finite"){ return true }
+		if value.equals(value, "unbound"){ return true }
+		if value.equals(value, "none"){ return true }
+		if value.equals(value, "conditional"){ return true }
+		if value.equals(value, "indirect"){ return true }
+		return false
+	}
+}

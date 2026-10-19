@@ -1,0 +1,44 @@
+/** The token kinds of the front end (port of caspien.token.TokenType) as plain numbers; WHITESPACE, QUOTED_LITERAL and the comment kinds never leave the lexer. */
+const TT_STRING 0
+const TT_CHAR 1
+const TT_QUOTED_LITERAL 2
+const TT_ML_COMMENT 3
+const TT_SL_COMMENT 4
+const TT_TERMINATOR 5
+const TT_LINE 6
+const TT_DELINEATOR 7
+const TT_OPERATOR 8
+const TT_INTEGER 9
+const TT_FLOAT 10
+const TT_VARREF 11
+const TT_KEYWORD 12
+const TT_BOOL 13
+const TT_NULL 14
+const TT_MODIFIER 15
+const TT_WHITESPACE 16
+const TT_ASM_BLOCK 17
+const TT_TEMPLATE_STRING 18
+
+/** The Java `TokenType.name()` text of a kind, for the stage dumps. */
+@pub
+func tokenTypeName(t: mut u64) static imut string{
+	if t == TT_STRING{ return "STRING" }
+	if t == TT_CHAR{ return "CHAR" }
+	if t == TT_QUOTED_LITERAL{ return "QUOTED_LITERAL" }
+	if t == TT_ML_COMMENT{ return "ML_COMMENT" }
+	if t == TT_SL_COMMENT{ return "SL_COMMENT" }
+	if t == TT_TERMINATOR{ return "TERMINATOR" }
+	if t == TT_LINE{ return "LINE" }
+	if t == TT_DELINEATOR{ return "DELINEATOR" }
+	if t == TT_OPERATOR{ return "OPERATOR" }
+	if t == TT_INTEGER{ return "INTEGER" }
+	if t == TT_FLOAT{ return "FLOAT" }
+	if t == TT_VARREF{ return "VARREF" }
+	if t == TT_KEYWORD{ return "KEYWORD" }
+	if t == TT_BOOL{ return "BOOL" }
+	if t == TT_NULL{ return "NULL" }
+	if t == TT_MODIFIER{ return "MODIFIER" }
+	if t == TT_WHITESPACE{ return "WHITESPACE" }
+	if t == TT_ASM_BLOCK{ return "ASM_BLOCK" }
+	return "TEMPLATE_STRING"
+}

@@ -96,6 +96,13 @@ impl Io{
 		}
 	}
 
+	@pub
+	static func oprintLit(t: static imut string) void{
+		unsafe extern{
+			write(1, t, strlen(t))
+		}
+	}
+
 	/** Writes `s` to stdout. */
 	@pub
 	static func oprint(s: ref imut String) void{

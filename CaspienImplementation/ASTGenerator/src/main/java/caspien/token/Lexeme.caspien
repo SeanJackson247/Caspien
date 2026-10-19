@@ -1,0 +1,37 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "TokenType.caspien"
+
+/** A comment pinned to a lexeme (Java pinned the comment's Lexeme itself; nothing reads more than these three fields). */
+@pub
+struct PinnedComment{@pub{
+	kind: mut u64
+	text: owns some mut String
+	line: mut u64
+}}
+
+@pub
+impl constructor for PinnedComment(kind: mut u64, text: owns some mut String, line: mut u64) self{
+	return PinnedComment{kind= kind, text= text, line= line}
+}
+
+/**
+ * One lexical unit as the Lexer produces it (port of caspien.token.Lexeme). The file is not stored per lexeme: every lexeme of one Lexer run
+ * shares it (LexResult.file). `literalValue` and `forcedLiteralType` are null where Java's were; `pinned` is null while no comment is pinned.
+ */
+@pub
+struct Lexeme{@pub{
+	kind: mut u64
+	text: owns some mut String
+	line: mut u64
+	literalValue: owns mut String
+	quoteDelimiter: mut char
+	radixLiteral: mut bool
+	forcedLiteralType: owns mut String
+	pinned: owns mut ObjectList<PinnedComment>
+}}
+
+@pub
+impl constructor for Lexeme(kind: mut u64, text: owns some mut String, line: mut u64) self{
+	return Lexeme{kind= kind, text= text, line= line, literalValue= null, quoteDelimiter= '\0', radixLiteral= false, forcedLiteralType= null, pinned= null}
+}

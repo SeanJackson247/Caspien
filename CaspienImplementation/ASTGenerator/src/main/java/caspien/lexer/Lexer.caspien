@@ -1,0 +1,1322 @@
+import "stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "../../../../../../LowerOrderGenerator/src/main/java/caspien/lowerorder/Vec.caspien"
+import "../token/TokenType.caspien"
+import "../token/Lexeme.caspien"
+import "../config/DocComments.caspien"
+import "../util/Txt.caspien"
+import "LexerWords.caspien"
+
+/**
+ * Stage 1 of the front end: source text of one file -> flat lexeme list (port of caspien.lexer.Lexer).
+ * Differences from the Java (docs/ASTGeneratorPort.md): text is bytes, so a byte >= 0x80 outside strings and comments is an identifier character
+ * and `\xHH`/`\uHHHH` escapes are written as UTF-8; error texts are fixed literals (the line is left in the caller's LexCursor); doc comments are
+ * returned in `LexResult.docs` instead of a static registry.
+ * Style (docs/ASTGeneratorPort.md, "Conventions"): the scan state lives in an owned `LexState` handed through the helpers (`st = ? f(st, ..)`), text
+ * parameters are nullable refs read through `Txt`, and list elements are read/written through the small accessors below.
+ */
+@pub
+struct LexResult{@pub{
+	tokens: owns some mut ObjectList<Lexeme>
+	docs: owns some mut ObjectList<DocComment>
+}}
+
+@pub
+@throws
+impl constructor for LexResult() self{
+	?catch(e){ throw e }
+	let t = mut ? new ObjectList:<Lexeme>()
+	let d = mut ? new ObjectList:<DocComment>()
+	return LexResult{tokens= t, docs= d}
+}
+
+/** The scan position: byte offset and 1-based line, shared with the helpers that advance them. */
+@pub
+struct LexCursor{@pub{
+	pos: mut u64
+	line: mut u64
+}}
+
+@pub
+impl constructor for LexCursor() self{
+	return LexCursor{pos= 0, line= 1}
+}
+
+/** The mutable scan state: lexemes so far, the word/literal buffer, and the brace-depth stack of open `${...}` template segments. */
+struct LexState{@pub{
+	tokens: owns some mut ObjectList<Lexeme>
+	buffer: owns some mut String
+	depth: owns some mut Vec
+}}
+
+@throws
+impl constructor for LexState() self{
+	?catch(e){ throw e }
+	let t = mut ? new ObjectList:<Lexeme>()
+	let b = mut ? new String()
+	let d = mut ? Vec.make()
+	return LexState{tokens= t, buffer= b, depth= d}
+}
+
+@pub
+struct Lexer{@pub{
+}}
+
+@pub
+impl Lexer{
+	// ---- accessors over a lexeme list (allocation free unless they copy) --------------------------------------------------
+
+	static func kindAt(tokens: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				return t.kind
+			}
+		}
+		return 99
+	}
+
+	static func lineAt(tokens: ref imut ObjectList<Lexeme>, i: mut u64) mut u64{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				return t.line
+			}
+		}
+		return 0
+	}
+
+	static func radixAt(tokens: ref imut ObjectList<Lexeme>, i: mut u64) mut bool{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				return t.radixLiteral
+			}
+		}
+		return false
+	}
+
+	static func textEq(tokens: ref imut ObjectList<Lexeme>, i: mut u64, lit: static imut string) mut bool{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				return t.text.equals(t.text, lit)
+			}
+		}
+		return false
+	}
+
+	/** First byte of lexeme `i`'s text (NUL when empty). */
+	static func firstCharAt(tokens: ref imut ObjectList<Lexeme>, i: mut u64) mut char{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				return Txt.ch(t.text, 0)
+			}
+		}
+		return '\0'
+	}
+
+	@throws
+	static func textAt(tokens: ref imut ObjectList<Lexeme>, i: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				out = ? t.text.sub(t.text, 0, t.text.length(t.text))
+			}
+		}
+		return out
+	}
+
+	static func setKind(tokens: ref mut ObjectList<Lexeme>, i: mut u64, kind: mut u64) void{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				t.kind = kind
+			}
+		}
+	}
+
+	static func setRadix(tokens: ref mut ObjectList<Lexeme>, i: mut u64, v: mut bool) void{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				t.radixLiteral = v
+			}
+		}
+	}
+
+	/** Replaces the text of lexeme `i` (the old text is dropped). */
+	static func setText(tokens: ref mut ObjectList<Lexeme>, i: mut u64, text: owns some mut String) void{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				t.text = text
+			}
+		}
+	}
+
+	static func hasPinned(tokens: ref imut ObjectList<Lexeme>, i: mut u64) mut bool{
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				match Some(t.pinned){
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	/** Gives lexeme `i` an (empty) pinned-comment list. */
+	@throws
+	static func initPinned(tokens: ref mut ObjectList<Lexeme>, i: mut u64) void{
+		?catch(e){ throw e }
+		let fresh = mut ? new ObjectList:<PinnedComment>()
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				t.pinned = fresh
+			}
+		}
+	}
+
+	@throws
+	static func pushPinned(tokens: ref mut ObjectList<Lexeme>, i: mut u64, pc: owns some mut PinnedComment) void{
+		?catch(e){ throw e }
+		match Some(tokens){
+			let t = tokens.get(tokens, i)
+			match Some(t){
+				match Some(t.pinned){
+					? t.pinned.add(t.pinned, pc)
+				}
+			}
+		}
+	}
+
+	// ---- building lexemes -------------------------------------------------------------------------------------------------
+
+	@throws
+	static func makeStr(kind: mut u64, text: ref imut String, line: mut u64) owns some mut Lexeme{
+		?catch(e){ throw e }
+		let copy = mut ? Txt.copy(text)
+		let lx = mut ? new Lexeme(kind, copy, line)
+		return lx
+	}
+
+	@throws
+	static func makeLit(kind: mut u64, lit: static imut string, line: mut u64) owns some mut Lexeme{
+		?catch(e){ throw e }
+		let copy = mut ? String.from(lit)
+		let lx = mut ? new Lexeme(kind, copy, line)
+		return lx
+	}
+
+	@throws
+	static func makeChar(kind: mut u64, c: mut char, line: mut u64) owns some mut Lexeme{
+		?catch(e){ throw e }
+		let copy = mut ? new String()
+		? copy.appendChar(copy, c)
+		let lx = mut ? new Lexeme(kind, copy, line)
+		return lx
+	}
+
+	// ---- context lookbacks ------------------------------------------------------------------------------------------------
+
+	/** The last lexeme that is not WHITESPACE, as an index (-1 when none). */
+	static func lastReal(tokens: ref imut ObjectList<Lexeme>) mut s64{
+		let n = mut 0
+		match Some(tokens){ n = tokens.size(tokens) }
+		let i = mut (wrap:<s64>(n) - 1)
+		for lp1 in 0..1000000000{
+			if i < 0{
+				break
+			}
+			if Lexer.kindAt(tokens, wrap:<u64>(i)) != TT_WHITESPACE{
+				break
+			}
+			i = i - 1
+		}
+		return i
+	}
+
+	/** True when the last real lexeme is the "." operator (so a following `enum` is a member name). */
+	static func justSawDot(tokens: ref imut ObjectList<Lexeme>) mut bool{
+		let i = mut Lexer.lastReal(tokens)
+		if i < 0{
+			return false
+		}
+		let u = mut wrap:<u64>(i)
+		return Lexer.kindAt(tokens, u) == TT_OPERATOR && Lexer.textEq(tokens, u, ".")
+	}
+
+	/** True when the "{" just seen follows `ASM` or `ASM name` (only whitespace between). */
+	static func justSawAsmHeader(tokens: ref imut ObjectList<Lexeme>) mut bool{
+		let i = mut Lexer.lastReal(tokens)
+		if i < 0{
+			return false
+		}
+		let u = mut wrap:<u64>(i)
+		let k = mut Lexer.kindAt(tokens, u)
+		if k == TT_KEYWORD && Lexer.textEq(tokens, u, "ASM"){
+			return true
+		}
+		if k != TT_VARREF{
+			return false
+		}
+		let j = mut (wrap:<s64>(i) - 1)
+		for lp2 in 0..1000000000{
+			if j < 0{
+				break
+			}
+			if Lexer.kindAt(tokens, wrap:<u64>(j)) != TT_WHITESPACE{
+				break
+			}
+			j = j - 1
+		}
+		if j < 0{
+			return false
+		}
+		let ju = mut wrap:<u64>(j)
+		return Lexer.kindAt(tokens, ju) == TT_KEYWORD && Lexer.textEq(tokens, ju, "ASM")
+	}
+
+	// ---- words ------------------------------------------------------------------------------------------------------------
+
+	/** An integer literal with a radix prefix or digit separators as plain decimal text; null when `text` is not shaped like one. Throws when malformed. */
+	@throws
+	static func normalizeInt(text: ref imut String) owns mut String{
+		?catch(e){ throw e }
+		let n = mut Txt.len(text)
+		let radix = mut 10
+		let start = mut 0
+		if n >= 2{
+			let c0 = mut Txt.ch(text, 0)
+			let c1 = mut Txt.ch(text, 1)
+			if c0 == '0' && (c1 == 'x' || c1 == 'X'){
+				radix = 16
+				start = 2
+			} else if c0 == '0' && (c1 == 'b' || c1 == 'B'){
+				radix = 2
+				start = 2
+			}
+		}
+		if radix == 10{
+			let sawUnderscore = mut false
+			let bad = mut false
+			for i in 0..n{
+				let c = mut Txt.ch(text, i)
+				if c == '_'{
+					sawUnderscore = true
+				} else if LexWords.isDigit(c) == false{
+					bad = true
+				}
+			}
+			if bad{
+				return null
+			}
+			if sawUnderscore == false{
+				return null
+			}
+		}
+		if start >= n{
+			throw "[lex error] malformed numeric literal: no digits after the prefix"
+		}
+		let digits = mut ? new String()
+		let m = mut (n - start)
+		for k in 0..m{
+			let c = mut Txt.ch(text, start + k)
+			if c == '_'{
+				let prevUnderscore = mut false
+				if k > 0{
+					prevUnderscore = Txt.ch(text, start + k - 1) == '_'
+				}
+				if k == 0 || k == m - 1 || prevUnderscore{
+					throw "[lex error] malformed numeric literal: '_' must sit between two digits"
+				}
+			} else {
+				if LexWords.digitValue(c) >= radix{
+					throw "[lex error] malformed numeric literal: invalid digit for the base"
+				}
+				? digits.appendChar(digits, c)
+			}
+		}
+		let out = mut ? LexWords.radixToDecimal(digits, radix)
+		return out
+	}
+
+	/** Turns a buffered word into its lexeme (Java `flushBuffer`); `tokens` is only read (the `enum` after "." case). */
+	@throws
+	static func wordLexeme(text: ref imut String, startLine: mut u64, displayFile: ref imut String, roots: ref imut String, tokens: ref imut ObjectList<Lexeme>) owns some mut Lexeme{
+		?catch(e){ throw e }
+		let n = mut Txt.len(text)
+		let first = mut Txt.ch(text, 0)
+		let:<owns mut String> dec = mut null
+		if LexWords.isDigit(first){
+			dec = mut ? Lexer.normalizeInt(text)
+		}
+		let isRadix = mut false
+		match Some(dec){ isRadix = true }
+		if isRadix{
+			let hexBin = mut false
+			if n >= 2{
+				let c0 = mut Txt.ch(text, 0)
+				let c1 = mut Txt.ch(text, 1)
+				hexBin = c0 == '0' && (c1 == 'x' || c1 == 'X' || c1 == 'b' || c1 == 'B')
+			}
+			match Some(dec){
+				let lx = mut ? new Lexeme(TT_INTEGER, dec, startLine)
+				lx.radixLiteral = hexBin
+				return lx
+			}
+		}
+		let allDigits = mut true
+		for i in 0..n{
+			if LexWords.isDigit(Txt.ch(text, i)) == false{
+				allDigits = false
+			}
+		}
+		if allDigits{
+			let a = mut ? Lexer.makeStr(TT_INTEGER, text, startLine)
+			return a
+		}
+		if LexWords.isOperatorWord(text){
+			let b = mut ? Lexer.makeStr(TT_OPERATOR, text, startLine)
+			return b
+		}
+		if Txt.eqLit(text, "__LINE"){
+			let ln = mut ? String.fromU64(startLine)
+			let lx2 = mut ? new Lexeme(TT_INTEGER, ln, startLine)
+			return lx2
+		}
+		if Txt.eqLit(text, "__FS_ROOTS"){
+			let rt = mut ? Txt.copy(roots)
+			let rt2 = mut ? Txt.copy(roots)
+			let lx3 = mut ? new Lexeme(TT_STRING, rt, startLine)
+			lx3.literalValue = rt2
+			lx3.quoteDelimiter = '"'
+			return lx3
+		}
+		if Txt.eqLit(text, "__FILENAME"){
+			let fn1 = mut ? Txt.copy(displayFile)
+			let fn2 = mut ? Txt.copy(displayFile)
+			let lx4 = mut ? new Lexeme(TT_STRING, fn1, startLine)
+			lx4.literalValue = fn2
+			lx4.quoteDelimiter = '"'
+			return lx4
+		}
+		let lim = mut LexWords.limitIndex(text)
+		if lim >= 0{
+			let lt = mut ? String.from(LexWords.limitText(lim))
+			let lx5 = mut ? new Lexeme(TT_INTEGER, lt, startLine)
+			if LexWords.limitIsFloat(lim){
+				lx5.kind = TT_FLOAT
+			}
+			let ft = mut ? String.from(LexWords.limitType(lim))
+			lx5.forcedLiteralType = ft
+			return lx5
+		}
+		if Txt.eqLit(text, "enum"){
+			if Lexer.justSawDot(tokens){
+				let c = mut ? Lexer.makeStr(TT_VARREF, text, startLine)
+				return c
+			}
+		}
+		if LexWords.isKeyword(text){
+			let d = mut ? Lexer.makeStr(TT_KEYWORD, text, startLine)
+			return d
+		}
+		if LexWords.isModifier(text){
+			let e2 = mut ? Lexer.makeStr(TT_MODIFIER, text, startLine)
+			return e2
+		}
+		if Txt.eqLit(text, "true") || Txt.eqLit(text, "false"){
+			let f = mut ? Lexer.makeStr(TT_BOOL, text, startLine)
+			return f
+		}
+		if Txt.eqLit(text, "null"){
+			let g = mut ? Lexer.makeStr(TT_NULL, text, startLine)
+			return g
+		}
+		let h = mut ? Lexer.makeStr(TT_VARREF, text, startLine)
+		return h
+	}
+
+	/** Flushes the pending word, if any: its lexeme is appended and the buffer emptied. */
+	@throws
+	static func flush(st: owns some mut LexState, startLine: mut u64, displayFile: ref imut String, roots: ref imut String) owns some mut LexState{
+		?catch(e){ throw e }
+		let n = mut st.buffer.length(st.buffer)
+		if n == 0{
+			return st
+		}
+		let text = mut ? st.buffer.sub(st.buffer, 0, n)
+		let fresh = mut ? new String()
+		st.buffer = fresh
+		let lx = mut ? Lexer.wordLexeme(text, startLine, displayFile, roots, st.tokens)
+		? st.tokens.add(st.tokens, lx)
+		return st
+	}
+
+	// ---- literals, escapes, ASM -------------------------------------------------------------------------------------------
+
+	/** Appends the bytes of code point `cp` as UTF-8. */
+	@throws
+	static func appendCodePoint(buffer: ref mut String, cp: mut u64) void{
+		?catch(e){ throw e }
+		if cp < 128{
+			? Txt.appendCh(buffer, LexWords.charOf(cp))
+		} else if cp < 2048{
+			? Txt.appendCh(buffer, LexWords.charOf(192 + cp / 64))
+			? Txt.appendCh(buffer, LexWords.charOf(128 + cp % 64))
+		} else {
+			? Txt.appendCh(buffer, LexWords.charOf(224 + cp / 4096))
+			? Txt.appendCh(buffer, LexWords.charOf(128 + (cp / 64) % 64))
+			? Txt.appendCh(buffer, LexWords.charOf(128 + cp % 64))
+		}
+	}
+
+	/** `p` is at a backslash: decodes the escape into `buffer` and returns the position after it. */
+	@throws
+	static func appendEscape(s: ref imut String, p: mut u64, buffer: ref mut String) mut u64{
+		?catch(e){ throw e }
+		let n = mut Txt.len(s)
+		let q = mut (p + 1)
+		if q >= n{
+			throw "[lex error] unterminated escape sequence"
+		}
+		let e = mut Txt.ch(s, q)
+		let cp = mut 0
+		let next = mut (q + 1)
+		if e == '\\'{
+			cp = 92
+		} else if e == '\''{
+			cp = 39
+		} else if e == '"'{
+			cp = 34
+		} else if e == '`'{
+			cp = 96
+		} else if e == '$'{
+			cp = 36
+		} else if e == 'n'{
+			cp = 10
+		} else if e == 't'{
+			cp = 9
+		} else if e == 'r'{
+			cp = 13
+		} else if e == '0'{
+			cp = 0
+		} else if e == 'b'{
+			cp = 8
+		} else if e == 'f'{
+			cp = 12
+		} else if e == 'a'{
+			cp = 7
+		} else if e == 'v'{
+			cp = 11
+		} else if e == 'x' || e == 'u'{
+			let count = mut 2
+			if e == 'u'{
+				count = 4
+			}
+			for h in 0..count{
+				if next >= n{
+					throw "[lex error] expected hex digits in escape sequence"
+				}
+				let d = mut LexWords.digitValue(Txt.ch(s, next))
+				if d > 15{
+					throw "[lex error] expected hex digits in escape sequence"
+				}
+				cp = cp * 16 + d
+				next = next + 1
+			}
+		} else {
+			throw "[lex error] unknown escape sequence"
+		}
+		? Lexer.appendCodePoint(buffer, cp)
+		return next
+	}
+
+	/** `ASM [name] { ... }`: cur.pos is just past the "{". Returns the ASM_BLOCK lexeme holding the raw body (balanced braces; quotes and comments skipped whole). */
+	@throws
+	static func scanAsm(s: ref imut String, cur: ref some mut LexCursor) owns some mut Lexeme{
+		?catch(e){ throw e }
+		let n = mut Txt.len(s)
+		let startLine = mut cur.line
+		let depth = mut 1
+		let body = mut ? new String()
+		for lp3 in 0..1000000000{
+			if cur.pos >= n{
+				throw "[lex error] unterminated 'ASM' block (missing closing '}')"
+			}
+			let c = mut Txt.ch(s, cur.pos)
+			if c == '"' || c == '`' || c == '\''{
+				? body.appendChar(body, c)
+				cur.pos = cur.pos + 1
+				for lp4 in 0..1000000000{
+					if cur.pos >= n{
+						throw "[lex error] unterminated quoted literal inside 'ASM' block"
+					}
+					let q = mut Txt.ch(s, cur.pos)
+					if q == '\n'{
+						throw "[lex error] unterminated quoted literal inside 'ASM' block"
+					}
+					if q == '\\' && cur.pos + 1 < n{
+						? body.appendChar(body, q)
+						? body.appendChar(body, Txt.ch(s, cur.pos + 1))
+						cur.pos = cur.pos + 2
+					} else {
+						? body.appendChar(body, q)
+						cur.pos = cur.pos + 1
+						if q == c{
+							break
+						}
+					}
+				}
+				continue
+			}
+			if c == '/' && Txt.ch(s, cur.pos + 1) == '/'{
+				for lp5 in 0..1000000000{
+					if cur.pos >= n{
+						break
+					}
+					let q2 = mut Txt.ch(s, cur.pos)
+					if q2 == '\n'{
+						break
+					}
+					? body.appendChar(body, q2)
+					cur.pos = cur.pos + 1
+				}
+				continue
+			}
+			if c == '/' && Txt.ch(s, cur.pos + 1) == '*'{
+				? body.appendChar(body, '/')
+				? body.appendChar(body, '*')
+				cur.pos = cur.pos + 2
+				for lp6 in 0..1000000000{
+					if cur.pos >= n{
+						throw "[lex error] unterminated block comment inside 'ASM' block"
+					}
+					let q3 = mut Txt.ch(s, cur.pos)
+					if q3 == '\n'{
+						cur.line = cur.line + 1
+					}
+					if q3 == '*' && Txt.ch(s, cur.pos + 1) == '/'{
+						? body.appendChar(body, '*')
+						? body.appendChar(body, '/')
+						cur.pos = cur.pos + 2
+						break
+					}
+					? body.appendChar(body, q3)
+					cur.pos = cur.pos + 1
+				}
+				continue
+			}
+			if c == '{'{
+				depth = depth + 1
+				? body.appendChar(body, c)
+				cur.pos = cur.pos + 1
+				continue
+			}
+			if c == '}'{
+				cur.pos = cur.pos + 1
+				depth = depth - 1
+				if depth == 0{
+					break
+				}
+				? body.appendChar(body, c)
+				continue
+			}
+			if LexWords.isWordStart(c){
+				let ident = mut ? new String()
+				for lp7 in 0..1000000000{
+					if cur.pos >= n{
+						break
+					}
+					let q4 = mut Txt.ch(s, cur.pos)
+					if LexWords.isWordChar(q4) == false{
+						break
+					}
+					? ident.appendChar(ident, q4)
+					cur.pos = cur.pos + 1
+				}
+				if ident.equals(ident, "ASM_END"){
+					throw "[lex error] illegal use of the reserved identifier 'ASM_END' inside an 'ASM' block"
+				}
+				? body.append(body, ident)
+				continue
+			}
+			if c == '\n'{
+				cur.line = cur.line + 1
+			}
+			? body.appendChar(body, c)
+			cur.pos = cur.pos + 1
+		}
+		let bodyCopy = mut ? body.sub(body, 0, body.length(body))
+		let lx = mut ? new Lexeme(TT_ASM_BLOCK, body, startLine)
+		lx.literalValue = bodyCopy
+		return lx
+	}
+
+	/** Moves the buffered text into a new lexeme of `kind` (text and, when `keepLiteral`, literalValue and quote) and empties the buffer. */
+	@throws
+	static func emitBuffered(st: owns some mut LexState, kind: mut u64, startLine: mut u64, quote: mut char, keepLiteral: mut bool) owns some mut LexState{
+		?catch(e){ throw e }
+		let n = mut st.buffer.length(st.buffer)
+		let text = mut ? st.buffer.sub(st.buffer, 0, n)
+		let lit = mut ? st.buffer.sub(st.buffer, 0, n)
+		let fresh = mut ? new String()
+		st.buffer = fresh
+		let lx = mut ? new Lexeme(kind, text, startLine)
+		if keepLiteral{
+			lx.literalValue = lit
+			lx.quoteDelimiter = quote
+		}
+		? st.tokens.add(st.tokens, lx)
+		return st
+	}
+
+	/** Buffered template text becomes a TEMPLATE_STRING_PART lexeme (literalValue = the text). */
+	@throws
+	static func flushTemplatePart(st: owns some mut LexState, startLine: mut u64) owns some mut LexState{
+		?catch(e){ throw e }
+		let n = mut st.buffer.length(st.buffer)
+		let lit = mut ? st.buffer.sub(st.buffer, 0, n)
+		let fresh = mut ? new String()
+		st.buffer = fresh
+		let name = mut ? String.from("TEMPLATE_STRING_PART")
+		let lx = mut ? new Lexeme(TT_OPERATOR, name, startLine)
+		lx.literalValue = lit
+		? st.tokens.add(st.tokens, lx)
+		return st
+	}
+
+	// ---- passes over the finished list ------------------------------------------------------------------------------------
+
+	/** Number of UTF-8 characters in `s` (continuation bytes do not count). */
+	static func charCount(s: ref imut String) mut u64{
+		let n = mut Txt.len(s)
+		let cnt = mut 0
+		for i in 0..n{
+			let b = mut String.charCode(Txt.ch(s, i))
+			if b < 128 || b >= 192{
+				cnt = cnt + 1
+			}
+		}
+		return cnt
+	}
+
+	/** Decides STRING vs CHAR for every quoted literal; a char literal must hold exactly one character. */
+	@throws
+	static func classify(tokens: ref mut ObjectList<Lexeme>) void{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(tokens){ n = tokens.size(tokens) }
+		for i in 0..n{
+			if Lexer.kindAt(tokens, i) == TT_QUOTED_LITERAL{
+				let isChar = mut false
+				let cnt = mut 0
+				match Some(tokens){
+					let t = tokens.get(tokens, i)
+					match Some(t){
+						isChar = t.quoteDelimiter == '\''
+						cnt = Lexer.charCount(t.literalValue)
+					}
+				}
+				if isChar{
+					if cnt != 1{
+						throw "[lex error] char literal must contain exactly one character"
+					}
+					Lexer.setKind(tokens, i, TT_CHAR)
+				} else {
+					Lexer.setKind(tokens, i, TT_STRING)
+				}
+			}
+		}
+	}
+
+	/** Joins adjacent same-line OPERATOR lexemes into the multi-character operators (&&, ==, .., ..., ...). */
+	@throws
+	static func mergeOperators(tokens: ref mut ObjectList<Lexeme>) void{
+		?catch(e){ throw e }
+		let i = mut 0
+		for lp8 in 0..1000000000{
+			let n = mut 0
+			match Some(tokens){ n = tokens.size(tokens) }
+			if i + 1 >= n{
+				break
+			}
+			let merged = mut false
+			if Lexer.kindAt(tokens, i) == TT_OPERATOR && Lexer.kindAt(tokens, i + 1) == TT_OPERATOR && Lexer.lineAt(tokens, i) == Lexer.lineAt(tokens, i + 1){
+				let combo = mut ? Lexer.textAt(tokens, i)
+				let second = mut ? Lexer.textAt(tokens, i + 1)
+				? combo.append(combo, second)
+				if LexWords.isMultiCharOperator(combo){
+					Lexer.setText(tokens, i, combo)
+					merged = true
+				}
+			}
+			if merged{
+				match Some(tokens){ ? tokens.removeAt(tokens, i + 1) }
+			} else {
+				i = i + 1
+			}
+		}
+	}
+
+	/** INTEGER "." INTEGER on one line becomes a FLOAT (not after a hex/binary literal). */
+	@throws
+	static func mergeFloats(tokens: ref mut ObjectList<Lexeme>) void{
+		?catch(e){ throw e }
+		let i = mut 0
+		for lp9 in 0..1000000000{
+			let n = mut 0
+			match Some(tokens){ n = tokens.size(tokens) }
+			if i + 2 >= n{
+				break
+			}
+			let doIt = mut false
+			if Lexer.kindAt(tokens, i) == TT_INTEGER && Lexer.radixAt(tokens, i) == false && Lexer.kindAt(tokens, i + 1) == TT_OPERATOR && Lexer.kindAt(tokens, i + 2) == TT_INTEGER{
+				if Lexer.textEq(tokens, i + 1, ".") && Lexer.lineAt(tokens, i) == Lexer.lineAt(tokens, i + 1) && Lexer.lineAt(tokens, i + 1) == Lexer.lineAt(tokens, i + 2){
+					doIt = true
+				}
+			}
+			if doIt{
+				let joined = mut ? Lexer.textAt(tokens, i)
+				? joined.appendChar(joined, '.')
+				let frac = mut ? Lexer.textAt(tokens, i + 2)
+				? joined.append(joined, frac)
+				Lexer.setText(tokens, i, joined)
+				Lexer.setKind(tokens, i, TT_FLOAT)
+				match Some(tokens){ ? tokens.removeAt(tokens, i + 2) }
+				match Some(tokens){ ? tokens.removeAt(tokens, i + 1) }
+			}
+			i = i + 1
+		}
+	}
+
+	/** `elif` -> `elseif`; `else if` and `else match` on one line collapse into `elseif` / `elsematch`. */
+	@throws
+	static func normalizeElse(tokens: ref mut ObjectList<Lexeme>) void{
+		?catch(e){ throw e }
+		let i = mut 0
+		for lp10 in 0..1000000000{
+			let n = mut 0
+			match Some(tokens){ n = tokens.size(tokens) }
+			if i >= n{
+				break
+			}
+			if Lexer.kindAt(tokens, i) == TT_KEYWORD{
+				if Lexer.textEq(tokens, i, "elif"){
+					let rep = mut ? String.from("elseif")
+					Lexer.setText(tokens, i, rep)
+				} else if Lexer.textEq(tokens, i, "else"){
+					let tline = mut Lexer.lineAt(tokens, i)
+					let j = mut (i + 1)
+					for lp11 in 0..1000000000{
+						if j >= n{
+							break
+						}
+						if Lexer.kindAt(tokens, j) != TT_WHITESPACE{
+							break
+						}
+						j = j + 1
+					}
+					let which = mut 0
+					if j < n{
+						if Lexer.kindAt(tokens, j) == TT_KEYWORD && Lexer.lineAt(tokens, j) == tline{
+							if Lexer.textEq(tokens, j, "if"){
+								which = 1
+							} else if Lexer.textEq(tokens, j, "match"){
+								which = 2
+							}
+						}
+					}
+					if which > 0{
+						let rep2 = mut ? String.from("elseif")
+						if which == 2{
+							rep2 = mut ? String.from("elsematch")
+						}
+						Lexer.setText(tokens, i, rep2)
+						// remove lexemes j down to i+1
+						let k = mut j
+						for lp12 in 0..1000000000{
+							if k < i + 1{
+								break
+							}
+							match Some(tokens){ ? tokens.removeAt(tokens, k) }
+							if k == 0{
+								break
+							}
+							k = k - 1
+						}
+					}
+				}
+			}
+			i = i + 1
+		}
+	}
+
+	/** True for lexemes that vanish before the parser keeps them: whitespace, comments, terminators, closing delineators. */
+	static func discardableAt(tokens: ref imut ObjectList<Lexeme>, i: mut u64) mut bool{
+		let kind = mut Lexer.kindAt(tokens, i)
+		if kind == TT_WHITESPACE || kind == TT_SL_COMMENT || kind == TT_ML_COMMENT || kind == TT_TERMINATOR{
+			return true
+		}
+		if kind == TT_DELINEATOR{
+			let c = mut Lexer.firstCharAt(tokens, i)
+			return c == ')' || c == ']' || c == '}'
+		}
+		return false
+	}
+
+	/** Validates the doc comment at `idx` and records it under the keyword it labels. */
+	@throws
+	static func registerDoc(tokens: ref imut ObjectList<Lexeme>, idx: mut u64, file: ref imut String, docs: ref mut ObjectList<DocComment>, seen: ref mut StringSet) void{
+		?catch(e){ throw e }
+		let cline = mut Lexer.lineAt(tokens, idx)
+		// body = collapseSpace(text.substring(1).trim())
+		let full = mut ? Lexer.textAt(tokens, idx)
+		let rest = mut ? full.substring(full, 1)
+		let trimmed = mut ? rest.trim(rest)
+		let body = mut ? new String()
+		let tn = mut trimmed.length(trimmed)
+		let inSpace = mut false
+		for q in 0..tn{
+			let ch = mut trimmed.charAt(trimmed, q)
+			let isSp = mut (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || String.charCode(ch) == 11)
+			if isSp{
+				if inSpace == false{
+					? body.appendChar(body, ' ')
+				}
+				inSpace = true
+			} else {
+				? body.appendChar(body, ch)
+				inSpace = false
+			}
+		}
+		let colon = mut body.indexOf(body, ':')
+		if colon <= 0{
+			throw "[lex error] doc comment must read 'key: text' (keys: justify, termination)"
+		}
+		let bn = mut body.length(body)
+		let keyRaw = mut ? body.sub(body, 0, wrap:<u64>(colon))
+		let key = mut ? keyRaw.trim(keyRaw)
+		let valRaw = mut ? body.sub(body, wrap:<u64>(colon) + 1, bn)
+		let value = mut ? valRaw.trim(valRaw)
+		let isJustify = mut key.equals(key, "justify")
+		let isTerm = mut key.equals(key, "termination")
+		if isJustify == false && isTerm == false{
+			throw "[lex error] unknown doc comment key (keys: justify, termination)"
+		}
+		if value.length(value) == 0{
+			throw "[lex error] doc comment has no text"
+		}
+		if isTerm && DocComments.isClass(value) == false{
+			throw "[lex error] termination class is not one of bound | finite | unbound | none | conditional | indirect"
+		}
+		// the keyword it labels: the next real token, past decorator lines
+		let total = mut 0
+		match Some(tokens){ total = tokens.size(tokens) }
+		let j = mut (idx + 1)
+		let target = mut -1
+		for lp13 in 0..1000000000{
+			if j >= total{
+				break
+			}
+			if Lexer.discardableAt(tokens, j){
+				j = j + 1
+				continue
+			}
+			if Lexer.kindAt(tokens, j) == TT_OPERATOR && Lexer.textEq(tokens, j, "@"){
+				for lp14 in 0..1000000000{
+					if j >= total{
+						break
+					}
+					if Lexer.kindAt(tokens, j) == TT_TERMINATOR{
+						break
+					}
+					j = j + 1
+				}
+				continue
+			}
+			target = wrap:<s64>(j)
+			break
+		}
+		let kindText = mut ? new String()
+		let targetLine = mut 0
+		let hasTarget = mut false
+		if target >= 0{
+			hasTarget = true
+			let tu = mut wrap:<u64>(target)
+			let tt = mut ? Lexer.textAt(tokens, tu)
+			? kindText.append(kindText, tt)
+			targetLine = Lexer.lineAt(tokens, tu)
+		}
+		let lockLoop = mut false
+		if isTerm && hasTarget && kindText.equals(kindText, "match"){
+			// `match @lock x{ .. }` takes the label of a loop
+			let k = mut (wrap:<u64>(target) + 1)
+			for lp15 in 0..1000000000{
+				if k >= total{
+					break
+				}
+				if Lexer.discardableAt(tokens, k) == false{
+					break
+				}
+				k = k + 1
+			}
+			let k2 = mut (k + 1)
+			for lp16 in 0..1000000000{
+				if k2 >= total{
+					break
+				}
+				if Lexer.discardableAt(tokens, k2) == false{
+					break
+				}
+				k2 = k2 + 1
+			}
+			if k2 < total{
+				if Lexer.textEq(tokens, k, "@") && Lexer.textEq(tokens, k2, "lock"){
+					lockLoop = true
+				}
+			}
+		}
+		let kindFinal = mut ? new String()
+		if lockLoop{
+			? Txt.appendLit(kindFinal, "loop")
+		} else {
+			? kindFinal.append(kindFinal, kindText)
+		}
+		let ok = mut false
+		if hasTarget{
+			if isJustify{
+				ok = kindFinal.equals(kindFinal, "unsafe")
+			} else {
+				ok = kindFinal.equals(kindFinal, "loop") || kindFinal.equals(kindFinal, "for") || kindFinal.equals(kindFinal, "func")
+			}
+		}
+		if ok == false{
+			throw "[lex error] doc comment is not expected here: it goes directly before an `unsafe` block, or a `loop`, `for`, `func` or `match @lock`"
+		}
+		let regKey = mut ? new String()
+		match Some(file){
+			regKey = ? DocComments.keyOf(file, targetLine, key)
+		}
+		let fresh = mut false
+		match Some(seen){ fresh = ? seen.add(seen, regKey) }
+		if fresh == false{
+			throw "[lex error] the same doc comment key appears twice before the same keyword"
+		}
+		let fileCopy = mut ? Txt.copy(file)
+		let doc = mut ? new DocComment(key, value, fileCopy, kindFinal, cline, targetLine)
+		match Some(docs){ ? docs.add(docs, doc) }
+	}
+
+	/** Removes every comment lexeme: doc comments are registered, the rest pinned to the nearest real lexeme (the next one, else the previous one). */
+	@throws
+	static func pinComments(result: owns some mut LexResult, file: ref imut String) owns some mut LexResult{
+		?catch(e){ throw e }
+		let seen = mut ? new StringSet()
+		let i = mut 0
+		for lp17 in 0..1000000000{
+			let n = mut result.tokens.size(result.tokens)
+			if i >= n{
+				break
+			}
+			let kind = mut Lexer.kindAt(result.tokens, i)
+			if kind != TT_SL_COMMENT && kind != TT_ML_COMMENT{
+				i = i + 1
+				continue
+			}
+			if Lexer.firstCharAt(result.tokens, i) == '!'{
+				? Lexer.registerDoc(result.tokens, i, file, result.docs, seen)
+				? result.tokens.removeAt(result.tokens, i)
+				continue
+			}
+			// the nearest real lexeme: forward first, then backward
+			let target = mut -1
+			let j = mut (i + 1)
+			for lp18 in 0..1000000000{
+				if j >= n{
+					break
+				}
+				if Lexer.discardableAt(result.tokens, j) == false{
+					target = wrap:<s64>(j)
+					break
+				}
+				j = j + 1
+			}
+			if target < 0{
+				let back = mut (wrap:<s64>(i) - 1)
+				for lp19 in 0..1000000000{
+					if back < 0{
+						break
+					}
+					if Lexer.discardableAt(result.tokens, wrap:<u64>(back)) == false{
+						target = back
+						break
+					}
+					back = back - 1
+				}
+			}
+			if target >= 0{
+				let txt = mut ? Lexer.textAt(result.tokens, i)
+				let pc = mut ? new PinnedComment(kind, txt, Lexer.lineAt(result.tokens, i))
+				let tu = mut wrap:<u64>(target)
+				if Lexer.hasPinned(result.tokens, tu) == false{
+					? Lexer.initPinned(result.tokens, tu)
+				}
+				? Lexer.pushPinned(result.tokens, tu, pc)
+			}
+			? result.tokens.removeAt(result.tokens, i)
+		}
+		return result
+	}
+
+	// ---- the scan ---------------------------------------------------------------------------------------------------------
+
+	/**
+	 * Lexes `src`. `file` is the path recorded for errors, `displayFile` the base name `__FILENAME` expands to, `roots` the `__FS_ROOTS` string.
+	 * On a lex error `cur.line` is the line being scanned.
+	 */
+	@pub
+	@throws
+	static func tokenize(src: owns some mut String, displayFile: owns some mut String, roots: owns some mut String, file: owns some mut String, cur: ref mut LexCursor) owns some mut LexResult{
+		?catch(e){ throw e }
+		let lc = mut ? new LexCursor()
+		match Some(cur){
+			lc.pos = lc.pos
+			lc.line = lc.line
+		}
+		let n = mut src.length(src)
+		let st = mut ? new LexState()
+		let docs = mut ? new ObjectList:<DocComment>()
+		let mode = mut 0
+		let quote = mut '\0'
+		let bufferStartLine = mut 1
+		for lp20 in 0..1000000000{
+			match Some(cur){ cur.line = lc.line }
+			if lc.pos >= n{
+				break
+			}
+			let c = mut src.charAt(src, lc.pos)
+			if mode == 0{
+				if c == '\n'{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					let nl = mut ? Lexer.makeLit(TT_TERMINATOR, "\n", lc.line)
+					? st.tokens.add(st.tokens, nl)
+					lc.line = lc.line + 1
+					lc.pos = lc.pos + 1
+					continue
+				}
+				if c == ' ' || c == '\t' || c == '\r'{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					let wsLine = mut lc.line
+					let ws = mut ? new String()
+					for lp21 in 0..1000000000{
+						if lc.pos >= n{
+							break
+						}
+						let w = mut src.charAt(src, lc.pos)
+						if w != ' ' && w != '\t' && w != '\r'{
+							break
+						}
+						? ws.appendChar(ws, w)
+						lc.pos = lc.pos + 1
+					}
+					let wl = mut ? new Lexeme(TT_WHITESPACE, ws, wsLine)
+					? st.tokens.add(st.tokens, wl)
+					continue
+				}
+				if c == ';'{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					let sc = mut ? Lexer.makeLit(TT_TERMINATOR, ";", lc.line)
+					? st.tokens.add(st.tokens, sc)
+					lc.pos = lc.pos + 1
+					continue
+				}
+				if LexWords.isDelineator(c){
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					if c == '{' && Lexer.justSawAsmHeader(st.tokens){
+						lc.pos = lc.pos + 1
+						let asmLx = mut ? Lexer.scanAsm(src, lc)
+						? st.tokens.add(st.tokens, asmLx)
+						continue
+					}
+					let backToTemplate = mut false
+					let depthSize = mut st.depth.size(st.depth)
+					if depthSize > 0 && (c == '{' || c == '}'){
+						let d = mut st.depth.pop(st.depth)
+						if c == '{'{
+							d = d + 1
+						} else {
+							d = d - 1
+						}
+						if d == 0{
+							backToTemplate = true
+						} else {
+							? st.depth.push(st.depth, d)
+						}
+					}
+					if backToTemplate{
+						let cp1 = mut ? Lexer.makeLit(TT_DELINEATOR, ")", lc.line)
+						? st.tokens.add(st.tokens, cp1)
+						lc.pos = lc.pos + 1
+						mode = 4
+						continue
+					}
+					let dl = mut ? Lexer.makeChar(TT_DELINEATOR, c, lc.line)
+					? st.tokens.add(st.tokens, dl)
+					lc.pos = lc.pos + 1
+					continue
+				}
+				if c == '"' || c == '\''{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					bufferStartLine = lc.line
+					quote = c
+					lc.pos = lc.pos + 1
+					mode = 1
+					continue
+				}
+				if c == '`'{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					let ts = mut ? Lexer.makeLit(TT_OPERATOR, "TEMPLATE_STRING_START", lc.line)
+					? st.tokens.add(st.tokens, ts)
+					bufferStartLine = lc.line
+					lc.pos = lc.pos + 1
+					mode = 4
+					continue
+				}
+				if c == '/' && Txt.ch(src, lc.pos + 1) == '/'{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					bufferStartLine = lc.line
+					lc.pos = lc.pos + 2
+					mode = 2
+					continue
+				}
+				if c == '/' && Txt.ch(src, lc.pos + 1) == '*'{
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					bufferStartLine = lc.line
+					lc.pos = lc.pos + 2
+					mode = 3
+					continue
+				}
+				if LexWords.isSingleCharOperator(c){
+					st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+					let op = mut ? Lexer.makeChar(TT_OPERATOR, c, lc.line)
+					? st.tokens.add(st.tokens, op)
+					lc.pos = lc.pos + 1
+					continue
+				}
+				if LexWords.isWordChar(c){
+					if st.buffer.length(st.buffer) == 0{
+						bufferStartLine = lc.line
+					}
+					? st.buffer.appendChar(st.buffer, c)
+					lc.pos = lc.pos + 1
+					continue
+				}
+				throw "[lex error] unexpected character"
+			}
+			if mode == 1{
+				if c == '\n'{
+					throw "[lex error] unterminated quoted literal (newline before the closing quote)"
+				}
+				if c == quote{
+					st = ? Lexer.emitBuffered(st, TT_QUOTED_LITERAL, bufferStartLine, quote, true)
+					lc.pos = lc.pos + 1
+					mode = 0
+					continue
+				}
+				if c == '\\'{
+					lc.pos = ? Lexer.appendEscape(src, lc.pos, st.buffer)
+					continue
+				}
+				? st.buffer.appendChar(st.buffer, c)
+				lc.pos = lc.pos + 1
+				continue
+			}
+			if mode == 4{
+				if c == '`'{
+					st = ? Lexer.flushTemplatePart(st, bufferStartLine)
+					let te = mut ? Lexer.makeLit(TT_OPERATOR, "TEMPLATE_STRING_END", lc.line)
+					? st.tokens.add(st.tokens, te)
+					lc.pos = lc.pos + 1
+					mode = 0
+					continue
+				}
+				if c == '$' && Txt.ch(src, lc.pos + 1) == '{'{
+					st = ? Lexer.flushTemplatePart(st, bufferStartLine)
+					bufferStartLine = lc.line
+					let tx = mut ? Lexer.makeLit(TT_OPERATOR, "TEMPLATE_EXPR_START", lc.line)
+					? st.tokens.add(st.tokens, tx)
+					lc.pos = lc.pos + 2
+					let op2 = mut ? Lexer.makeLit(TT_DELINEATOR, "(", lc.line)
+					? st.tokens.add(st.tokens, op2)
+					? st.depth.push(st.depth, 1)
+					mode = 0
+					continue
+				}
+				if c == '\n'{
+					throw "[lex error] unterminated template literal (newline before the closing '`')"
+				}
+				if c == '\\'{
+					lc.pos = ? Lexer.appendEscape(src, lc.pos, st.buffer)
+					continue
+				}
+				? st.buffer.appendChar(st.buffer, c)
+				lc.pos = lc.pos + 1
+				continue
+			}
+			if mode == 2{
+				if c == '\n'{
+					st = ? Lexer.emitBuffered(st, TT_SL_COMMENT, bufferStartLine, '\0', false)
+					mode = 0
+					continue
+				}
+				? st.buffer.appendChar(st.buffer, c)
+				lc.pos = lc.pos + 1
+				if lc.pos >= n{
+					st = ? Lexer.emitBuffered(st, TT_SL_COMMENT, bufferStartLine, '\0', false)
+					mode = 0
+				}
+				continue
+			}
+			// mode 3: multi-line comment
+			if c == '*' && Txt.ch(src, lc.pos + 1) == '/'{
+				st = ? Lexer.emitBuffered(st, TT_ML_COMMENT, bufferStartLine, '\0', false)
+				lc.pos = lc.pos + 2
+				mode = 0
+				continue
+			}
+			if c == '\n'{
+				lc.line = lc.line + 1
+			}
+			? st.buffer.appendChar(st.buffer, c)
+			lc.pos = lc.pos + 1
+		}
+		if mode == 1{
+			throw "[lex error] unterminated quoted literal"
+		}
+		let depthLeft = mut st.depth.size(st.depth)
+		if mode == 4 || depthLeft > 0{
+			throw "[lex error] unterminated template literal (missing closing '`')"
+		}
+		if mode == 3{
+			throw "[lex error] unterminated multi-line comment"
+		}
+		st = ? Lexer.flush(st, bufferStartLine, displayFile, roots)
+		let result = mut ? new LexResult()
+		result.tokens = st.tokens
+		result.docs = docs
+		? Lexer.classify(result.tokens)
+		? Lexer.mergeOperators(result.tokens)
+		? Lexer.mergeFloats(result.tokens)
+		? Lexer.normalizeElse(result.tokens)
+		result = ? Lexer.pinComments(result, file)
+		return result
+	}
+}

@@ -1,0 +1,233 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/make_safe_args.caspien"
+import "stdlib/string.caspien"
+import "stdlib/fs.caspien"
+import "stdlib/print_string.caspien"
+import "../../../../../../Orchestrator/Io.caspien"
+import "Lexer.caspien"
+
+/**
+ * Test tool: `lex_dump <file.caspien>` prints the lexer's output in the format of the Java `LexDump` (tests/ast_lex_dump): one line per lexeme
+ * `TYPE|text|line|literalValue|quote|radix|forcedType|pinned...`, then the doc comments sorted. Non-ASCII UTF-8 is printed as code points, like Java chars.
+ */
+@pub
+struct LexDumpMain{@pub{
+}}
+
+@pub
+impl LexDumpMain{
+	static func hexDigit(v: mut u64) mut char{
+		if v < 10{
+			return LexWords.charOf(48 + v)
+		}
+		return LexWords.charOf(97 + v - 10)
+	}
+
+	/** Java LexDump.esc: `~` for null, backslash escapes, \xHH (at least 2 hex digits) for control and non-ASCII code points. */
+	static func esc(out: ref some mut String, s: ref imut String) void{
+		?catch(e){ return }
+		let n = mut 0
+		match Some(s){ n = s.length(s) }
+		let i = mut 0
+		for lp1 in 0..1000000000{
+			if i >= n{
+				break
+			}
+			let b = mut 0
+			match Some(s){ b = String.charCode(s.charAt(s, i)) }
+			let cp = mut b
+			let adv = mut 1
+			if b >= 224 && i + 2 < n{
+				let b1 = mut 0
+				let b2 = mut 0
+				match Some(s){
+					b1 = String.charCode(s.charAt(s, i + 1))
+					b2 = String.charCode(s.charAt(s, i + 2))
+				}
+				cp = (b % 16) * 4096 + (b1 % 64) * 64 + b2 % 64
+				adv = 3
+			} else if b >= 192 && i + 1 < n{
+				let c1 = mut 0
+				match Some(s){ c1 = String.charCode(s.charAt(s, i + 1)) }
+				cp = (b % 32) * 64 + c1 % 64
+				adv = 2
+			}
+			if cp == 92{
+				? out.append(out, "\\\\")
+			} else if cp == 10{
+				? out.append(out, "\\n")
+			} else if cp == 13{
+				? out.append(out, "\\r")
+			} else if cp == 9{
+				? out.append(out, "\\t")
+			} else if cp < 32 || cp > 126{
+				? out.append(out, "\\x")
+				if cp > 65535{
+					? out.appendChar(out, LexDumpMain.hexDigit((cp / 1048576) % 16))
+					? out.appendChar(out, LexDumpMain.hexDigit((cp / 65536) % 16))
+				}
+				if cp > 255{
+					? out.appendChar(out, LexDumpMain.hexDigit((cp / 4096) % 16))
+					? out.appendChar(out, LexDumpMain.hexDigit((cp / 256) % 16))
+				}
+				? out.appendChar(out, LexDumpMain.hexDigit((cp / 16) % 16))
+				? out.appendChar(out, LexDumpMain.hexDigit(cp % 16))
+			} else {
+				? out.appendChar(out, LexWords.charOf(cp))
+			}
+			i = i + adv
+		}
+	}
+
+	/** Lexicographic order of two strings (bytes). */
+	static func less(a: ref some imut String, b: ref some imut String) bool{
+		let na = mut a.length(a)
+		let nb = mut b.length(b)
+		let m = mut na
+		if nb < m{
+			m = nb
+		}
+		for i in 0..m{
+			let x = mut String.charCode(a.charAt(a, i))
+			let y = mut String.charCode(b.charAt(b, i))
+			if x != y{
+				return x < y
+			}
+		}
+		return na < nb
+	}
+
+	@pub
+	@throws
+	static func dump(path: ref imut String) mut u64{
+		?catch(e){ throw e }
+		let pathCopy = mut ? new String()
+		match Some(path){ pathCopy = ? Txt.copy(path) }
+		let:<owns mut String> base = mut null
+		match Some(path){ base = Io.pathName(path) }
+		let src = mut ? new String()
+		match Some(path){ src = ? Io.readFile(path) }
+		let roots = mut ? String.from("*")
+		let out = mut ? new String()
+		let cur = mut ? new LexCursor()
+		let result = mut ? new LexResult()
+		match Some(base){
+			result = ? Lexer.tokenize(src, base, roots, pathCopy, cur)
+		}
+		let n = mut result.tokens.size(result.tokens)
+		for i in 0..n{
+			let t = mut ? result.tokens.getSome(result.tokens, i)
+			? out.append(out, tokenTypeName(t.kind))
+			? out.appendChar(out, '|')
+			LexDumpMain.esc(out, t.text)
+			? out.appendChar(out, '|')
+			? out.appendU64(out, t.line)
+			? out.appendChar(out, '|')
+			let hasLit = mut false
+			match Some(t.literalValue){ hasLit = true }
+			if hasLit{
+				LexDumpMain.esc(out, t.literalValue)
+			} else {
+				? out.appendChar(out, '~')
+			}
+			? out.appendChar(out, '|')
+			? out.appendU64(out, String.charCode(t.quoteDelimiter))
+			? out.appendChar(out, '|')
+			if t.radixLiteral{
+				? out.append(out, "true")
+			} else {
+				? out.append(out, "false")
+			}
+			? out.appendChar(out, '|')
+			let hasForced = mut false
+			match Some(t.forcedLiteralType){ hasForced = true }
+			if hasForced{
+				LexDumpMain.esc(out, t.forcedLiteralType)
+			} else {
+				? out.appendChar(out, '~')
+			}
+			let pn = mut 0
+			match Some(t.pinned){ pn = t.pinned.size(t.pinned) }
+			for pi in 0..pn{
+				let piece = mut ? new String()
+				? piece.appendChar(piece, '|')
+				let t2 = mut ? result.tokens.getSome(result.tokens, i)
+				match Some(t2.pinned){
+					let p = mut ? t2.pinned.getSome(t2.pinned, pi)
+					? piece.append(piece, tokenTypeName(p.kind))
+					? piece.appendChar(piece, ':')
+					? piece.appendU64(piece, p.line)
+					? piece.appendChar(piece, ':')
+					LexDumpMain.esc(piece, p.text)
+				}
+				? out.append(out, piece)
+			}
+			? out.appendChar(out, '\n')
+		}
+		// doc comments, one line each, sorted
+		let lines = mut ? new ObjectList:<String>()
+		let dn = mut result.docs.size(result.docs)
+		for di in 0..dn{
+			let l = mut ? String.from("DOC ")
+			let d = mut ? result.docs.getSome(result.docs, di)
+			let cl = mut d.commentLine
+			let tl = mut d.targetLine
+			? l.append(l, d.key)
+			? l.appendChar(l, ' ')
+			let d2 = mut ? result.docs.getSome(result.docs, di)
+			? l.append(l, d2.kind)
+			? l.appendChar(l, ' ')
+			? l.appendU64(l, cl)
+			? l.appendChar(l, ' ')
+			? l.appendU64(l, tl)
+			? l.appendChar(l, ' ')
+			let d3 = mut ? result.docs.getSome(result.docs, di)
+			LexDumpMain.esc(l, d3.text)
+			? lines.add(lines, l)
+		}
+		for a in 0..dn{
+			for b in 0..dn{
+				if b + 1 < dn{
+					let x = mut ? lines.getSome(lines, b)
+					let y = mut ? lines.getSome(lines, b + 1)
+					if LexDumpMain.less(y, x){
+						let xs = mut lines.take(lines, b)
+						let ys = mut lines.take(lines, b + 1)
+						lines.setAt(lines, b, ys)
+						lines.setAt(lines, b + 1, xs)
+					}
+				}
+			}
+		}
+		for li in 0..dn{
+			let l2 = mut ? lines.getSome(lines, li)
+			? out.append(out, l2)
+			? out.appendChar(out, '\n')
+		}
+		Io.oprint(out)
+		return 0
+	}
+}
+
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	?catch(e){
+		Io.eprintLit(e.msg)
+		Io.oprintLit("ERROR\n")
+		unsafe extern{ exit(0) }
+		return
+	}
+	let n = mut len(args)
+	let path = mut ? new String()
+	if n > 1{
+		match 1 in args{
+			let one = mut args[1]
+			let m = mut len(one)
+			for k in 0..m{
+				match k in one{ ? path.appendChar(path, one[k]) }
+			}
+		}
+	}
+	let code = mut ? LexDumpMain.dump(path)
+	unsafe extern{ exit(wrap:<u32>(code)) }
+}
