@@ -17,6 +17,10 @@ Order = pipeline order; every stage is verified against the Java front end befor
   `chk.catchTry`, `chk.unlockOnExit`, ...) is a `u64` id or a `Vec` of ids, with `NONE = u64Max`. Java shares tokens between lists and maps (`Map<Token,..>`, 9 uses;
   `chk.catchTry`, `someIndexElementExpr`, `unlockOnExit`, `preLoopInit`), which an ownership language cannot express with owning pointers; ids make aliasing, identity
   comparison (`==`) and cloning (`TokenCloner`) plain integer work, and sidestep `ProofKills` on the token graph. Ids are never reused within a compile.
+* **Lists are pooled too.** The parser aliases whole lists between tokens (`gathered.childs = policyBodyBlock.childs`, cloned tokens share `pinnedComments`/`decorators`) and
+  mutates them in place (`flat.clear(); flat.addAll(result)`), so `Token.childs/sub/pinnedComments/...` hold a `u64` list id into a `ListPool` (`Vec` of token ids per list), not
+  an owned vector. Sharing = same list id, in-place edits = pool edits; this reproduces the Java semantics exactly. The explicit-stack frames (`ParserTask`, `GatherFrame`) keep
+  their shape, with `Object ret/got` replaced by tagged id fields (token id, list id, small result structs in side pools).
 * **Recursion is gone from the design** (the front end already avoids it: `CheckFrame`/`CheckDriver`, `ParserTask`, `RpnTask`, `TreeTask`, `ImportFrame`). The five
   recursive helpers in `TypeCheckerLifetimes` (`isScopedStruct`, `refSomePaths`, `rootVar`, `regionOf`, `sourceRoots`) become loops/worklists.
 * **Maps/sets** from the stdlib: `HashMap`, `HashSet`, `LinkedHashMap`, `LinkedHashSet`, `TreeMap` (+ `ArrayDeque` as a growable list with a head index). Java `HashMap`
