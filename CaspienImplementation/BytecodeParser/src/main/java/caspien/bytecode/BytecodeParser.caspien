@@ -24,7 +24,7 @@ impl BytecodeParser{
 		match Some(rawLines){ n = rawLines.size(rawLines) }
 		for lineNo in 0..n{
 			match Some(rawLines){
-				let s = mut rawLines.get(rawLines, lineNo)
+				let s = mut ? rawLines.getSome(rawLines, lineNo)
 				match Some(s){ match Some(originFile){
 					let st = mut ? BytecodeParser.parseLine(s, originFile, wrap:<s32>(lineNo + 1))
 					? result.add(result, st)

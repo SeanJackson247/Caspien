@@ -50,8 +50,8 @@ impl<T> ObjectList<T>{
 	@throws
 	func getSome(_self: ref some imut self, i: imut u64) ref some mut T{
 		match i in _self.items{
-			let r = mut ref _self.items[i].v
-			match Some(r){
+			match Some(_self.items[i].v){
+				let r = mut ref _self.items[i].v    // owner proven alive: an address, no ghost-table id
 				return r
 			}
 		}

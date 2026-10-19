@@ -33,7 +33,7 @@ impl CodegenConfig{
 		for li in 0..count{
 			let rawLine = mut ? new String()
 			match Some(lines){
-				let l = lines.get(lines, li)
+				let l = ? lines.getSome(lines, li)
 				match Some(l){ rawLine = ? l.trim(l) }
 			}
 			if rawLine.length(rawLine) == 0 || rawLine.startsWith(rawLine, "#"){
@@ -45,9 +45,9 @@ impl CodegenConfig{
 			}
 			let key = mut ? new String()
 			let valueText = mut ? new String()
-			let p0 = parts.get(parts, 0)
+			let p0 = ? parts.getSome(parts, 0)
 			match Some(p0){ key = ? p0.substring(p0, 0) }
-			let p1 = parts.get(parts, 1)
+			let p1 = ? parts.getSome(parts, 1)
 			match Some(p1){ valueText = ? p1.trim(p1) }
 			// forced: no equalsIgnoreCase in the String library, so the value is lower-cased once (ASCII) and compared with equals
 			let value = mut ? new String()

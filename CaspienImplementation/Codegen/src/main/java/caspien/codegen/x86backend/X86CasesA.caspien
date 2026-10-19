@@ -917,7 +917,7 @@ impl X86CasesA{
 
 	@pub
 	@throws
-	func emitCases3(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+	func emitCases3(_self: ref some mut self, mnemonic: ref some imut String, line: ref imut BytecodeStatement, first: ref some imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
 		?catch(e){ throw e }
 		let kind = mut 0
 		match Some(mnemonic){
@@ -1374,7 +1374,7 @@ impl X86CasesA{
 	static func optLong(line: ref some imut BytecodeStatement, idx: mut s32) mut s64{
 		?catch(e){ throw e }
 		if line.items.size(line.items) > wrap:<u64>(idx){
-			let t = line.items.get(line.items, wrap:<u64>(idx))
+			let t = ? line.items.getSome(line.items, wrap:<u64>(idx))
 			match Some(t){
 				let v = mut ? t.text.parseS64(t.text)
 				return v
@@ -1387,7 +1387,7 @@ impl X86CasesA{
 	static func optSize(line: ref some imut BytecodeStatement, idx: mut s32, dflt: mut s32) mut s32{
 		?catch(e){ throw e }
 		if line.items.size(line.items) > wrap:<u64>(idx){
-			let t = line.items.get(line.items, wrap:<u64>(idx))
+			let t = ? line.items.getSome(line.items, wrap:<u64>(idx))
 			match Some(t){
 				let v = mut ? t.text.parseS64(t.text)
 				return wrap:<s32>(v)

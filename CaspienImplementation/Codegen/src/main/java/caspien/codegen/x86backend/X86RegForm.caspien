@@ -14,7 +14,7 @@ impl constructor for X86RegForm(hub: ref some mut X86Backend) self{
 impl X86RegForm{
 	@pub
 	@throws
-	func emitCases6(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+	func emitCases6(_self: ref some mut self, mnemonic: ref some imut String, line: ref imut BytecodeStatement, first: ref some imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
 		?catch(e){ throw e }
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "GT_INIT"){
@@ -342,7 +342,7 @@ impl X86RegForm{
 
 	@pub
 	@throws
-	func emitCases7(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+	func emitCases7(_self: ref some mut self, mnemonic: ref some imut String, line: ref imut BytecodeStatement, first: ref some imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
 		?catch(e){ throw e }
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "VARARGS_XMM_COUNT"){
@@ -496,7 +496,7 @@ impl X86RegForm{
 							break
 						}
 						let isEnd7 = mut false
-						let cand7 = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(end7))
+						let cand7 = ? _self.core.allLines.getSome(_self.core.allLines, wrap:<u64>(end7))
 						match Some(cand7){
 							if X86Core.lineLen(cand7) == 1{
 								isEnd7 = X86Core.tokenIs(cand7, 0, "ASM_END")
@@ -513,7 +513,7 @@ impl X86RegForm{
 				for i7 in from7..to7{
 					let txt7 = mut ? new String()
 					match Some(_self){ match Some(_self.core){ match Some(_self.core.allLines){
-						let ln7 = _self.core.allLines.get(_self.core.allLines, i7)
+						let ln7 = ? _self.core.allLines.getSome(_self.core.allLines, i7)
 						match Some(ln7){
 							let parts7 = mut ? X86Core.textsOf(ln7)
 							match Some(parts7){
@@ -523,7 +523,7 @@ impl X86RegForm{
 									if pj7 > 0{
 										? txt7.append(txt7, " ")
 									}
-									let piece7 = parts7.get(parts7, pj7)
+									let piece7 = ? parts7.getSome(parts7, pj7)
 									match Some(piece7){ ? txt7.append(txt7, piece7) }
 								}
 							}
@@ -880,7 +880,7 @@ impl X86RegForm{
 
 	@pub
 	@throws
-	func storeSizedToAddr_withOffsetImm(_self: ref some mut self, baseReg64: ref imut String, offset: mut s64, value: mut s64, size: mut s32) void{
+	func storeSizedToAddr_withOffsetImm(_self: ref some mut self, baseReg64: ref some imut String, offset: mut s64, value: mut s64, size: mut s32) void{
 		?catch(e){ throw e }
 		let ln203 = mut ? String.from("    movq $")
 		? ln203.appendS64(ln203, value)
@@ -894,7 +894,7 @@ impl X86RegForm{
 
 	@pub
 	@throws
-	func storeSizedToAddr_reg(_self: ref some mut self, baseReg64: ref imut String, offset: mut s64, srcReg64: ref imut String, size: mut s32) void{
+	func storeSizedToAddr_reg(_self: ref some mut self, baseReg64: ref some imut String, offset: mut s64, srcReg64: ref some imut String, size: mut s32) void{
 		?catch(e){ throw e }
 		let ln204 = mut ? String.from("    movq %")
 		match Some(srcReg64){ ? ln204.append(ln204, srcReg64) }
@@ -1075,7 +1075,7 @@ impl X86RegForm{
 
 	@pub
 	@throws
-	func newInternalLabel(_self: ref some mut self, prefix: ref imut String) owns some mut String{
+	func newInternalLabel(_self: ref some mut self, prefix: ref some imut String) owns some mut String{
 		?catch(e){ throw e }
 		let:<mut s32> n = mut 0
 		match Some(_self.core){
@@ -1491,7 +1491,7 @@ impl X86RegForm{
 
 	@pub
 	@throws
-	func rfDivConst(_self: ref some mut self, mod: mut bool, size: mut s32, dstTok: ref imut String, aTok: ref imut String, k: mut s64) void{
+	func rfDivConst(_self: ref some mut self, mod: mut bool, size: mut s32, dstTok: ref some imut String, aTok: ref some imut String, k: mut s64) void{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(dstTok){

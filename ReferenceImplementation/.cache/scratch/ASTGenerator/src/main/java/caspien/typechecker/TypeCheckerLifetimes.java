@@ -169,7 +169,7 @@ public final class TypeCheckerLifetimes {
     }
 
     private Token rootVar(Token e) {
-        while (e != null && e.type == TokenType.OPERATOR && ".".equals(e.text) && e.left != null) {
+        while (e != null && e.type == TokenType.OPERATOR && (".".equals(e.text) || "LOOKUP".equals(e.text)) && e.left != null) {
             e = e.left;
         }
         if (e != null && e.type == TokenType.DELINEATOR && "(".equals(e.text) && !e.childs.isEmpty()) {
@@ -190,14 +190,7 @@ public final class TypeCheckerLifetimes {
             return null;
         }
         if (e.type == TokenType.OPERATOR && e.unary && "ref".equals(e.text) && e.left != null) {
-            Token bad = e.left;
-            for (Token x = e.left; x != null; x = (x.type == TokenType.OPERATOR && x.left != null) ? x.left : null) {
-                if (x.type == TokenType.OPERATOR && ("LOOKUP".equals(x.text) || "[".equals(x.text))) {
-                    bad = x;
-                    throw new CompilerException("type", bad.file, bad.line,
-                            "a 'ref' into an array element cannot be stored: a resize moves the block, so the address would dangle");
-                }
-            }
+            // `ref` needs an owns-typed operand, so the target is its own heap object even when the path runs through an array element: its address is stable (a resize/shrink is a ProofKills event)
             Token root = rootVar(e.left);
             long[] pos = root == null ? null : scope.positionOf(root.text);
             if (pos == null) {

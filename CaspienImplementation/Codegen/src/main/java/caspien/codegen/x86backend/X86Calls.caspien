@@ -28,7 +28,7 @@ impl X86Calls{
 				return -1
 			}
 			match Some(_self.core){ match Some(_self.core.allLines){
-				let l = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx))
+				let l = ? _self.core.allLines.getSome(_self.core.allLines, wrap:<u64>(idx))
 				match Some(l){
 					present = true
 					let n = mut l.items.size(l.items)
@@ -66,7 +66,7 @@ impl X86Calls{
 
 	@pub
 	@throws
-	func movRegToXmm(_self: ref some mut self, gpr64: ref imut String, xmmReg: ref imut String) void{
+	func movRegToXmm(_self: ref some mut self, gpr64: ref some imut String, xmmReg: ref some imut String) void{
 		?catch(e){ throw e }
 		let ln1 = mut ? String.from("    movq %")
 		match Some(gpr64){ ? ln1.append(ln1, gpr64) }
@@ -77,7 +77,7 @@ impl X86Calls{
 
 	@pub
 	@throws
-	func movXmmToReg(_self: ref some mut self, xmmReg: ref imut String, gpr64: ref imut String) void{
+	func movXmmToReg(_self: ref some mut self, xmmReg: ref some imut String, gpr64: ref some imut String) void{
 		?catch(e){ throw e }
 		let ln2 = mut ? String.from("    movq %")
 		match Some(xmmReg){ ? ln2.append(ln2, xmmReg) }
@@ -382,7 +382,7 @@ impl X86Calls{
 				let isLabelOnly = mut false
 				match Some(line){
 					if n == 1{
-						let t0 = line.items.get(line.items, 0)
+						let t0 = ? line.items.getSome(line.items, 0)
 						match Some(t0){ isLabelOnly = t0.text.endsWith(t0.text, ":") }
 					}
 				}
@@ -532,7 +532,7 @@ impl X86Calls{
 					if pi > 0{
 						? txt.append(txt, " ")
 					}
-					let piece = parts.get(parts, pi)
+					let piece = ? parts.getSome(parts, pi)
 					match Some(piece){
 						? txt.append(txt, piece)
 					}
@@ -547,7 +547,7 @@ impl X86Calls{
 
 	@pub
 	@throws
-	func emitCases1(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+	func emitCases1(_self: ref some mut self, mnemonic: ref some imut String, line: ref imut BytecodeStatement, first: ref some imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
 		?catch(e){ throw e }
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "FUNC_START"){
@@ -793,7 +793,7 @@ impl X86Calls{
 													if isChr{
 														let:<mut s64> cv = mut 0
 														match Some(line){
-															let t2 = line.items.get(line.items, 2)
+															let t2 = ? line.items.getSome(line.items, 2)
 															match Some(t2){ cv = ? X86Core.decodeCharLiteral(t2) }
 														}
 														match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movImmToReg(_self.hub.emit, RAX, cv) } } }

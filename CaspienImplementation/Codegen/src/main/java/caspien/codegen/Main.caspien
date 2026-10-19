@@ -145,7 +145,7 @@ impl Main{
 
 	/** Index of the last '/' in `p`, or -1 (helper of the port). */
 	@pub
-	static func lastSlash(p: ref imut String) mut s64{
+	static func lastSlash(p: ref some imut String) mut s64{
 		let:<mut s64> at = mut -1
 		let:<mut u64> n = mut 0
 		match Some(p){ n = p.length(p) }
@@ -161,7 +161,7 @@ impl Main{
 
 	/** The part of `p` before its last '/', or "." when there is none (helper of the port). */
 	@pub
-	static func pathDir(p: ref imut String) owns mut String{
+	static func pathDir(p: ref some imut String) owns mut String{
 		?catch(e){ return null }
 		let at = mut Main.lastSlash(p)
 		if at < 0{
@@ -179,7 +179,7 @@ impl Main{
 
 	/** The part of `p` after its last '/' (helper of the port). */
 	@pub
-	static func pathName(p: ref imut String) owns mut String{
+	static func pathName(p: ref some imut String) owns mut String{
 		?catch(e){ return null }
 		let at = mut Main.lastSlash(p)
 		if at < 0{

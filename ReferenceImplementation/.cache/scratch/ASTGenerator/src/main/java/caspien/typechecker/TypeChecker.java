@@ -139,6 +139,10 @@ public final class TypeChecker {
         }
         // the result is a fresh value: indeterminate mutability, needing mut/imut before a 'let' binds it
         TypeInfo prefixResult = operandType.withMutability("indeterminate").withStorage(storage);
+        if (storage.equals("ref") && !prefixResult.isSome && "owns".equals(operandType.storage) && locksAndProofs.isProvenAlive(op.left, scope)) {
+            // the owner is proven alive HERE (match Some): the borrow is a plain address, no ghost-table id (a `ref some`)
+            prefixResult = prefixResult.withSome(true);
+        }
         if (storage.equals("ref") && !prefixResult.isSome) {
             op.chk.refToId = true;   // `ref x` of a nullable owner is a nullable `ref`: an id, not the address
         }

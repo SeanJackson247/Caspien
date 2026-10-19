@@ -35,7 +35,7 @@ A function may state how the lifetimes of its parameters relate. The contract si
 4. **Using a scoped value uses the proof of every `ref some` it holds.** The existing `ProofKills` events end it: if something that may destroy the
    target's type happens between the store and a later use of the scoped value (or of its member), that use is an error. This is the "freeze" of the
    borrow, enforced at the use instead of at the destroying event.
-5. **Targets must have a stable address:** a `ref some` into a dynarray element is not storable (a `resize` moves the block).
+5. **Targets have a stable address:** `ref` needs an owns-typed operand, so the target is its own heap object even when the path runs through a dynarray element (`ref v[i].n`); only the slot moves on `resize`, and a resize/shrink is a `ProofKills` event.
 6. **Strictness for `@drop`:** if the scoped type's `@drop` reads through the member, `lifetime(target) > lifetime(value)` is required (the value must be
    dropped strictly first); `>=` is not enough.
 7. A scoped type cannot be `clone`d in v1, cannot be an element of a dynarray in v1, and has no nullable-`ref` interplay (a nullable `ref` stays an id).
@@ -65,7 +65,7 @@ could do it), a whole-program lifetime (`'static`), lifetimes through generics.
 
 What is checked: a store into a local needs the borrowed object declared in an outer scope, or earlier in the same scope (strictly earlier when the
 borrower's type has a `@drop`); a store into a parameter needs the contract (error text prints the line to add); a call must satisfy the callee's
-contract from the caller's scopes; a scoped type is not returned; a `ref` into an array element is not storable; alive proofs of members end at
+contract from the caller's scopes; a scoped type is not returned; alive proofs of members end at
 the usual `ProofKills` events. Also rejected: `clone` of a scoped type, dynarrays of scoped types (members, parameters, returns, locals), `par`/`await` of a scoped value (safe code already refuses any pointer across `par`; `unsafe async` is the programmer's word). `throw` carries only a string, so nothing scoped can be thrown. A source that is a local derived from a parameter loses its parameter identity (use the parameter directly in the store). Moving a scoped value into a longer-lived owner is checked as a store (region copied).
 
 ## Tests
@@ -73,4 +73,4 @@ the usual `ProofKills` events. Also rejected: `clone` of a scoped type, dynarray
 Accept: `lifetime_member_test`, `lifetime_contract_test` (contract, call, chain), `lifetime_same_scope_test`.
 Reject: `lifetime_return_error_test`, `lifetime_outer_error_test`, `lifetime_freed_error_test`, `lifetime_moved_error_test`,
 `lifetime_param_nocontract_error_test`, `lifetime_contract_call_error_test`, `lifetime_contract_reversed_error_test` (`<=` is a parse error),
-`lifetime_array_target_error_test`, `lifetime_drop_strict_error_test`, `lifetime_clone_error_test`, `lifetime_dynarray_error_test`, `lifetime_par_error_test`.
+`lifetime_drop_strict_error_test`, `lifetime_clone_error_test`, `lifetime_dynarray_error_test`, `lifetime_par_error_test`.

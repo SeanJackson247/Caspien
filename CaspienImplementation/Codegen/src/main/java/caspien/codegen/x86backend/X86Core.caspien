@@ -791,7 +791,7 @@ func X86Core_strideKeepOps_size() mut u64{
 /** `STRIDE_KEEP_OPS.contains(text)`. */
 @pub
 @throws
-func X86Core_strideKeepOps_contains(text: ref imut String) mut bool{
+func X86Core_strideKeepOps_contains(text: ref some imut String) mut bool{
 	?catch(e){ throw e }
 	? X86Core_strideKeepOps_ensure()
 	let found = mut false
@@ -867,7 +867,7 @@ func X86Core_rfR13R14Users_size() mut u64{
 /** `RF_R13_R14_USERS.contains(text)`. */
 @pub
 @throws
-func X86Core_rfR13R14Users_contains(text: ref imut String) mut bool{
+func X86Core_rfR13R14Users_contains(text: ref some imut String) mut bool{
 	?catch(e){ throw e }
 	? X86Core_rfR13R14Users_ensure()
 	let found = mut false
@@ -972,7 +972,7 @@ impl X86Core{
 	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). The parameters are re-matched after each allocation (an allocation ends the alive proof of a `ref`). */
 	@pub
 	@throws
-	static func regAliasOf(r: ref imut String, full: ref imut String) mut bool{
+	static func regAliasOf(r: ref some imut String, full: ref some imut String) mut bool{
 		?catch(e){ throw e }
 		let res = mut false
 		match Some(r){ match Some(full){ res = r.equals(r, full) } }
@@ -1355,7 +1355,7 @@ impl X86Core{
 
 	/** True when the nullable String has exactly the text `want`. */
 	@pub
-	static func textIs(t: ref imut String, want: static imut string) mut bool{
+	static func textIs(t: ref some imut String, want: static imut string) mut bool{
 		let r = mut false
 		match Some(t){ r = t.equals(t, want) }
 		return r
@@ -1363,7 +1363,7 @@ impl X86Core{
 
 	@pub
 	@throws
-	static func rfTrueSuffix(falseJump: ref imut String) static imut string{
+	static func rfTrueSuffix(falseJump: ref some imut String) static imut string{
 		if X86Core.textIs(falseJump, "jne"){
 			return "e"
 		} elseif X86Core.textIs(falseJump, "je"){
@@ -1456,7 +1456,7 @@ impl X86Core{
 		let n = mut line.items.size(line.items)
 		for i in 0..n{
 			let copy = mut ? new String()
-			let t = line.items.get(line.items, i)
+			let t = ? line.items.getSome(line.items, i)
 			match Some(t){
 				copy = ? t.text.substring(t.text, 0)
 			}
@@ -1491,7 +1491,7 @@ impl X86Core{
 		if i >= stmt.items.size(stmt.items){
 			throw "index out of range"
 		}
-		let t = stmt.items.get(stmt.items, i)
+		let t = ? stmt.items.getSome(stmt.items, i)
 		let:<mut s64> r = mut 0
 		match Some(t){
 			r = ? t.text.parseS64(t.text)
@@ -1508,7 +1508,7 @@ impl X86Core{
 			throw "index out of range"
 		}
 		let out = mut ? new String()
-		let t = stmt.items.get(stmt.items, i)
+		let t = ? stmt.items.getSome(stmt.items, i)
 		match Some(t){ out = ? t.text.substring(t.text, 0) }
 		return out
 	}
@@ -1520,7 +1520,7 @@ impl X86Core{
 		?catch(e){ throw e }
 		match Some(stmt){
 			if i < stmt.items.size(stmt.items){
-				let t = stmt.items.get(stmt.items, i)
+				let t = ? stmt.items.getSome(stmt.items, i)
 				match Some(t){
 					match Some(t.text){
 						return ref t.text
@@ -1548,7 +1548,7 @@ impl X86Core{
 			if i > 0{
 				? out.append(out, " ")
 			}
-			let t = stmt.items.get(stmt.items, i)
+			let t = ? stmt.items.getSome(stmt.items, i)
 			match Some(t){ ? out.append(out, t.text) }
 		}
 		return out

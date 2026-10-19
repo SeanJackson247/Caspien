@@ -45,7 +45,7 @@ impl X86Generator{
 		for li in 0..total{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.currentLineIndex = wrap:<s32>(li) } } }
 			match Some(lines){
-				let ln = lines.get(lines, li)
+				let ln = ? lines.getSome(lines, li)
 				match Some(ln){ match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitLine(_self.hub.calls, ln) } } } }
 			}
 		}
@@ -60,7 +60,7 @@ impl X86Generator{
 	/** `regForm.rfReg` as an owned String (helper of the port; no Java counterpart). */
 	@pub
 	@throws
-	func regStr(_self: ref some mut self, tok: ref imut String) owns some mut String{
+	func regStr(_self: ref some mut self, tok: ref some imut String) owns some mut String{
 		?catch(e){ throw e }
 		let r = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(tok){
@@ -99,7 +99,7 @@ impl X86Generator{
 	/** `emit.raw` (helper of the port). */
 	@pub
 	@throws
-	func rawS(_self: ref some mut self, line: ref imut String) void{
+	func rawS(_self: ref some mut self, line: ref some imut String) void{
 		?catch(e){ throw e }
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, line) } } }
 	}
@@ -532,7 +532,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfMulByConst(_self: ref some mut self, d: ref imut String, k: mut s64) mut bool{
+	func rfMulByConst(_self: ref some mut self, d: ref some imut String, k: mut s64) mut bool{
 		?catch(e){ throw e }
 		if k < 2 || k > 2147483648{
 			return false
@@ -795,7 +795,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfMovImmKeepFlags(_self: ref some mut self, reg: ref imut String, v: mut s64) void{
+	func rfMovImmKeepFlags(_self: ref some mut self, reg: ref some imut String, v: mut s64) void{
 		?catch(e){ throw e }
 		if v >= 0 && v <= 0xFFFFFFFF{
 			let:<owns mut String> narrow = mut null
@@ -835,33 +835,33 @@ impl X86Generator{
 		let n = mut 0
 		match Some(line){ n = line.items.size(line.items) }
 		match Some(line){
-			let t1 = line.items.get(line.items, 1)
+			let t1 = ? line.items.getSome(line.items, 1)
 			match Some(t1){ op = ? t1.text.substring(t1.text, 0) }
 		}
 		match Some(line){
-			let t2 = line.items.get(line.items, 2)
+			let t2 = ? line.items.getSome(line.items, 2)
 			match Some(t2){ sz = ? t2.text.substring(t2.text, 0) }
 		}
 		match Some(line){
-			let t3 = line.items.get(line.items, 3)
+			let t3 = ? line.items.getSome(line.items, 3)
 			match Some(t3){ a = ? t3.text.substring(t3.text, 0) }
 		}
 		match Some(line){
-			let t4 = line.items.get(line.items, 4)
+			let t4 = ? line.items.getSome(line.items, 4)
 			match Some(t4){ b = ? t4.text.substring(t4.text, 0) }
 		}
 		match Some(line){
-			let t5 = line.items.get(line.items, 5)
+			let t5 = ? line.items.getSome(line.items, 5)
 			match Some(t5){ v = ? t5.text.substring(t5.text, 0) }
 		}
 		match Some(line){
-			let t6 = line.items.get(line.items, 6)
+			let t6 = ? line.items.getSome(line.items, 6)
 			match Some(t6){ x = ? t6.text.substring(t6.text, 0) }
 		}
 		if n > 7{
 			hasY = true
 			match Some(line){
-				let t7 = line.items.get(line.items, 7)
+				let t7 = ? line.items.getSome(line.items, 7)
 				match Some(t7){ y = ? t7.text.substring(t7.text, 0) }
 			}
 		}
@@ -1035,7 +1035,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfLoad(_self: ref some mut self, n: mut s32, dstTok: ref imut String, srcTok: ref imut String) void{
+	func rfLoad(_self: ref some mut self, n: mut s32, dstTok: ref some imut String, srcTok: ref some imut String) void{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
@@ -1073,7 +1073,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfDispMem(_self: ref some mut self, baseTok: ref imut String, disp: mut s64) owns some mut String{
+	func rfDispMem(_self: ref some mut self, baseTok: ref some imut String, disp: mut s64) owns some mut String{
 		?catch(e){ throw e }
 		let r = mut ? new String()
 		if disp != 0{
@@ -1090,7 +1090,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfLoadDisp(_self: ref some mut self, n: mut s32, dstTok: ref imut String, baseTok: ref imut String, disp: mut s64) void{
+	func rfLoadDisp(_self: ref some mut self, n: mut s32, dstTok: ref some imut String, baseTok: ref some imut String, disp: mut s64) void{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
@@ -1114,7 +1114,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfStoreDisp(_self: ref some mut self, n: mut s32, baseTok: ref imut String, disp: mut s64, srcTok: ref imut String) void{
+	func rfStoreDisp(_self: ref some mut self, n: mut s32, baseTok: ref some imut String, disp: mut s64, srcTok: ref some imut String) void{
 		?catch(e){ throw e }
 		let:<owns mut String> mem = mut null
 		match Some(_self){ match Some(baseTok){ mem = ? _self.rfDispMem(_self, baseTok, disp) } }
@@ -1180,7 +1180,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfStore(_self: ref some mut self, n: mut s32, addrTok: ref imut String, srcTok: ref imut String) void{
+	func rfStore(_self: ref some mut self, n: mut s32, addrTok: ref some imut String, srcTok: ref some imut String) void{
 		?catch(e){ throw e }
 		let isGlobal = mut false
 		let isSlot = mut false
@@ -1566,7 +1566,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfAddImm(_self: ref some mut self, reg: ref imut String, v: mut s64) void{
+	func rfAddImm(_self: ref some mut self, reg: ref some imut String, v: mut s64) void{
 		?catch(e){ throw e }
 		if v == 0{
 			return
@@ -1588,7 +1588,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfLea(_self: ref some mut self, dstTok: ref imut String, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64, extra: mut s64) void{
+	func rfLea(_self: ref some mut self, dstTok: ref some imut String, baseTok: ref some imut String, idxTok: ref some imut String, scale: mut s64, extra: mut s64) void{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
@@ -2130,7 +2130,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfFloatMem(_self: ref some mut self, addrTok: ref imut String, n: mut s32) owns some mut String{
+	func rfFloatMem(_self: ref some mut self, addrTok: ref some imut String, n: mut s32) owns some mut String{
 		?catch(e){ throw e }
 		let out = mut ? new String()
 		let isSlot = mut false
@@ -2225,7 +2225,7 @@ impl X86Generator{
 	/** `xvReg` as an owned String (helper of the port; no Java counterpart). */
 	@pub
 	@throws
-	func xvStr(_self: ref some mut self, tok: ref imut String) owns some mut String{
+	func xvStr(_self: ref some mut self, tok: ref some imut String) owns some mut String{
 		?catch(e){ throw e }
 		let r = mut ? new String()
 		match Some(_self){ match Some(tok){
@@ -2655,7 +2655,7 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfSetcc(_self: ref some mut self, setcc: ref imut String, d: ref imut String) void{
+	func rfSetcc(_self: ref some mut self, setcc: ref some imut String, d: ref some imut String) void{
 		?catch(e){ throw e }
 		let:<owns mut String> d8 = mut null
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(d){ d8 = ? _self.hub.emit.sizedReg(_self.hub.emit, d, 1) } } } }

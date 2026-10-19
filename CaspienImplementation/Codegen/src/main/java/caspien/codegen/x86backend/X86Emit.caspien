@@ -33,7 +33,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func noteArgRegLoaded(_self: ref some mut self, tag: ref imut String) void{
+	func noteArgRegLoaded(_self: ref some mut self, tag: ref some imut String) void{
 		?catch(e){ throw e }
 		let need = mut false
 		match Some(_self.core){
@@ -97,7 +97,7 @@ impl X86Emit{
 			loop{
 				if total < target && idx > 0{
 					match Some(_self.core){ match Some(_self.core.allLines){
-						let prev = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx - 1))
+						let prev = ? _self.core.allLines.getSome(_self.core.allLines, wrap:<u64>(idx - 1))
 						match Some(prev){
 							if prev.items.size(prev.items) == 0{
 								result = -1
@@ -220,7 +220,7 @@ impl X86Emit{
 			let:<mut s32> kind = mut 0
 			let:<mut s64> val = mut 0
 			match Some(_self.core){ match Some(_self.core.allLines){
-				let l = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx))
+				let l = ? _self.core.allLines.getSome(_self.core.allLines, wrap:<u64>(idx))
 				match Some(l){
 					if l.items.size(l.items) >= 2{
 						if X86Core.tokenIs(l, 0, "PUSH") || X86Core.tokenIs(l, 0, "ATOMIC_PUSH"){
@@ -287,7 +287,7 @@ impl X86Emit{
 		match Some(line){ lineLen = line.items.size(line.items) }
 		for i in 2..lineLen{
 			match Some(line){
-			let tokTok = line.items.get(line.items, i)
+			let tokTok = ? line.items.getSome(line.items, i)
 			match Some(tokTok){
 				let tok = tokTok.text
 				if tok.charAt(tok, 0) == 'a'{
@@ -402,7 +402,7 @@ impl X86Emit{
 		match Some(line){ lineLen = line.items.size(line.items) }
 		for i in 4..lineLen{
 			match Some(line){
-			let tokTok = line.items.get(line.items, i)
+			let tokTok = ? line.items.getSome(line.items, i)
 			match Some(tokTok){
 				let tok = tokTok.text
 				let kind = mut tok.charAt(tok, 0)
@@ -497,7 +497,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func copyBytes(_self: ref some mut self, srcReg: ref imut String, srcOff: mut s64, dstReg: ref imut String, dstOff: mut s64, n: mut s64) void{
+	func copyBytes(_self: ref some mut self, srcReg: ref some imut String, srcOff: mut s64, dstReg: ref some imut String, dstOff: mut s64, n: mut s64) void{
 		?catch(e){ throw e }
 		let rax = mut ? String.from("rax")
 		let:<mut s64> done = mut 0
@@ -598,7 +598,7 @@ impl X86Emit{
 		match Some(_self){ match Some(_self.core){ match Some(_self.core.allLines){ n = _self.core.allLines.size(_self.core.allLines) } } }
 		for i in 0..n{
 			match Some(_self){ match Some(_self.core){ match Some(_self.core.allLines){
-			let l = _self.core.allLines.get(_self.core.allLines, i)
+			let l = ? _self.core.allLines.getSome(_self.core.allLines, i)
 			match Some(l){
 				if l.items.size(l.items) == 0{
 					continue
@@ -606,9 +606,9 @@ impl X86Emit{
 				let isNew = mut (X86Core.tokenIs(l, 0, "NEW") && l.items.size(l.items) >= 2)
 				let isBlockAssign = mut false
 				if (X86Core.tokenIs(l, 0, "ASSIGN") || X86Core.tokenIs(l, 0, "ATOMIC_ASSIGN")) && l.items.size(l.items) >= 4{
-					let t1 = l.items.get(l.items, 1)
-					let t2 = l.items.get(l.items, 2)
-					let t3 = l.items.get(l.items, 3)
+					let t1 = ? l.items.getSome(l.items, 1)
+					let t2 = ? l.items.getSome(l.items, 2)
+					let t3 = ? l.items.getSome(l.items, 3)
 					match Some(t1){ match Some(t2){ match Some(t3){
 						isBlockAssign = t1.text.equals(t1.text, t2.text) && t2.text.equals(t2.text, t3.text)
 					} } }
@@ -661,7 +661,7 @@ impl X86Emit{
 		match Some(lines){ total = lines.size(lines) }
 		for li in 0..total{
 			match Some(lines){
-				let line = lines.get(lines, li)
+				let line = ? lines.getSome(lines, li)
 				match Some(line){
 					if line.items.size(line.items) == 0{
 						continue
@@ -688,7 +688,7 @@ impl X86Emit{
 		let parentRunningOffset = mut ? new StringScalarMap:<s64>()
 		for li2 in 0..total{
 			match Some(lines){
-				let line = lines.get(lines, li2)
+				let line = ? lines.getSome(lines, li2)
 				match Some(line){
 					let cnt = mut line.items.size(line.items)
 					if cnt == 0{
@@ -761,7 +761,7 @@ impl X86Emit{
 								}
 								let:<mut s64> bits = mut 0
 								match Some(line){
-									let t3 = line.items.get(line.items, 3)
+									let t3 = ? line.items.getSome(line.items, 3)
 									match Some(t3){ match Some(_self){ bits = ? _self.initBits(_self, t3.text, size) } }
 								}
 								let arr = mut ? dyn([offset, size, bits])
@@ -776,7 +776,7 @@ impl X86Emit{
 						if cnt >= 4{
 							let:<mut s64> init = mut 0
 							match Some(line){
-								let t3b = line.items.get(line.items, 3)
+								let t3b = ? line.items.getSome(line.items, 3)
 								match Some(t3b){ match Some(_self){ init = ? _self.initBits(_self, t3b.text, size) } }
 							}
 							let pairArr = mut ? dyn([size, init])
@@ -822,7 +822,7 @@ impl X86Emit{
 	/** The initial value of a global as bits: a float/double literal as IEEE bits (size <= 4: float), else the integer value. */
 	@pub
 	@throws
-	func initBits(_self: ref some mut self, text: ref imut String, size: mut s64) mut s64{
+	func initBits(_self: ref some mut self, text: ref some imut String, size: mut s64) mut s64{
 		?catch(e){ throw e }
 		let isFloatInit = mut false
 		match Some(text){
@@ -910,7 +910,7 @@ impl X86Emit{
 						match Some(parts){ np = parts.size(parts) } // re-matched: the resize above ended the proof
 						for pi in 0..np{
 							match Some(parts){
-							let part = parts.get(parts, pi)
+							let part = ? parts.getSome(parts, pi)
 							match Some(part){
 								let:<mut s64> p0 = mut 0
 								let:<mut s64> p1 = mut 0
@@ -1041,7 +1041,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func comment(_self: ref some mut self, text: ref imut String) void{
+	func comment(_self: ref some mut self, text: ref some imut String) void{
 		?catch(e){ throw e }
 		match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, "# ") } }
 		match Some(_self){ match Some(_self.core){ match Some(text){ ? _self.core.out.append(_self.core.out, text) } } }
@@ -1050,7 +1050,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func raw_(_self: ref some mut self, text: ref imut String) void{
+	func raw_(_self: ref some mut self, text: ref some imut String) void{
 		?catch(e){ throw e }
 		match Some(_self){
 			let sink = _self.currentSink(_self)
@@ -1067,7 +1067,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func strideKeyAfter(_self: ref some mut self, text: ref imut String) void{
+	func strideKeyAfter(_self: ref some mut self, text: ref some imut String) void{
 		?catch(e){ throw e }
 		let t = mut ? new String()
 		match Some(text){ t = ? text.trim(text) }
@@ -1130,7 +1130,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func trackStackDelta(_self: ref some mut self, rawText: ref imut String) void{
+	func trackStackDelta(_self: ref some mut self, rawText: ref some imut String) void{
 		?catch(e){ throw e }
 		let skip = mut true
 		match Some(_self.core){
@@ -1220,7 +1220,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func movRegToMem(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+	func movRegToMem(_self: ref some mut self, reg: ref some imut String, offset: mut s64) void{
 		?catch(e){ throw e }
 		let line = mut ? String.from("    movq %")
 		match Some(reg){ ? line.append(line, reg) }
@@ -1312,7 +1312,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func movImmToReg(_self: ref some mut self, reg: ref imut String, imm: mut s64) void{
+	func movImmToReg(_self: ref some mut self, reg: ref some imut String, imm: mut s64) void{
 		?catch(e){ throw e }
 		if imm >= 0 && imm <= 0xFFFFFFFF{
 			let narrow = mut ? new String()
@@ -1338,7 +1338,7 @@ impl X86Emit{
 	/** The register name for the low `size` bytes of `reg64` (al/ax/eax/rax, r8b/r8w/r8d/r8 ...). The if-chain is one `match Some` per test (an allocation in an earlier branch ends the alive proof of `reg64`). */
 	@pub
 	@throws
-	func sizedReg(_self: ref some mut self, reg64: ref imut String, size: mut s32) owns some mut String{
+	func sizedReg(_self: ref some mut self, reg64: ref some imut String, size: mut s32) owns some mut String{
 		?catch(e){ throw e }
 		match Some(reg64){
 			if reg64.equals(reg64, "rax"){
@@ -1597,7 +1597,7 @@ impl X86Emit{
 
 	@pub
 	@throws
-	func loadSizedFromFrame(_self: ref some mut self, reg64: ref imut String, offset: mut s64, size: mut s32) void{
+	func loadSizedFromFrame(_self: ref some mut self, reg64: ref some imut String, offset: mut s64, size: mut s32) void{
 		?catch(e){ throw e }
 		let loadSize = mut X86Core.roundUpToLoadableWidth(size)
 		if loadSize == 8{

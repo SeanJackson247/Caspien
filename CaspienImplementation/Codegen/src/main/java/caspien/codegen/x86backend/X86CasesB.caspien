@@ -14,7 +14,7 @@ impl constructor for X86CasesB(hub: ref some mut X86Backend) self{
 impl X86CasesB{
 	@pub
 	@throws
-	func emitCases4(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+	func emitCases4(_self: ref some mut self, mnemonic: ref some imut String, line: ref imut BytecodeStatement, first: ref some imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
 		?catch(e){ throw e }
 		let kind = mut 0
 		match Some(mnemonic){
@@ -409,7 +409,7 @@ impl X86CasesB{
 
 	@pub
 	@throws
-	func emitCases5(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+	func emitCases5(_self: ref some mut self, mnemonic: ref some imut String, line: ref imut BytecodeStatement, first: ref some imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
 		?catch(e){ throw e }
 		let kind = mut 0
 		match Some(mnemonic){
