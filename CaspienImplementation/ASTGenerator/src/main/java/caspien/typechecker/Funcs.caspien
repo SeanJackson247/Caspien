@@ -1,0 +1,704 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Ty.caspien"
+import "Dec.caspien"
+import "Decl.caspien"
+import "TypeAnn.caspien"
+
+/**
+ * Port of the function-level collection of TypeCheckerSignatures/TypeCheckerImpls: buildFuncInfo, the ghost-table / async / sleep / drop
+ * signature rules, collectFunc, collectExtern and collectExport. Function records are rows of cx[CX_FL] (see Infos FI_*); the registry
+ * W_M_FUNCS maps a name to the list of its overload rows. Error texts are shortened. Not ported here: validateDecoratorArgShape,
+ * FsPolicy.denies (needs fs.config), impl/library methods.
+ */
+@pub
+struct Funcs{@pub{
+}}
+
+@pub
+impl Funcs{
+	@pub
+	@throws
+	static func extendCx(ts: ref mut TokStore, cx: mut u64, er: mut u64, fl: mut u64, xr: mut u64) void{
+		?catch(e){ throw e }
+		? TokStore.listAdd(ts, cx, er)
+		? TokStore.listAdd(ts, cx, fl)
+		? TokStore.listAdd(ts, cx, xr)
+	}
+
+	/** Appends the library row list (slot 9) and the impl row list (slot 10). */
+	@pub
+	@throws
+	static func extendCx2(ts: ref mut TokStore, cx: mut u64, lr: mut u64, mr: mut u64, imr: mut u64) void{
+		?catch(e){ throw e }
+		? TokStore.listAdd(ts, cx, lr)
+		? TokStore.listAdd(ts, cx, mr)
+		let cm = mut ? TokStore.newList(ts)
+		let pd = mut ? TokStore.newList(ts)
+		let tc = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, cx, cm)
+		? TokStore.listAdd(ts, cx, pd)
+		? TokStore.listAdd(ts, cx, tc)
+		? TokStore.listAdd(ts, cx, imr)
+		let roots = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, cx, roots)
+	}
+
+	/** A StrMap set of the names that FUNC_ALL_DECORATORS allows on a function. */
+	@throws
+	static func funcAllowed(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let m = mut ? StrMap.make(ts)
+		let a = mut ? TokStore.addLit(ts, "pure")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "recursive")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "inline")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "call_convention")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "reads")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "writes")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_init")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_alive_check")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_destruct")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_register")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_moved")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_ref_id")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "gt_ref_resolve")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "par_call")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "await_call")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "sleep")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "lock")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "lifetime")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "async")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "pub")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "with_tick")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "tick")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "event_loop")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "make_safe_args")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "throws")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "drop")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "fs_root")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "fs_unsafe")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "non")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "default")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "overrides")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "realizes")
+		? StrMap.put(ts, m, a, 1)
+		return m
+	}
+
+	static func isBuiltinName(ts: ref imut TokStore, s: mut u64) mut bool{
+		if TokStore.strEq(ts, s, "sizeof"){ return true }
+		if TokStore.strEq(ts, s, "len"){ return true }
+		if TokStore.strEq(ts, s, "range"){ return true }
+		if TokStore.strEq(ts, s, "deref"){ return true }
+		if TokStore.strEq(ts, s, "clone"){ return true }
+		if TokStore.strEq(ts, s, "call"){ return true }
+		if TokStore.strEq(ts, s, "bits_left"){ return true }
+		if TokStore.strEq(ts, s, "bits_right"){ return true }
+		if TokStore.strEq(ts, s, "bits_rotl"){ return true }
+		if TokStore.strEq(ts, s, "bits_rotr"){ return true }
+		if TokStore.strEq(ts, s, "bits_or"){ return true }
+		if TokStore.strEq(ts, s, "bits_and"){ return true }
+		if TokStore.strEq(ts, s, "bits_xor"){ return true }
+		if TokStore.strEq(ts, s, "bits_not"){ return true }
+		if TokStore.strEq(ts, s, "memcopy"){ return true }
+		if TokStore.strEq(ts, s, "dyn"){ return true }
+		if TokStore.strEq(ts, s, "resize"){ return true }
+		if TokStore.strEq(ts, s, "Some"){ return true }
+		if TokStore.strEq(ts, s, "insecure_rand"){ return true }
+		if TokStore.strEq(ts, s, "wrap"){ return true }
+		if TokStore.strEq(ts, s, "sat"){ return true }
+		return false
+	}
+
+	@pub
+	static func baseIs(ts: ref imut TokStore, tl: mut u64, ty: mut u64, lit: static imut string) mut bool{
+		return TokStore.strEq(ts, Ty.get(ts, tl, ty, TY_BASE), lit)
+	}
+
+	@pub
+	static func storageIs(ts: ref imut TokStore, tl: mut u64, ty: mut u64, lit: static imut string) mut bool{
+		let s = mut Ty.get(ts, tl, ty, TY_STORAGE)
+		if s == TOK_NONE{
+			return false
+		}
+		return TokStore.strEq(ts, s, lit)
+	}
+
+	@pub
+	static func noStorage(ts: ref imut TokStore, tl: mut u64, ty: mut u64) mut bool{
+		return Ty.get(ts, tl, ty, TY_STORAGE) == TOK_NONE
+	}
+
+	@pub
+	@throws
+	static func voidType(ts: ref mut TokStore, tl: mut u64) mut u64{
+		?catch(e){ throw e }
+		let im = mut ? TokStore.addLit(ts, "imut")
+		let vd = mut ? TokStore.addLit(ts, "void")
+		let t = mut ? Ty.make(ts, tl, TOK_NONE, im, vd, TOK_NONE)
+		return t
+	}
+
+	@throws
+	static func requireGhostSig(ts: ref imut TokStore, tl: mut u64, params: mut u64, ret: mut u64, n: mut u64, retBase: static imut string) void{
+		?catch(e){ throw e }
+		if TokStore.listSize(ts, params) != n{
+			throw "a ghost-table decorator has a fixed parameter count"
+		}
+		if n == 1{
+			let p = mut TokStore.listGet(ts, params, 0)
+			if Funcs.storageIs(ts, tl, p, "raw") == false{
+				throw "a ghost-table decorator requires its parameter to be 'raw u8'"
+			}
+			if Funcs.baseIs(ts, tl, p, "u8") == false{
+				throw "a ghost-table decorator requires its parameter to be 'raw u8'"
+			}
+		}
+		if Funcs.baseIs(ts, tl, ret, retBase) == false{
+			throw "a ghost-table decorator has a fixed return type"
+		}
+	}
+
+	@throws
+	static func registerGhost(ts: ref mut TokStore, w: mut u64, fi: mut u64, name: static imut string) void{
+		?catch(e){ throw e }
+		let m = mut World.get(ts, w, W_M_GHOST_FUNCS)
+		let key = mut ? TokStore.addLit(ts, name)
+		let existing = mut StrMap.get(ts, m, key)
+		if existing != TOK_NONE && existing != fi{
+			throw "only one function may carry each ghost-table decorator in the whole compilation unit"
+		}
+		? StrMap.put(ts, m, key, fi)
+	}
+
+	@throws
+	static func requireGtRef(ts: ref imut TokStore, tl: mut u64, params: mut u64, ret: mut u64, idOfPointer: mut u64) void{
+		?catch(e){ throw e }
+		let ok = mut 0
+		if TokStore.listSize(ts, params) == 1{
+			let p = mut TokStore.listGet(ts, params, 0)
+			if idOfPointer == 1{
+				if Funcs.storageIs(ts, tl, p, "raw") && Funcs.baseIs(ts, tl, p, "u8") && Funcs.noStorage(ts, tl, ret) && Funcs.baseIs(ts, tl, ret, "u64"){
+					ok = 1
+				}
+			}
+			else{
+				if Funcs.noStorage(ts, tl, p) && Funcs.baseIs(ts, tl, p, "u64") && Funcs.storageIs(ts, tl, ret, "raw") && Funcs.baseIs(ts, tl, ret, "u8"){
+					ok = 1
+				}
+			}
+		}
+		if ok == 0{
+			throw "a @gt_ref_id/@gt_ref_resolve function has the wrong shape"
+		}
+	}
+
+	@throws
+	static func requireAsyncGlue(ts: ref imut TokStore, tl: mut u64, params: mut u64, ret: mut u64, isPar: mut u64) void{
+		?catch(e){ throw e }
+		let want = mut 2
+		if isPar == 1{
+			want = 3
+		}
+		if TokStore.listSize(ts, params) != want{
+			throw "@par_call/@await_call has the wrong parameter count"
+		}
+		if isPar == 1{
+			let t = mut TokStore.listGet(ts, params, 2)
+			if Funcs.storageIs(ts, tl, t, "raw") == false || Funcs.baseIs(ts, tl, t, "u64") == false{
+				throw "@par_call's third parameter must be 'raw mut u64'"
+			}
+		}
+		let f0 = mut TokStore.listGet(ts, params, 0)
+		if Funcs.storageIs(ts, tl, f0, "raw") == false || Funcs.baseIs(ts, tl, f0, "u8") == false{
+			throw "the first parameter of @par_call/@await_call must be 'raw u8'"
+		}
+		let f1 = mut TokStore.listGet(ts, params, 1)
+		if Funcs.storageIs(ts, tl, f1, "raw") == false || Funcs.baseIs(ts, tl, f1, "u8") == false{
+			throw "the second parameter of @par_call/@await_call must be 'raw u8'"
+		}
+		if Funcs.baseIs(ts, tl, ret, "bool") == false{
+			throw "@par_call/@await_call must return bool"
+		}
+	}
+
+	@throws
+	static func requireSleepSig(ts: ref imut TokStore, tl: mut u64, params: mut u64, ret: mut u64) void{
+		?catch(e){ throw e }
+		if TokStore.listSize(ts, params) != 1{
+			throw "'@sleep' requires exactly 1 parameter"
+		}
+		let p = mut TokStore.listGet(ts, params, 0)
+		if Funcs.noStorage(ts, tl, p) == false || Funcs.baseIs(ts, tl, p, "u64") == false{
+			throw "'@sleep's parameter must be a plain 'u64'"
+		}
+		if Funcs.noStorage(ts, tl, ret) == false || Funcs.baseIs(ts, tl, ret, "u64") == false{
+			throw "'@sleep' requires a plain 'u64' return type"
+		}
+	}
+
+	@throws
+	static func requireAsyncParamShape(ts: ref imut TokStore, tl: mut u64, params: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, params)
+		if n > 1{
+			throw "an '@async' function may take at most one parameter"
+		}
+		if n == 0{
+			return
+		}
+		let p = mut TokStore.listGet(ts, params, 0)
+		if Funcs.noStorage(ts, tl, p) == false{
+			return
+		}
+		let ok = mut false
+		if Funcs.baseIs(ts, tl, p, "u8"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "u16"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "u32"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "u64"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "s8"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "s16"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "s32"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "s64"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "bool"){ ok = true }
+		if Funcs.baseIs(ts, tl, p, "char"){ ok = true }
+		if ok == false{
+			throw "an '@async' function's parameter must fit in a single register"
+		}
+	}
+
+	/** '@drop' shape: one `ref some` struct parameter, not @throws/@async; one hook per struct. */
+	@throws
+	static func requireDropHookShape(ts: ref mut TokStore, cx: mut u64, fi: mut u64) void{
+		?catch(e){ throw e }
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let params = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+		let ok = mut 0
+		let p = mut 0
+		if TokStore.listSize(ts, params) == 1{
+			p = TokStore.listGet(ts, params, 0)
+			if Funcs.storageIs(ts, tl, p, "ref") && Ty.get(ts, tl, p, TY_SOME) != 0{
+				if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), Ty.get(ts, tl, p, TY_BASE)){
+					ok = 1
+				}
+			}
+		}
+		if ok == 0 || Infos.fget(ts, fl, fi, FI_THROWS) != 0 || Infos.fget(ts, fl, fi, FI_ASYNC) != 0{
+			throw "a drop function has the wrong shape"
+		}
+		let owners = mut World.get(ts, w, W_M_DROP_HOOK_OWNERS)
+		let base = mut Ty.get(ts, tl, p, TY_BASE)
+		let prior = mut StrMap.get(ts, owners, base)
+		let nm = mut Infos.fget(ts, fl, fi, FI_NAME)
+		if prior != TOK_NONE{
+			if TokStore.strsEq(ts, prior, nm) == false{
+				throw "this struct already has a '@drop' function"
+			}
+		}
+		? StrMap.put(ts, owners, base, nm)
+	}
+
+	/** The call convention named by "@call_convention(name)", else the default. */
+	static func callConv(ts: ref imut TokStore, cx: mut u64, decos: mut u64) mut u64{
+		let d = mut Dec.getDecorator(ts, decos, "call_convention")
+		if d != TOK_NONE{
+			return TokStore.listGet(ts, TokStore.dArgs(ts, d), 0)
+		}
+		return TokStore.listGet(ts, cx, CX_DEFCC)
+	}
+
+	@pub
+	@throws
+	static func buildFuncInfo(ts: ref mut TokStore, cx: mut u64, t: mut u64, fi: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let decos = mut TokStore.decorators(ts, t)
+		let allowed = mut ? Funcs.funcAllowed(ts)
+		? Dec.validateDecorators(ts, decos, allowed)
+		let sub = mut TokStore.sub(ts, t)
+		let nameTok = mut TokStore.listGet(ts, sub, 0)
+		let paramsTok = mut TokStore.listGet(ts, sub, 1)
+		let name = mut TokStore.text(ts, nameTok)
+		Infos.fset(ts, fl, fi, FI_NAME, name)
+		Infos.fset(ts, fl, fi, FI_MANGLED, name)
+		Infos.fset(ts, fl, fi, FI_CALL_CONV, Funcs.callConv(ts, cx, decos))
+		let isAsync = mut 0
+		if Dec.getDecorator(ts, decos, "async") != TOK_NONE{
+			isAsync = 1
+		}
+		let isThrows = mut 0
+		if Dec.getDecorator(ts, decos, "throws") != TOK_NONE{
+			isThrows = 1
+		}
+		let isPub = mut 0
+		if Dec.getDecorator(ts, decos, "pub") != TOK_NONE{
+			isPub = 1
+		}
+		Infos.fset(ts, fl, fi, FI_ASYNC, isAsync)
+		Infos.fset(ts, fl, fi, FI_THROWS, isThrows)
+		Infos.fset(ts, fl, fi, FI_PUBLIC, isPub)
+		let acc = mut ? TokStore.newList(ts)
+		? TypeAnn.parseNameTypeGroups(ts, cx, TokStore.childs(ts, paramsTok), 0, acc)
+		let pnames = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+		let ptypes = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+		let na = mut (TokStore.listSize(ts, acc) / 3)
+		for j in 0..na{
+			? TokStore.listAdd(ts, pnames, TokStore.listGet(ts, acc, j * 3))
+			? TokStore.listAdd(ts, ptypes, TokStore.listGet(ts, acc, j * 3 + 1))
+		}
+		let nsub = mut TokStore.listSize(ts, sub)
+		if Dec.getDecorator(ts, decos, "drop") != TOK_NONE{
+			? Funcs.requireDropHookShape(ts, cx, fi)
+		}
+		if isAsync == 1{
+			? Funcs.requireAsyncParamShape(ts, tl, ptypes)
+		}
+		let ret = mut 0
+		if nsub <= 2{
+			ret = ? Funcs.voidType(ts, tl)
+		}
+		else{
+			let rt = mut ? TypeAnn.sublist(ts, sub, 2, nsub)
+			ret = ? TypeAnn.resolve(ts, cx, rt, t, 1)
+		}
+		Infos.fset(ts, fl, fi, FI_RETURN, ret)
+		let rbase = mut Ty.get(ts, tl, ret, TY_BASE)
+		if Ty.get(ts, tl, ret, TY_STORAGE) == TOK_NONE{
+			if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), rbase) || Decl.isArrayType(ts, rbase) == 1{
+				throw "an enum/array cannot be returned by value, only by pointer"
+			}
+		}
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		let np = mut TokStore.listSize(ts, ptypes)
+		for i in 0..np{
+			let pt = mut TokStore.listGet(ts, ptypes, i)
+			let pb = mut Ty.get(ts, tl, pt, TY_BASE)
+			if Ty.get(ts, tl, pt, TY_STORAGE) == TOK_NONE{
+				if Decl.isArrayType(ts, pb) == 1{
+					throw "an array parameter needs a storage modifier"
+				}
+				if StrMap.has(ts, structs, pb){
+					if TokStore.fromGenericInstance(ts, t) != 0{
+						Infos.fset(ts, fl, fi, FI_DEFERRED, 1)
+						return
+					}
+					throw "a plain (by-value) struct parameter is illegal; pass a pointer instead"
+				}
+			}
+		}
+		let params = mut ptypes
+		if Dec.getDecorator(ts, decos, "gt_init") != TOK_NONE{
+			? Funcs.requireGhostSig(ts, tl, params, ret, 0, "void")
+			? Funcs.registerGhost(ts, w, fi, "gt_init")
+		}
+		if Dec.getDecorator(ts, decos, "gt_alive_check") != TOK_NONE{
+			? Funcs.requireGhostSig(ts, tl, params, ret, 1, "bool")
+			? Funcs.registerGhost(ts, w, fi, "gt_alive_check")
+		}
+		if Dec.getDecorator(ts, decos, "gt_destruct") != TOK_NONE{
+			? Funcs.requireGhostSig(ts, tl, params, ret, 1, "void")
+			? Funcs.registerGhost(ts, w, fi, "gt_destruct")
+		}
+		if Dec.getDecorator(ts, decos, "gt_register") != TOK_NONE{
+			? Funcs.requireGhostSig(ts, tl, params, ret, 1, "bool")
+			? Funcs.registerGhost(ts, w, fi, "gt_register")
+		}
+		if Dec.getDecorator(ts, decos, "gt_moved") != TOK_NONE{
+			? Funcs.requireGhostSig(ts, tl, params, ret, 1, "void")
+			? Funcs.registerGhost(ts, w, fi, "gt_moved")
+		}
+		if Dec.getDecorator(ts, decos, "gt_ref_id") != TOK_NONE{
+			? Funcs.requireGtRef(ts, tl, params, ret, 1)
+			? Funcs.registerGhost(ts, w, fi, "gt_ref_id")
+		}
+		if Dec.getDecorator(ts, decos, "gt_ref_resolve") != TOK_NONE{
+			? Funcs.requireGtRef(ts, tl, params, ret, 0)
+			? Funcs.registerGhost(ts, w, fi, "gt_ref_resolve")
+		}
+		if Dec.getDecorator(ts, decos, "par_call") != TOK_NONE{
+			? Funcs.requireAsyncGlue(ts, tl, params, ret, 1)
+			? Funcs.registerGhost(ts, w, fi, "par_call")
+		}
+		if Dec.getDecorator(ts, decos, "await_call") != TOK_NONE{
+			? Funcs.requireAsyncGlue(ts, tl, params, ret, 0)
+			? Funcs.registerGhost(ts, w, fi, "await_call")
+		}
+		if Dec.getDecorator(ts, decos, "sleep") != TOK_NONE{
+			? Funcs.requireSleepSig(ts, tl, params, ret)
+			? Funcs.registerGhost(ts, w, fi, "sleep")
+		}
+	}
+
+	@pub
+	static func sameSignature(ts: ref imut TokStore, tl: mut u64, fl: mut u64, a: mut u64, b: mut u64) mut bool{
+		let pa = mut Infos.fget(ts, fl, a, FI_PARAM_TYPES)
+		let pb = mut Infos.fget(ts, fl, b, FI_PARAM_TYPES)
+		let n = mut TokStore.listSize(ts, pa)
+		if n != TokStore.listSize(ts, pb){
+			return false
+		}
+		for i in 0..n{
+			let x = mut TokStore.listGet(ts, pa, i)
+			let y = mut TokStore.listGet(ts, pb, i)
+			if TokStore.strsEq(ts, Ty.get(ts, tl, x, TY_BASE), Ty.get(ts, tl, y, TY_BASE)) == false{
+				return false
+			}
+			let ax = mut Ty.get(ts, tl, x, TY_ALIAS)
+			let ay = mut Ty.get(ts, tl, y, TY_ALIAS)
+			if ax == TOK_NONE && ay != TOK_NONE{
+				return false
+			}
+			if ax != TOK_NONE && ay == TOK_NONE{
+				return false
+			}
+			if ax != TOK_NONE && ay != TOK_NONE{
+				if TokStore.strsEq(ts, ax, ay) == false{
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	/** Pass 1b for a plain `func`: builds and registers its record as an overload of its name. `order` = position among the root declarations. */
+	@pub
+	@throws
+	static func collectFunc(ts: ref mut TokStore, cx: mut u64, t: mut u64, safety: mut u64, order: mut u64) void{
+		?catch(e){ throw e }
+		let r = mut ? Funcs.collectFuncCore(ts, cx, t, safety, order, 0)
+	}
+
+	/** A generic constructor wrapped in an impl: like collectFunc, but a by-value struct parameter only makes it unavailable (returns 1). */
+	@pub
+	@throws
+	static func collectImplCtor(ts: ref mut TokStore, cx: mut u64, t: mut u64, safety: mut u64, order: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Funcs.collectFuncCore(ts, cx, t, safety, order, 1)
+		return r
+	}
+
+	@pub
+	@throws
+	static func collectFuncCore(ts: ref mut TokStore, cx: mut u64, t: mut u64, safety: mut u64, order: mut u64, mode: mut u64) mut u64{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let decos = mut TokStore.decorators(ts, t)
+		if mode == 0{
+			? Dec.forbidMethodOnlyDecorators(ts, decos)
+		}
+		let sub = mut TokStore.sub(ts, t)
+		let name = mut TokStore.text(ts, TokStore.listGet(ts, sub, 0))
+		let fi = mut ? Infos.makeFunc(ts, fl, name)
+		Infos.fset(ts, fl, fi, FI_FUNC_TOK, t)
+		? Funcs.buildFuncInfo(ts, cx, t, fi)
+		if Infos.fget(ts, fl, fi, FI_DEFERRED) != 0{
+			if mode == 1{
+				return 1
+			}
+			throw "a by-value struct parameter is illegal"
+		}
+		if TokStore.isConstructorDecl(ts, t) != 0{
+			let cn = mut TokStore.constructorConcreteName(ts, t)
+			let structs = mut World.get(ts, w, W_M_STRUCTS)
+			if StrMap.has(ts, structs, cn) == false{
+				throw "'impl constructor for X' -- X is not a declared struct"
+			}
+			let ret = mut Infos.fget(ts, fl, fi, FI_RETURN)
+			if Funcs.noStorage(ts, tl, ret) == false{
+				throw "internal error: a constructor resolved an unexpected return type"
+			}
+			if StrMap.has(ts, structs, Ty.get(ts, tl, ret, TY_BASE)) == false{
+				throw "internal error: a constructor resolved an unexpected return type"
+			}
+			if TokStore.strsEq(ts, Ty.get(ts, tl, ret, TY_BASE), cn) == false{
+				throw "internal error: a constructor resolved an unexpected return type"
+			}
+			Infos.fset(ts, fl, fi, FI_CONSTRUCTOR, 1)
+			Infos.fset(ts, fl, fi, FI_CTOR_NAME, cn)
+			Infos.fset(ts, fl, fi, FI_PUBLIC, 1)
+		}
+		else{
+			if Funcs.isBuiltinName(ts, name){
+				throw "a built-in name can't be used as a function name"
+			}
+		}
+		Infos.fset(ts, fl, fi, FI_DECL_ORDER, order)
+		Infos.fset(ts, fl, fi, FI_SAFETY, safety)
+		if StrMap.has(ts, World.get(ts, w, W_M_EXTERNS), name){
+			throw "this name collides with an already-declared extern"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_CONST_EXPRS), name){
+			throw "this name collides with an already-declared const"
+		}
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		let overloads = mut StrMap.get(ts, funcs, name)
+		if overloads == TOK_NONE{
+			overloads = ? TokStore.newList(ts)
+			? StrMap.put(ts, funcs, name, overloads)
+		}
+		let no = mut TokStore.listSize(ts, overloads)
+		for i in 0..no{
+			if Funcs.sameSignature(ts, tl, fl, TokStore.listGet(ts, overloads, i), fi){
+				throw "a function with this parameter signature is already declared"
+			}
+		}
+		? TokStore.listAdd(ts, overloads, fi)
+			return 0
+	}
+
+
+	@throws
+	static func externAllowed(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let m = mut ? StrMap.make(ts)
+		let a = mut ? TokStore.addLit(ts, "call_convention")
+		? StrMap.put(ts, m, a, 1)
+		a = ? TokStore.addLit(ts, "link_name")
+		? StrMap.put(ts, m, a, 1)
+		return m
+	}
+
+	/** "extern name(types) ret": signature-only declaration in its own namespace (no overloading). */
+	@pub
+	@throws
+	static func collectExtern(ts: ref mut TokStore, cx: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let xr = mut TokStore.listGet(ts, cx, 8)
+		let decos = mut TokStore.decorators(ts, t)
+		let allowed = mut ? Funcs.externAllowed(ts)
+		? Dec.validateDecorators(ts, decos, allowed)
+		let sub = mut TokStore.sub(ts, t)
+		let name = mut TokStore.text(ts, TokStore.listGet(ts, sub, 0))
+		let paramsTok = mut TokStore.listGet(ts, sub, 1)
+		if Funcs.isBuiltinName(ts, name){
+			throw "a built-in name can't be used as an extern name"
+		}
+		let externs = mut World.get(ts, w, W_M_EXTERNS)
+		if StrMap.has(ts, externs, name){
+			throw "this extern is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_FUNCS), name){
+			throw "this extern collides with an already-declared function"
+		}
+		let xi = mut ? Infos.makeExtern(ts, xr, name)
+		let link = mut name
+		let ld = mut Dec.getDecorator(ts, decos, "link_name")
+		if ld != TOK_NONE{
+			link = TokStore.listGet(ts, TokStore.dArgs(ts, ld), 0)
+		}
+		Infos.rset(ts, xr, 8, xi, XI_LINK, link)
+		Infos.rset(ts, xr, 8, xi, XI_DECL_TOK, t)
+		Infos.rset(ts, xr, 8, xi, XI_CALL_CONV, Funcs.callConv(ts, cx, decos))
+		let groups = mut ? TypeAnn.splitIntoRawGroups(ts, TokStore.childs(ts, paramsTok))
+		let ng = mut TokStore.listSize(ts, groups)
+		let ptypes = mut Infos.rget(ts, xr, 8, xi, XI_PARAMS)
+		for i in 0..ng{
+			let g = mut TokStore.listGet(ts, groups, i)
+			let isVar = mut 0
+			if TokStore.listSize(ts, g) == 1{
+				let g0 = mut TokStore.listGet(ts, g, 0)
+				if TokStore.kind(ts, g0) == TT_OPERATOR && TokStore.textEq(ts, g0, "..."){
+					isVar = 1
+				}
+			}
+			if isVar == 1{
+				if i != ng - 1{
+					throw "'...' must be the last parameter in an 'extern' declaration"
+				}
+				Infos.rset(ts, xr, 8, xi, XI_VARARGS, 1)
+				continue
+			}
+			let pt = mut ? TypeAnn.resolve(ts, cx, g, t, 0)
+			? TokStore.listAdd(ts, ptypes, pt)
+		}
+		let nsub = mut TokStore.listSize(ts, sub)
+		let ret = mut 0
+		if nsub <= 2{
+			ret = ? Funcs.voidType(ts, tl)
+		}
+		else{
+			let rt = mut ? TypeAnn.sublist(ts, sub, 2, nsub)
+			ret = ? TypeAnn.resolve(ts, cx, rt, t, 1)
+		}
+		Infos.rset(ts, xr, 8, xi, XI_RETURN, ret)
+		let rbase = mut Ty.get(ts, tl, ret, TY_BASE)
+		if Ty.get(ts, tl, ret, TY_STORAGE) == TOK_NONE{
+			if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), rbase) || StrMap.has(ts, World.get(ts, w, W_M_ENUMS), rbase) || Decl.isArrayType(ts, rbase) == 1{
+				throw "an extern cannot return a struct/enum/array by value"
+			}
+		}
+		? StrMap.put(ts, externs, name, xi)
+	}
+
+	/** "export foo": foo must be a declared, overload-free, non-generic top-level func. */
+	@pub
+	@throws
+	static func collectExport(ts: ref mut TokStore, cx: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let sub = mut TokStore.sub(ts, t)
+		let name = mut TokStore.text(ts, TokStore.listGet(ts, sub, 0))
+		let overloads = mut StrMap.get(ts, World.get(ts, w, W_M_FUNCS), name)
+		if TokStore.listSize(ts, overloads) == 0{
+			throw "'export' does not name a declared function"
+		}
+		if TokStore.listSize(ts, overloads) > 1{
+			throw "an exported function must have no overloads"
+		}
+		let fi = mut TokStore.listGet(ts, overloads, 0)
+		let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+		if TokStore.listSize(ts, TokStore.typeParams(ts, ft)) > 0{
+			throw "a generic function can't be exported"
+		}
+		let ex = mut World.get(ts, w, W_M_EXPORTED)
+		if StrMap.has(ts, ex, name){
+			throw "this name is already exported"
+		}
+		? StrMap.put(ts, ex, name, 1)
+		Infos.fset(ts, fl, fi, FI_EXPORTED, 1)
+	}
+}

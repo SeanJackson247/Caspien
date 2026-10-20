@@ -54,3 +54,9 @@ Order = pipeline order; every stage is verified against the Java front end befor
 * A nullable `ref` of many distinct objects makes the ghost table's `__gtSlotAt` quadratic: no per-token objects. Tokens, lists and strings are struct-of-arrays columns of u64 in one `TokStore` (char arena `sbuf`), read with `getSome`.
 * Stores are passed as nullable `ref mut TokStore` and each accessor proves the reference itself (`match Some(ts)`), because any String creation or column growth ends a `ref some` parameter's alive proof.
 * `let x = mut (a op b)` needs the parentheses; range bounds must be bare variables; `raw` is a keyword; a char is turned into a number with `String.charCode`.
+
+## Type checker: mapping notes (not started)
+
+* The Java checker (18.5k lines, 50 files) is already recursion-free: `CheckFrame` + `CheckDriver` dispatch ~80 frame kinds to `step...` methods. That maps directly onto the frame-Vec scheme used for ParserBlocks, so no restructuring is needed.
+* The cost is the data model: `TypeInfo` (immutable, string-canonical forms, BigInteger literal values, sets), `Scope`, `FuncInfo`, `StructInfo`, `ImplInfo` and many HashMaps keyed by string. Plan: type infos and scopes become rows in id-indexed store columns (like TokStore), strings stay string ids, maps use `StrMap`, BigInteger uses `stdlib/bigint.caspien`.
+* Order: model/data types first, then Declarations (collection), Signatures, Statements/ControlFlow/Expressions, Calls, then the proof, lock and async parts. Verify with a checker dump (resolved types per token plus warnings) compared against Java on the 428 files after each part.

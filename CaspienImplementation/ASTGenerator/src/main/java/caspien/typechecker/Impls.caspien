@@ -1,0 +1,353 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Ty.caspien"
+import "Dec.caspien"
+import "Collect.caspien"
+import "Funcs.caspien"
+import "TypeAnn.caspien"
+
+/**
+ * Port of the library and impl collection of TypeCheckerImpls (collectLibrary, flattenLibrary, signatureSuffix, and the impl registration that follows).
+ * Libraries live in the row list at cx slot 9, impls in the list at slot 10.
+ */
+@pub
+struct Impls{@pub{
+	pad: mut u64
+}}
+
+@pub
+impl Impls{
+	/** "name_" style suffix of parameter types joined by '_', every non-word char turned into '_' (the mangled-name tail of overloads). */
+	@pub
+	@throws
+	static func signatureSuffix(ts: ref mut TokStore, tl: mut u64, ptypes: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, ptypes)
+		if n == 0{
+			let v = mut ? TokStore.addLit(ts, "void")
+			return v
+		}
+		let cans = mut ? TokStore.newList(ts)
+		for i in 0..n{
+			let pt = mut TokStore.listGet(ts, ptypes, i)
+			let c = mut ? Ty.canonical(ts, tl, pt)
+			? TokStore.listAdd(ts, cans, c)
+		}
+		let start = mut TokStore.strBegin(ts)
+		for i in 0..n{
+			if i > 0{
+				? TokStore.strPush(ts, '_')
+			}
+			let c = mut TokStore.listGet(ts, cans, i)
+			let len = mut TokStore.strLen(ts, c)
+			for k in 0..len{
+				let ch = mut TokStore.strCh(ts, c, k)
+				let word = mut false
+				if ch >= 'a' && ch <= 'z'{ word = true }
+				if ch >= 'A' && ch <= 'Z'{ word = true }
+				if ch >= '0' && ch <= '9'{ word = true }
+				if ch == '_'{ word = true }
+				if word{
+					? TokStore.strPush(ts, ch)
+				}
+				else{
+					? TokStore.strPush(ts, '_')
+				}
+			}
+		}
+		let id = mut ? TokStore.strEnd(ts, start)
+		return id
+	}
+
+	/** True if the subtree under t (sub, childs, left, right, next) mentions `self`; t's own links are walked too. */
+	@pub
+	@throws
+	static func mentionsSelf(ts: ref mut TokStore, t: mut u64) mut bool{
+		?catch(e){ throw e }
+		let work = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, work, t)
+		for lp in 0..1000000000{
+			let n = mut TokStore.listSize(ts, work)
+			if n == 0{
+				break
+			}
+			let node = mut TokStore.listPop(ts, work)
+			if node == TOK_NONE{
+				continue
+			}
+			if TokStore.kind(ts, node) == TT_VARREF && TokStore.textEq(ts, node, "self"){
+				return true
+			}
+			let nx = mut TokStore.next(ts, node)
+			let rt = mut TokStore.right(ts, node)
+			let lf = mut TokStore.left(ts, node)
+			? TokStore.listAdd(ts, work, nx)
+			? TokStore.listAdd(ts, work, rt)
+			? TokStore.listAdd(ts, work, lf)
+			let cs = mut TokStore.childs(ts, node)
+			let nc = mut TokStore.listSize(ts, cs)
+			for i in 0..nc{
+				let c = mut TokStore.listGet(ts, cs, i)
+				? TokStore.listAdd(ts, work, c)
+			}
+			let ss = mut TokStore.sub(ts, node)
+			let nsb = mut TokStore.listSize(ts, ss)
+			for i in 0..nsb{
+				let c = mut TokStore.listGet(ts, ss, i)
+				? TokStore.listAdd(ts, work, c)
+			}
+		}
+		return false
+	}
+
+	/** Java forbidSelfReference: a method/library function whose signature or body names `self` is an error. */
+	@pub
+	@throws
+	static func forbidSelfReference(ts: ref mut TokStore, t: mut u64, what: static imut string) void{
+		?catch(e){ throw e }
+		let ss = mut TokStore.sub(ts, t)
+		let nsb = mut TokStore.listSize(ts, ss)
+		for i in 0..nsb{
+			let c = mut TokStore.listGet(ts, ss, i)
+			let hit = mut ? Impls.mentionsSelf(ts, c)
+			if hit{
+				throw "this declaration cannot reference 'self' anywhere in its signature or body"
+			}
+		}
+		let cs = mut TokStore.childs(ts, t)
+		let nc = mut TokStore.listSize(ts, cs)
+		for i in 0..nc{
+			let c = mut TokStore.listGet(ts, cs, i)
+			let hit = mut ? Impls.mentionsSelf(ts, c)
+			if hit{
+				throw "this declaration cannot reference 'self' anywhere in its signature or body"
+			}
+		}
+	}
+
+	/** "library Name{...}": the library's own functions, overloaded by full signature. */
+	@pub
+	@throws
+	static func collectLibrary(ts: ref mut TokStore, cx: mut u64, t: mut u64, safety: mut u64, order: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let lr = mut TokStore.listGet(ts, cx, 9)
+		let name = mut Collect.declName(ts, t)
+		let row = mut StrMap.get(ts, World.get(ts, w, W_M_LIBS), name)
+		let own = mut ? StrMap.make(ts)
+		Infos.rset(ts, lr, 8, row, LI_OWN_FUNCS, own)
+		let cs = mut TokStore.childs(ts, t)
+		let nc = mut TokStore.listSize(ts, cs)
+		for i in 0..nc{
+			let ft = mut TokStore.listGet(ts, cs, i)
+			? Impls.forbidSelfReference(ts, ft, "a library function")
+			let decos = mut TokStore.decorators(ts, ft)
+			? Dec.forbidMethodOnlyDecorators(ts, decos)
+			let fnm = mut TokStore.text(ts, TokStore.listGet(ts, TokStore.sub(ts, ft), 0))
+			let fi = mut ? Infos.makeFunc(ts, fl, fnm)
+			Infos.fset(ts, fl, fi, FI_FUNC_TOK, ft)
+			? Funcs.buildFuncInfo(ts, cx, ft, fi)
+			if Infos.fget(ts, fl, fi, FI_DEFERRED) != 0{
+				throw "a by-value struct parameter is illegal"
+			}
+			Infos.fset(ts, fl, fi, FI_ENCL_LIB, row)
+			Infos.fset(ts, fl, fi, FI_DECL_ORDER, order)
+			Infos.fset(ts, fl, fi, FI_SAFETY, safety)
+			let ptypes = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+			let suffix = mut ? Impls.signatureSuffix(ts, tl, ptypes)
+			let mangled = mut ? Impls.libMangled(ts, name, Infos.fget(ts, fl, fi, FI_NAME), suffix)
+			Infos.fset(ts, fl, fi, FI_MANGLED, mangled)
+			let fname = mut Infos.fget(ts, fl, fi, FI_NAME)
+			let overloads = mut StrMap.get(ts, own, fname)
+			if overloads == TOK_NONE{
+				overloads = ? TokStore.newList(ts)
+				? StrMap.put(ts, own, fname, overloads)
+			}
+			let no = mut TokStore.listSize(ts, overloads)
+			for j in 0..no{
+				let other = mut TokStore.listGet(ts, overloads, j)
+				if Funcs.sameSignature(ts, tl, fl, other, fi){
+					throw "library already declares a function with this parameter signature"
+				}
+			}
+			? TokStore.listAdd(ts, overloads, fi)
+		}
+	}
+
+	/** libName + "_" + fn + "__sig_" + suffix. */
+	@throws
+	static func libMangled(ts: ref mut TokStore, lib: mut u64, fname: mut u64, suffix: mut u64) mut u64{
+		?catch(e){ throw e }
+		let mid = mut ? Ty.prefixed(ts, "_", fname, "__sig_")
+		let start = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, lib)
+		? TokStore.strAppendId(ts, mid)
+		? TokStore.strAppendId(ts, suffix)
+		let id = mut ? TokStore.strEnd(ts, start)
+		return id
+	}
+
+	/** Adds every overload in `incoming` (a list of FuncInfo rows) under `fname` to the library's flat map; a full-signature clash is an error. */
+	@throws
+	static func mergeLibraryOverloads(ts: ref mut TokStore, cx: mut u64, lib: mut u64, fname: mut u64, incoming: mut u64) void{
+		?catch(e){ throw e }
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let lr = mut TokStore.listGet(ts, cx, 9)
+		let flat = mut Infos.rget(ts, lr, 8, lib, LI_FUNCS)
+		let existing = mut StrMap.get(ts, flat, fname)
+		if existing == TOK_NONE{
+			existing = ? TokStore.newList(ts)
+			? StrMap.put(ts, flat, fname, existing)
+		}
+		let ni = mut TokStore.listSize(ts, incoming)
+		for i in 0..ni{
+			let cand = mut TokStore.listGet(ts, incoming, i)
+			let ne = mut TokStore.listSize(ts, existing)
+			for j in 0..ne{
+				let already = mut TokStore.listGet(ts, existing, j)
+				if Funcs.sameSignature(ts, tl, fl, already, cand){
+					throw "library inherits a function with this exact parameter signature from more than one extended library"
+				}
+			}
+			? TokStore.listAdd(ts, existing, cand)
+		}
+	}
+
+	@throws
+	static func mergeAll(ts: ref mut TokStore, cx: mut u64, lib: mut u64, src: mut u64) void{
+		?catch(e){ throw e }
+		let keys = mut TokStore.listGet(ts, src, 0)
+		let vals = mut TokStore.listGet(ts, src, 1)
+		let n = mut TokStore.listSize(ts, keys)
+		for i in 0..n{
+			let k = mut TokStore.listGet(ts, keys, i)
+			let v = mut TokStore.listGet(ts, vals, i)
+			? Impls.mergeLibraryOverloads(ts, cx, lib, k, v)
+		}
+	}
+
+	/** Flattens one library and everything it extends (explicit stack; rows of 4: name, next-parent index, pending parent, state). */
+	@pub
+	@throws
+	static func flattenLibrary(ts: ref mut TokStore, cx: mut u64, rootName: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let lr = mut TokStore.listGet(ts, cx, 9)
+		let libs = mut World.get(ts, w, W_M_LIBS)
+		let stack = mut ? TokStore.newList(ts)
+		let visiting = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, stack, rootName)
+		? TokStore.listAdd(ts, stack, TOK_NONE)
+		? TokStore.listAdd(ts, stack, TOK_NONE)
+		? TokStore.listAdd(ts, stack, 0)
+		for lp in 0..1000000000{
+			let sz = mut TokStore.listSize(ts, stack)
+			if sz == 0{
+				break
+			}
+			let base = mut (sz - 4)
+			let name = mut TokStore.listGet(ts, stack, base)
+			let info = mut StrMap.get(ts, libs, name)
+			if TokStore.listGet(ts, stack, base + 3) == 0{
+				if info == TOK_NONE{
+					Impls.popFrame(ts, stack)
+					continue
+				}
+				if Infos.rget(ts, lr, 8, info, LI_FLATTENED) != 0{
+					Impls.popFrame(ts, stack)
+					continue
+				}
+				if StrMap.has(ts, visiting, name){
+					throw "circular inheritance involving a library"
+				}
+				? StrMap.put(ts, visiting, name, 1)
+				TokStore.listSet(ts, stack, base + 3, 1)
+				TokStore.listSet(ts, stack, base + 1, 0)
+			}
+			let pend = mut TokStore.listGet(ts, stack, base + 2)
+			if pend != TOK_NONE{
+				let pinfo = mut StrMap.get(ts, libs, pend)
+				TokStore.listSet(ts, stack, base + 2, TOK_NONE)
+				let pf = mut Infos.rget(ts, lr, 8, pinfo, LI_FUNCS)
+				? Impls.mergeAll(ts, cx, info, pf)
+			}
+			let ext = mut Infos.rget(ts, lr, 8, info, LI_EXTENDS)
+			let ne = mut TokStore.listSize(ts, ext)
+			let idx = mut TokStore.listGet(ts, stack, base + 1)
+			if idx < ne{
+				let parent = mut TokStore.listGet(ts, ext, idx)
+				TokStore.listSet(ts, stack, base + 1, idx + 1)
+				if StrMap.has(ts, libs, parent) == false{
+					throw "an extended name is not a known library"
+				}
+				TokStore.listSet(ts, stack, base + 2, parent)
+				? TokStore.listAdd(ts, stack, parent)
+				? TokStore.listAdd(ts, stack, TOK_NONE)
+				? TokStore.listAdd(ts, stack, TOK_NONE)
+				? TokStore.listAdd(ts, stack, 0)
+				continue
+			}
+			let own = mut Infos.rget(ts, lr, 8, info, LI_OWN_FUNCS)
+			if own != TOK_NONE{
+				? Impls.mergeAll(ts, cx, info, own)
+			}
+			Infos.rset(ts, lr, 8, info, LI_FLATTENED, 1)
+			? StrMap.put(ts, visiting, name, 0)
+			Impls.popFrame(ts, stack)
+		}
+	}
+
+	static func popFrame(ts: ref mut TokStore, stack: mut u64) void{
+		for k in 0..4{
+			let x = mut TokStore.listPop(ts, stack)
+		}
+	}
+
+	/** Pass 1f: every top-level function name with more than one overload gets `name__sig_<suffix>` as the mangled name of each. */
+	@pub
+	@throws
+	static func mangleOverloads(ts: ref mut TokStore, cx: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		let keys = mut TokStore.listGet(ts, funcs, 0)
+		let vals = mut TokStore.listGet(ts, funcs, 1)
+		let n = mut TokStore.listSize(ts, keys)
+		for i in 0..n{
+			let ovs = mut TokStore.listGet(ts, vals, i)
+			let no = mut TokStore.listSize(ts, ovs)
+			if no <= 1{
+				continue
+			}
+			for j in 0..no{
+				let fi = mut TokStore.listGet(ts, ovs, j)
+				let ptypes = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+				let suffix = mut ? Impls.signatureSuffix(ts, tl, ptypes)
+				let nm = mut Infos.fget(ts, fl, fi, FI_NAME)
+				let mangled = mut ? Impls.libMangledSig(ts, nm, suffix)
+				Infos.fset(ts, fl, fi, FI_MANGLED, mangled)
+			}
+		}
+	}
+
+	/** name + "__sig_" + suffix */
+	@throws
+	static func libMangledSig(ts: ref mut TokStore, nm: mut u64, suffix: mut u64) mut u64{
+		?catch(e){ throw e }
+		let mid = mut ? Ty.prefixed(ts, "", nm, "__sig_")
+		let start = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, mid)
+		? TokStore.strAppendId(ts, suffix)
+		let id = mut ? TokStore.strEnd(ts, start)
+		return id
+	}
+}

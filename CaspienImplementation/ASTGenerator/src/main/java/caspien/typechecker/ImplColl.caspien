@@ -1,0 +1,855 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../token/TokClone.caspien"
+import "../util/StrMap.caspien"
+import "../rpnconverter/RpnConverter.caspien"
+import "../treebuilder/TreeBuilder.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Ty.caspien"
+import "Dec.caspien"
+import "Decl.caspien"
+import "Collect.caspien"
+import "Funcs.caspien"
+import "TypeAnn.caspien"
+import "Flatten.caspien"
+import "Impls.caspien"
+
+/**
+ * Port of TypeCheckerImpls.collectImpl and the impl-registration helpers (registerImplMethod, interface-contract checks, default-method materialization).
+ * Impl rows (IM_*) live in the list at cx slot 10; interface rows (II_*) and method signatures (MS_*) in the list at cx slot 5 (CX_IR). A deferred (by-value
+ * struct parameter) method of a monomorphized generic is dropped and only recorded as unavailable.
+ */
+@pub
+struct ImplColl{@pub{
+}}
+
+@pub
+impl ImplColl{
+	/** Concatenates the string ids in `parts` into a new string id. */
+	@pub
+	@throws
+	static func catList(ts: ref mut TokStore, parts: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, parts)
+		let start = mut TokStore.strBegin(ts)
+		for i in 0..n{
+			let p = mut TokStore.listGet(ts, parts, i)
+			? TokStore.strAppendId(ts, p)
+		}
+		let id = mut ? TokStore.strEnd(ts, start)
+		return id
+	}
+
+	/** a + lit + b */
+	@throws
+	static func cat3(ts: ref mut TokStore, a: mut u64, lit: static imut string, b: mut u64) mut u64{
+		?catch(e){ throw e }
+		let m = mut ? TokStore.addLit(ts, lit)
+		let parts = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, parts, a)
+		? TokStore.listAdd(ts, parts, m)
+		? TokStore.listAdd(ts, parts, b)
+		let id = mut ? ImplColl.catList(ts, parts)
+		return id
+	}
+
+	/** The impl list for a concrete type name, created on first use. */
+	@pub
+	@throws
+	static func implList(ts: ref mut TokStore, w: mut u64, concrete: mut u64) mut u64{
+		?catch(e){ throw e }
+		let m = mut World.get(ts, w, W_M_IMPLS_BY_TYPE)
+		let l = mut StrMap.get(ts, m, concrete)
+		if l == TOK_NONE{
+			l = ? TokStore.newList(ts)
+			? StrMap.put(ts, m, concrete, l)
+		}
+		return l
+	}
+
+	/** Every overload of `name` of an impl, in declaration order (a new empty/one-element list if it has no overload list). */
+	@pub
+	@throws
+	static func candidates(ts: ref mut TokStore, mr: mut u64, im: mut u64, name: mut u64, isStatic: mut u64) mut u64{
+		?catch(e){ throw e }
+		let slot = mut IM_OVERLOADS
+		let single = mut IM_METHODS
+		if isStatic != 0{
+			slot = IM_STATIC_OVERLOADS
+			single = IM_STATIC_METHODS
+		}
+		let om = mut Infos.rget(ts, mr, 12, im, slot)
+		let l = mut StrMap.get(ts, om, name)
+		if l != TOK_NONE{
+			return l
+		}
+		let out = mut ? TokStore.newList(ts)
+		let sm = mut Infos.rget(ts, mr, 12, im, single)
+		if StrMap.has(ts, sm, name){
+			let f = mut StrMap.get(ts, sm, name)
+			? TokStore.listAdd(ts, out, f)
+		}
+		return out
+	}
+
+	/** Every "self" VARREF in `toks` becomes the concrete type name (in place). */
+	static func substituteSelfInPlace(ts: ref mut TokStore, toks: mut u64, concrete: mut u64) void{
+		let n = mut TokStore.listSize(ts, toks)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, toks, i)
+			if TokStore.kind(ts, t) == TT_VARREF && TokStore.textEq(ts, t, "self"){
+				TokStore.setText(ts, t, concrete)
+			}
+		}
+	}
+
+	/** A copy of `toks` where every "self" VARREF is replaced by a new token naming the concrete type (the originals stay untouched). */
+	@pub
+	@throws
+	static func substituteSelfCopy(ts: ref mut TokStore, toks: mut u64, concrete: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, toks)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, toks, i)
+			if TokStore.kind(ts, t) == TT_VARREF && TokStore.textEq(ts, t, "self"){
+				let ln = mut TokStore.line(ts, t)
+				let fid = mut TokStore.fileId(ts, t)
+				let nt = mut ? TokStore.newToken(ts, TT_VARREF, concrete, ln, fid)
+				? TokStore.listAdd(ts, out, nt)
+			}
+			else{
+				? TokStore.listAdd(ts, out, t)
+			}
+		}
+		return out
+	}
+
+	/** Index of string `s` in the list of string ids `l`, or TOK_NONE. */
+	static func indexOfStr(ts: ref imut TokStore, l: mut u64, s: mut u64) mut u64{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, l, i), s){
+				return i
+			}
+		}
+		return TOK_NONE
+	}
+
+	static func isRangeBase(ts: ref imut TokStore, base: mut u64, rangeSid: mut u64, rangeParenSid: mut u64) mut bool{
+		if TokStore.strsEq(ts, base, rangeSid){
+			return true
+		}
+		return Decl.startsWith(ts, base, rangeParenSid) == 1
+	}
+
+	/** "@lock(match x in|within self.f)" against the typing rules of in/within. */
+	@throws
+	static func validateLockInClause(ts: ref mut TokStore, tl: mut u64, d: mut u64, members: mut u64, pnames: mut u64, ptypes: mut u64) void{
+		?catch(e){ throw e }
+		let rs = mut ? TokStore.addLit(ts, "range")
+		let rp = mut ? TokStore.addLit(ts, "range(")
+		let params = mut TokStore.dLockInParams(ts, d)
+		let fields = mut TokStore.dLockInFields(ts, d)
+		let ops = mut TokStore.dLockInOperators(ts, d)
+		let someW = mut TokStore.dLockInSomeWrapped(ts, d)
+		let n = mut TokStore.listSize(ts, params)
+		for i in 0..n{
+			let pn = mut TokStore.listGet(ts, params, i)
+			let fname = mut TokStore.listGet(ts, fields, i)
+			let op = mut TokStore.listGet(ts, ops, i)
+			let idx = mut ImplColl.indexOfStr(ts, pnames, pn)
+			if idx == TOK_NONE{
+				throw "'@lock(match ...)' -- no parameter has this name"
+			}
+			let pt = mut TokStore.listGet(ts, ptypes, idx)
+			let pm = mut Ty.get(ts, tl, pt, TY_MUT)
+			if pm == TOK_NONE{
+				throw "'@lock(match ...)' -- the parameter must be an 'imut' parameter"
+			}
+			if TokStore.strEq(ts, pm, "imut") == false{
+				throw "'@lock(match ...)' -- the parameter must be an 'imut' parameter"
+			}
+			if StrMap.has(ts, members, fname) == false{
+				throw "'@lock(match ...)' -- the struct has no member of this name"
+			}
+			let ft = mut StrMap.get(ts, members, fname)
+			let isWithin = mut TokStore.strEq(ts, op, "within")
+			let pbase = mut Ty.get(ts, tl, pt, TY_BASE)
+			let fbase = mut Ty.get(ts, tl, ft, TY_BASE)
+			let leftRange = mut ImplColl.isRangeBase(ts, pbase, rs, rp)
+			let leftOk = mut false
+			if isWithin{
+				leftOk = leftRange
+			}
+			else{
+				let plain = mut false
+				if Ty.get(ts, tl, pt, TY_STORAGE) == TOK_NONE{
+					if TokStore.strEq(ts, pbase, "u64"){
+						plain = true
+					}
+				}
+				leftOk = plain || leftRange
+			}
+			if leftOk == false{
+				throw "'@lock(match ...)' -- wrong type on the left of the clause"
+			}
+			let rightRange = mut ImplColl.isRangeBase(ts, fbase, rs, rp)
+			let isDyn = mut (Ty.get(ts, tl, ft, TY_DYN_ELEM) != TOK_NONE)
+			let rightOk = mut false
+			if isWithin{
+				rightOk = rightRange
+			}
+			else{
+				rightOk = rightRange || isDyn
+			}
+			if rightOk == false{
+				throw "'@lock(match ...)' -- wrong type on the right of the clause"
+			}
+			if someW != TOK_NONE{
+				if TokStore.listGet(ts, someW, i) == 1{
+					if isDyn == false{
+						throw "'@lock(match Some(...) ...)' needs a dynarray of pointer-typed elements"
+					}
+					let el = mut Ty.get(ts, tl, ft, TY_DYN_ELEM)
+					if Ty.get(ts, tl, el, TY_STORAGE) == TOK_NONE{
+						throw "'@lock(match Some(...) ...)' needs a dynarray of pointer-typed elements"
+					}
+				}
+			}
+		}
+	}
+
+	/** Every qualified "@lock(match ...)" on a method: enum-style against the struct's members, in-style against its parameters. */
+	@pub
+	@throws
+	static func validateMethodLocks(ts: ref mut TokStore, cx: mut u64, decos: mut u64, pnames: mut u64, ptypes: mut u64, concrete: mut u64) void{
+		?catch(e){ throw e }
+		if decos == TOK_NONE{
+			return
+		}
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let er = mut TokStore.listGet(ts, cx, 6)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		if StrMap.has(ts, structs, concrete) == false{
+			return
+		}
+		let srow = mut StrMap.get(ts, structs, concrete)
+		let members = mut Infos.sget(ts, sr, srow, SI_MEMBERS)
+		let n = mut TokStore.listSize(ts, decos)
+		for i in 0..n{
+			let d = mut TokStore.listGet(ts, decos, i)
+			if TokStore.strEq(ts, TokStore.dName(ts, d), "lock"){
+				if TokStore.dLockField(ts, d) != TOK_NONE{
+					? Flatten.validateLockEnumClause(ts, cx, er, d, members)
+				}
+				else if TokStore.dLockInParams(ts, d) != TOK_NONE{
+					? ImplColl.validateLockInClause(ts, tl, d, members, pnames, ptypes)
+				}
+			}
+		}
+	}
+
+	/** Registers a method into the impl: a bare impl overloads by signature, an interface impl cannot. */
+	@throws
+	static func registerImplMethod(ts: ref mut TokStore, cx: mut u64, im: mut u64, fi: mut u64, methodTok: mut u64, hasIface: mut bool) void{
+		?catch(e){ throw e }
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let isStatic = mut (TokStore.isStaticMethod(ts, methodTok) != 0)
+		let tslot = mut IM_METHODS
+		let oslot = mut IM_OVERLOADS
+		if isStatic{
+			tslot = IM_STATIC_METHODS
+			oslot = IM_STATIC_OVERLOADS
+		}
+		let targetMap = mut Infos.rget(ts, mr, 12, im, tslot)
+		let overloadMap = mut Infos.rget(ts, mr, 12, im, oslot)
+		let name = mut Infos.fget(ts, fl, fi, FI_NAME)
+		let existing = mut StrMap.get(ts, overloadMap, name)
+		if existing == TOK_NONE{
+			if StrMap.has(ts, targetMap, name){
+				existing = ? TokStore.newList(ts)
+				let f0 = mut StrMap.get(ts, targetMap, name)
+				? TokStore.listAdd(ts, existing, f0)
+			}
+		}
+		if existing == TOK_NONE{
+			? StrMap.put(ts, targetMap, name, fi)
+			let fresh = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, fresh, fi)
+			? StrMap.put(ts, overloadMap, name, fresh)
+			return
+		}
+		if hasIface{
+			throw "this impl block already has a method of this name"
+		}
+		let ne = mut TokStore.listSize(ts, existing)
+		for i in 0..ne{
+			let other = mut TokStore.listGet(ts, existing, i)
+			if Funcs.sameSignature(ts, tl, fl, other, fi){
+				throw "this impl block already has a method of this name with this parameter signature"
+			}
+		}
+		let ptypes = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+		let suffix = mut ? Impls.signatureSuffix(ts, tl, ptypes)
+		let oldm = mut Infos.fget(ts, fl, fi, FI_MANGLED)
+		let newm = mut ? ImplColl.cat3(ts, oldm, "__sig_", suffix)
+		Infos.fset(ts, fl, fi, FI_MANGLED, newm)
+		let key = mut ? ImplColl.cat3(ts, name, "#", suffix)
+		? StrMap.put(ts, targetMap, key, fi)
+		if StrMap.has(ts, overloadMap, name) == false{
+			? StrMap.put(ts, overloadMap, name, existing)
+		}
+		? TokStore.listAdd(ts, existing, fi)
+	}
+
+	/** Remembers that a method/constructor of a monomorphized generic is unavailable for this type argument. */
+	@throws
+	static func recordUnavailable(ts: ref mut TokStore, w: mut u64, key: mut u64) void{
+		?catch(e){ throw e }
+		let m = mut World.get(ts, w, W_M_UNAVAILABLE_GENERIC)
+		let l = mut StrMap.get(ts, m, key)
+		if l == TOK_NONE{
+			l = ? TokStore.newList(ts)
+			? StrMap.put(ts, m, key, l)
+		}
+		? TokStore.listAdd(ts, l, 1)
+	}
+
+	/** The qualified '@lock(match ...)' decorators of a decorator list, in source order. */
+	@throws
+	static func qualifiedLocks(ts: ref mut TokStore, decos: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, decos)
+		for i in 0..n{
+			let d = mut TokStore.listGet(ts, decos, i)
+			if TokStore.strEq(ts, TokStore.dName(ts, d), "lock"){
+				if TokStore.dLockField(ts, d) != TOK_NONE || TokStore.dLockInParams(ts, d) != TOK_NONE{
+					? TokStore.listAdd(ts, out, d)
+				}
+			}
+		}
+		return out
+	}
+
+	static func sameStrList(ts: ref imut TokStore, a: mut u64, b: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, a)
+		if n != TokStore.listSize(ts, b){
+			return false
+		}
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, a, i), TokStore.listGet(ts, b, i)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** An interface method's qualified locks must be repeated exactly (in order) by the implementing method. */
+	@throws
+	static func requireIdenticalLocks(ts: ref mut TokStore, cx: mut u64, fi: mut u64, ms: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let ir = mut TokStore.listGet(ts, cx, CX_IR)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let ifaceDecos = mut Infos.rget(ts, msr, 8, ms, MS_DECOS)
+		let implDecos = mut TokStore.decorators(ts, Infos.fget(ts, fl, fi, FI_FUNC_TOK))
+		let il = mut ? ImplColl.qualifiedLocks(ts, ifaceDecos)
+		let ml = mut ? ImplColl.qualifiedLocks(ts, implDecos)
+		let n = mut TokStore.listSize(ts, il)
+		if n != TokStore.listSize(ts, ml){
+			throw "an impl method must carry exactly the interface method's '@lock(match ...)' qualifiers"
+		}
+		let paramsTok = mut Infos.rget(ts, msr, 8, ms, MS_PARAMS_TOK)
+		let pch = mut TokStore.childs(ts, paramsTok)
+		let groups = mut ? TypeAnn.splitIntoRawGroups(ts, pch)
+		let ifaceNames = mut ? TokStore.newList(ts)
+		let ng = mut TokStore.listSize(ts, groups)
+		for g in 0..ng{
+			let grp = mut TokStore.listGet(ts, groups, g)
+			let nm = mut TokStore.text(ts, TokStore.listGet(ts, grp, 0))
+			? TokStore.listAdd(ts, ifaceNames, nm)
+		}
+		let implNames = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+		for i in 0..n{
+			let a = mut TokStore.listGet(ts, il, i)
+			let b = mut TokStore.listGet(ts, ml, i)
+			if TokStore.dLockField(ts, a) != TOK_NONE{
+				if TokStore.dLockField(ts, b) == TOK_NONE{
+					throw "an enum-style '@lock' qualifier must be matched by an enum-style one"
+				}
+				if TokStore.strsEq(ts, TokStore.dLockField(ts, a), TokStore.dLockField(ts, b)) == false{
+					throw "the '@lock' qualifier does not match the interface's"
+				}
+				if ImplColl.sameStrList(ts, TokStore.dLockVariants(ts, a), TokStore.dLockVariants(ts, b)) == false{
+					throw "the '@lock' qualifier does not match the interface's"
+				}
+				continue
+			}
+			if TokStore.dLockInParams(ts, b) == TOK_NONE{
+				throw "an 'in'-style '@lock' qualifier must be matched by an 'in'-style one"
+			}
+			let ap = mut TokStore.dLockInParams(ts, a)
+			let bp = mut TokStore.dLockInParams(ts, b)
+			let m = mut TokStore.listSize(ts, ap)
+			if m != TokStore.listSize(ts, bp){
+				throw "the '@lock' qualifier has a different number of clauses"
+			}
+			let af = mut TokStore.dLockInFields(ts, a)
+			let bf = mut TokStore.dLockInFields(ts, b)
+			let ao = mut TokStore.dLockInOperators(ts, a)
+			let bo = mut TokStore.dLockInOperators(ts, b)
+			let asw = mut TokStore.dLockInSomeWrapped(ts, a)
+			let bsw = mut TokStore.dLockInSomeWrapped(ts, b)
+			for j in 0..m{
+				let ip = mut ImplColl.indexOfStr(ts, ifaceNames, TokStore.listGet(ts, ap, j))
+				let mp = mut ImplColl.indexOfStr(ts, implNames, TokStore.listGet(ts, bp, j))
+				if ip != mp{
+					throw "a '@lock' clause must be on the same parameter position as the interface's"
+				}
+				if TokStore.strsEq(ts, TokStore.listGet(ts, af, j), TokStore.listGet(ts, bf, j)) == false{
+					throw "a '@lock' clause must name the same field as the interface's"
+				}
+				if TokStore.strsEq(ts, TokStore.listGet(ts, ao, j), TokStore.listGet(ts, bo, j)) == false{
+					throw "a '@lock' clause must use the same operator as the interface's"
+				}
+				let sa = mut 0
+				let sb = mut 0
+				if asw != TOK_NONE{
+					sa = TokStore.listGet(ts, asw, j)
+				}
+				if bsw != TOK_NONE{
+					sb = TokStore.listGet(ts, bsw, j)
+				}
+				if sa != sb{
+					throw "a '@lock' clause must match the interface's use of 'Some(...)' exactly"
+				}
+			}
+		}
+	}
+
+	/** An impl method must carry exactly one of @overrides (interface method is @default) or @realizes (plain signature). */
+	@throws
+	static func validateOverridesRealizes(ts: ref imut TokStore, cx: mut u64, fi: mut u64, ms: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let ir = mut TokStore.listGet(ts, cx, CX_IR)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let decos = mut TokStore.decorators(ts, Infos.fget(ts, fl, fi, FI_FUNC_TOK))
+		let ho = mut (Dec.getDecorator(ts, decos, "overrides") != TOK_NONE)
+		let hr = mut (Dec.getDecorator(ts, decos, "realizes") != TOK_NONE)
+		if ho && hr{
+			throw "a method cannot be labelled both '@overrides' and '@realizes'"
+		}
+		if Infos.rget(ts, msr, 8, ms, MS_DEFAULT) != 0{
+			if hr{
+				throw "'@realizes' is for fulfilling a plain interface method; use '@overrides' for a '@default' one"
+			}
+			if ho == false{
+				throw "a method overriding a '@default' interface method must be labelled '@overrides'"
+			}
+		}
+		else{
+			if ho{
+				throw "'@overrides' is for overriding a '@default' method; use '@realizes' for a plain signature"
+			}
+			if hr == false{
+				throw "a method realizing an interface method must be labelled '@realizes'"
+			}
+		}
+	}
+
+	/** The impl method's parameters and return type must be exactly the interface signature's (with `self` replaced by the concrete type). */
+	@throws
+	static func validateExactSignatureMatch(ts: ref mut TokStore, cx: mut u64, ms: mut u64, fi: mut u64, concrete: mut u64) void{
+		?catch(e){ throw e }
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let ir = mut TokStore.listGet(ts, cx, CX_IR)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let paramsTok = mut Infos.rget(ts, msr, 8, ms, MS_PARAMS_TOK)
+		let pch = mut TokStore.childs(ts, paramsTok)
+		let groups = mut ? TypeAnn.splitIntoRawGroups(ts, pch)
+		let ng = mut TokStore.listSize(ts, groups)
+		let ptypes = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+		if ng != TokStore.listSize(ts, ptypes){
+			throw "an impl method has a different number of parameters than the interface declares"
+		}
+		for i in 0..ng{
+			let grp = mut TokStore.listGet(ts, groups, i)
+			let gn = mut TokStore.listSize(ts, grp)
+			let tt = mut ? TypeAnn.sublist(ts, grp, 2, gn)
+			let copy = mut ? ImplColl.substituteSelfCopy(ts, tt, concrete)
+			let at = mut TokStore.listGet(ts, grp, 0)
+			let expected = mut ? TypeAnn.resolve(ts, cx, copy, at, 0)
+			let got = mut TokStore.listGet(ts, ptypes, i)
+			let ce = mut ? Ty.canonical(ts, tl, expected)
+			let cg = mut ? Ty.canonical(ts, tl, got)
+			if TokStore.strsEq(ts, ce, cg) == false{
+				throw "an impl method parameter must be exactly the interface's type"
+			}
+		}
+		let rtoks = mut Infos.rget(ts, msr, 8, ms, MS_RETURN)
+		let rcopy = mut ? ImplColl.substituteSelfCopy(ts, rtoks, concrete)
+		let expectedRet = mut 0
+		if TokStore.listSize(ts, rcopy) == 0{
+			expectedRet = ? Funcs.voidType(ts, tl)
+		}
+		else{
+			let nameTok = mut Infos.rget(ts, msr, 8, ms, MS_NAME_TOK)
+			expectedRet = ? TypeAnn.resolve(ts, cx, rcopy, nameTok, 1)
+		}
+		let ce2 = mut ? Ty.canonical(ts, tl, expectedRet)
+		let actualRet = mut Infos.fget(ts, fl, fi, FI_RETURN)
+		let cg2 = mut ? Ty.canonical(ts, tl, actualRet)
+		if TokStore.strsEq(ts, ce2, cg2) == false{
+			throw "an impl method must return exactly the interface's type"
+		}
+	}
+
+	/** Builds a method's FuncInfo (signature) from its token and gives it its impl-level fields; returns the row, or TOK_NONE if its signature is deferred (unavailable). */
+	@throws
+	static func buildMethod(ts: ref mut TokStore, cx: mut u64, im: mut u64, mt: mut u64, safety: mut u64, order: mut u64, concrete: mut u64, iface: mut u64) mut u64{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let first = mut TokStore.listGet(ts, TokStore.sub(ts, mt), 0)
+		let nm = mut TokStore.text(ts, first)
+		let fi = mut ? Infos.makeFunc(ts, fl, nm)
+		Infos.fset(ts, fl, fi, FI_FUNC_TOK, mt)
+		? Funcs.buildFuncInfo(ts, cx, mt, fi)
+		if Infos.fget(ts, fl, fi, FI_DEFERRED) != 0{
+			return TOK_NONE
+		}
+		Infos.fset(ts, fl, fi, FI_ENCL_IMPL, im)
+		Infos.fset(ts, fl, fi, FI_DECL_ORDER, order)
+		Infos.fset(ts, fl, fi, FI_SAFETY, safety)
+		let part = mut nm
+		if TokStore.isStaticMethod(ts, mt) != 0{
+			let sl = mut ? TokStore.addLit(ts, "static_")
+			let parts = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, parts, sl)
+			? TokStore.listAdd(ts, parts, nm)
+			part = ? ImplColl.catList(ts, parts)
+		}
+		let parts2 = mut ? TokStore.newList(ts)
+		let us = mut ? TokStore.addLit(ts, "_")
+		? TokStore.listAdd(ts, parts2, concrete)
+		if iface != TOK_NONE{
+			let dus = mut ? TokStore.addLit(ts, "__")
+			? TokStore.listAdd(ts, parts2, dus)
+			? TokStore.listAdd(ts, parts2, iface)
+		}
+		? TokStore.listAdd(ts, parts2, us)
+		? TokStore.listAdd(ts, parts2, part)
+		let mangled = mut ? ImplColl.catList(ts, parts2)
+		Infos.fset(ts, fl, fi, FI_MANGLED, mangled)
+		let decos = mut TokStore.decorators(ts, mt)
+		let pn = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+		let pt = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+		? ImplColl.validateMethodLocks(ts, cx, decos, pn, pt, concrete)
+		return fi
+	}
+
+	/** An omitted '@default' interface method: the body is cloned per impl and registered as if written (no user-impl validations). */
+	@throws
+	static func materializeDefaultMethod(ts: ref mut TokStore, cx: mut u64, im: mut u64, concrete: mut u64, iface: mut u64, ms: mut u64, safety: mut u64, order: mut u64, implTok: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let ir = mut TokStore.listGet(ts, cx, CX_IR)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let cm = mut TokStore.listGet(ts, cx, 11)
+		let pd = mut TokStore.listGet(ts, cx, 12)
+		let tc = mut TokStore.listGet(ts, cx, 13)
+		let body = mut Infos.rget(ts, msr, 8, ms, MS_BODY)
+		let mt = mut ? TokClone.syntax(ts, cm, pd, tc, body)
+		let lnText = mut ? TokStore.addLit(ts, "line")
+		let ln = mut TokStore.line(ts, mt)
+		let fid = mut TokStore.fileId(ts, mt)
+		let wrap = mut ? TokStore.newToken(ts, TT_LINE, lnText, ln, fid)
+		let wc = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, wc, mt)
+		TokStore.setChilds(ts, wrap, wc)
+		let wl = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, wl, wrap)
+		? RpnConverter.convertLines(ts, wl)
+		? TreeBuilder.buildLines(ts, wl)
+		let isStatic = mut (TokStore.isStaticMethod(ts, mt) != 0)
+		if isStatic == false{
+			let sub = mut TokStore.sub(ts, mt)
+			let pTok = mut TokStore.listGet(ts, sub, 1)
+			ImplColl.substituteSelfInPlace(ts, TokStore.childs(ts, pTok), concrete)
+			let ns = mut TokStore.listSize(ts, sub)
+			let rt = mut ? TypeAnn.sublist(ts, sub, 2, ns)
+			ImplColl.substituteSelfInPlace(ts, rt, concrete)
+		}
+		let fi = mut ? ImplColl.buildMethod(ts, cx, im, mt, safety, order, concrete, iface)
+		if fi == TOK_NONE{
+			throw "a default method could not be built for this type"
+		}
+		Infos.fset(ts, fl, fi, FI_PUBLIC, 1)
+		let name = mut Infos.fget(ts, fl, fi, FI_NAME)
+		let slot = mut IM_METHODS
+		if isStatic{
+			slot = IM_STATIC_METHODS
+		}
+		let target = mut Infos.rget(ts, mr, 12, im, slot)
+		? StrMap.put(ts, target, name, fi)
+		let ic = mut TokStore.childs(ts, implTok)
+		? TokStore.listAdd(ts, ic, mt)
+	}
+
+	/** True if `x` is an element of the list `l`. */
+	static func listHas(ts: ref imut TokStore, l: mut u64, x: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.listGet(ts, l, i) == x{
+				return true
+			}
+		}
+		return false
+	}
+
+	/** "impl [I for] C{...}": registers an impl and its methods (see the Java doc, "Impl collection"). */
+	@pub
+	@throws
+	static func collectImpl(ts: ref mut TokStore, cx: mut u64, t: mut u64, safety: mut u64, order: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let ir = mut TokStore.listGet(ts, cx, CX_IR)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let sub = mut TokStore.sub(ts, t)
+		let nsub = mut TokStore.listSize(ts, sub)
+		let iface = mut TOK_NONE
+		let concrete = mut 0
+		if nsub == 2{
+			iface = TokStore.text(ts, TokStore.listGet(ts, sub, 0))
+			concrete = TokStore.text(ts, TokStore.listGet(ts, sub, 1))
+		}
+		else{
+			concrete = TokStore.text(ts, TokStore.listGet(ts, sub, 0))
+		}
+		let isStruct = mut StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), concrete)
+		let isEnum = mut StrMap.has(ts, World.get(ts, w, W_M_ENUMS), concrete)
+		if isStruct == false && isEnum == false{
+			throw "an impl names a type that is not a known struct or enum"
+		}
+		let ifaceRow = mut TOK_NONE
+		if iface != TOK_NONE{
+			let ifaces = mut World.get(ts, w, W_M_IFACES)
+			if StrMap.has(ts, ifaces, iface) == false{
+				throw "an impl names an interface that is not known"
+			}
+			ifaceRow = StrMap.get(ts, ifaces, iface)
+			if isEnum{
+				throw "cannot implement an interface for an enum"
+			}
+		}
+		let im = mut ? Infos.makeImpl(ts, mr, iface, concrete)
+		Infos.rset(ts, mr, 12, im, IM_DECL_TOK, t)
+		Infos.rset(ts, mr, 12, im, IM_SAFETY, safety)
+		let decos = mut TokStore.decorators(ts, t)
+		let allowed = mut ? Collect.pubOnly(ts)
+		? Dec.validateDecorators(ts, decos, allowed)
+		if Dec.getDecorator(ts, decos, "pub") != TOK_NONE{
+			Infos.rset(ts, mr, 12, im, IM_PUBLIC, 1)
+		}
+		let templates = mut Infos.rget(ts, mr, 12, im, IM_GENERIC_TEMPLATES)
+		let removeList = mut ? TokStore.newList(ts)
+		let dropped = mut false
+		let childs = mut TokStore.childs(ts, t)
+		let nc = mut TokStore.listSize(ts, childs)
+		for i in 0..nc{
+			let mt = mut TokStore.listGet(ts, childs, i)
+			let mname = mut TokStore.text(ts, TokStore.listGet(ts, TokStore.sub(ts, mt), 0))
+			if TokStore.isConstructorDecl(ts, mt) != 0{
+				let deferred = mut ? Funcs.collectImplCtor(ts, cx, mt, safety, order)
+				if deferred == 1{
+					? ImplColl.recordUnavailable(ts, w, mname)
+					? TokStore.listAdd(ts, removeList, mt)
+					dropped = true
+				}
+				continue
+			}
+			if TokStore.typeParams(ts, mt) != TOK_NONE{
+				if TokStore.isStaticMethod(ts, mt) != 0{
+					throw "a 'static' method cannot declare its own residual type parameters yet"
+				}
+				if StrMap.has(ts, templates, mname){
+					throw "this impl block already has a method of this name"
+				}
+				if ifaceRow != TOK_NONE{
+					if StrMap.has(ts, Infos.rget(ts, ir, 8, ifaceRow, II_METHODS), mname){
+						throw "a residual-generic method cannot also be an interface method"
+					}
+				}
+				? StrMap.put(ts, templates, mname, mt)
+				? TokStore.listAdd(ts, removeList, mt)
+				continue
+			}
+			let isStatic = mut (TokStore.isStaticMethod(ts, mt) != 0)
+			if isStatic{
+				? Impls.forbidSelfReference(ts, mt, "a static method")
+			}
+			else{
+				let msub = mut TokStore.sub(ts, mt)
+				let pTok = mut TokStore.listGet(ts, msub, 1)
+				ImplColl.substituteSelfInPlace(ts, TokStore.childs(ts, pTok), concrete)
+				let ns = mut TokStore.listSize(ts, msub)
+				let rt = mut ? TypeAnn.sublist(ts, msub, 2, ns)
+				ImplColl.substituteSelfInPlace(ts, rt, concrete)
+			}
+			if ifaceRow == TOK_NONE{
+				let mdecos = mut TokStore.decorators(ts, mt)
+				? Dec.forbidMethodOnlyDecorators(ts, mdecos)
+			}
+			let fi = mut ? ImplColl.buildMethod(ts, cx, im, mt, safety, order, concrete, iface)
+			if fi == TOK_NONE{
+				let key = mut ? ImplColl.cat3(ts, concrete, ".", mname)
+				? ImplColl.recordUnavailable(ts, w, key)
+				? TokStore.listAdd(ts, removeList, mt)
+				dropped = true
+				continue
+			}
+			? ImplColl.registerImplMethod(ts, cx, im, fi, mt, ifaceRow != TOK_NONE)
+		}
+		if TokStore.listSize(ts, removeList) > 0{
+			let kept = mut ? TokStore.newList(ts)
+			for i in 0..nc{
+				let c = mut TokStore.listGet(ts, childs, i)
+				if ImplColl.listHas(ts, removeList, c) == false{
+					? TokStore.listAdd(ts, kept, c)
+				}
+			}
+			TokStore.setChilds(ts, t, kept)
+		}
+		let mMap = mut Infos.rget(ts, mr, 12, im, IM_METHODS)
+		let sMap = mut Infos.rget(ts, mr, 12, im, IM_STATIC_METHODS)
+		if ifaceRow != TOK_NONE{
+			let imeths = mut Infos.rget(ts, ir, 8, ifaceRow, II_METHODS)
+			let ikeys = mut TokStore.listGet(ts, imeths, 0)
+			let ivals = mut TokStore.listGet(ts, imeths, 1)
+			let nik = mut TokStore.listSize(ts, ikeys)
+			for i in 0..nik{
+				let ms = mut TokStore.listGet(ts, ivals, i)
+				let key = mut TokStore.listGet(ts, ikeys, i)
+				let implMap = mut mMap
+				if Infos.rget(ts, msr, 8, ms, MS_STATIC) != 0{
+					implMap = sMap
+				}
+				if StrMap.has(ts, implMap, key) == false{
+					if Infos.rget(ts, msr, 8, ms, MS_DEFAULT) != 0{
+						continue
+					}
+					throw "an impl of an interface is missing one of its methods"
+				}
+			}
+			for pass in 0..2{
+				let src = mut mMap
+				if pass == 1{
+					src = sMap
+				}
+				let keys = mut TokStore.listGet(ts, src, 0)
+				let vals = mut TokStore.listGet(ts, src, 1)
+				let nk = mut TokStore.listSize(ts, keys)
+				for i in 0..nk{
+					let key = mut TokStore.listGet(ts, keys, i)
+					let fi = mut TokStore.listGet(ts, vals, i)
+					if StrMap.has(ts, imeths, key) == false{
+						throw "an impl declares a method that is not part of the interface"
+					}
+					let ms = mut StrMap.get(ts, imeths, key)
+					let msStatic = mut Infos.rget(ts, msr, 8, ms, MS_STATIC)
+					if pass == 0 && msStatic != 0{
+						throw "an impl declares a method that is not part of the interface"
+					}
+					if pass == 1 && msStatic == 0{
+						throw "an impl declares a static method that is not part of the interface"
+					}
+					? ImplColl.validateExactSignatureMatch(ts, cx, ms, fi, concrete)
+					? ImplColl.validateOverridesRealizes(ts, cx, fi, ms)
+					? ImplColl.requireIdenticalLocks(ts, cx, fi, ms)
+					if Infos.fget(ts, fl, fi, FI_PUBLIC) == 0{
+						throw "a method implementing an interface must be '@pub'"
+					}
+				}
+			}
+			for i in 0..nik{
+				let ms = mut TokStore.listGet(ts, ivals, i)
+				let key = mut TokStore.listGet(ts, ikeys, i)
+				let implMap = mut mMap
+				if Infos.rget(ts, msr, 8, ms, MS_STATIC) != 0{
+					implMap = sMap
+				}
+				if StrMap.has(ts, implMap, key) == false{
+					if Infos.rget(ts, msr, 8, ms, MS_DEFAULT) != 0{
+						? ImplColl.materializeDefaultMethod(ts, cx, im, concrete, iface, ms, safety, order, t)
+					}
+				}
+			}
+		}
+		let tchilds = mut TokStore.childs(ts, t)
+		let ntc = mut TokStore.listSize(ts, tchilds)
+		if dropped && ntc == 0{
+			return
+		}
+		let ctorsOnly = mut false
+		if iface == TOK_NONE && ntc > 0{
+			ctorsOnly = true
+			for i in 0..ntc{
+				if TokStore.isConstructorDecl(ts, TokStore.listGet(ts, tchilds, i)) == 0{
+					ctorsOnly = false
+				}
+			}
+		}
+		if ctorsOnly{
+			return
+		}
+		let existingImpls = mut ? ImplColl.implList(ts, w, concrete)
+		let ne = mut TokStore.listSize(ts, existingImpls)
+		for i in 0..ne{
+			let ex = mut TokStore.listGet(ts, existingImpls, i)
+			let exIface = mut Infos.rget(ts, mr, 12, ex, IM_INTERFACE)
+			if iface == TOK_NONE && exIface == TOK_NONE{
+				throw "this type already has a bare 'impl' block"
+			}
+			if iface != TOK_NONE && exIface != TOK_NONE{
+				if TokStore.strsEq(ts, iface, exIface){
+					throw "this type already implements this interface"
+				}
+			}
+			for pass in 0..2{
+				let src = mut mMap
+				if pass == 1{
+					src = sMap
+				}
+				let keys = mut TokStore.listGet(ts, src, 0)
+				let vals = mut TokStore.listGet(ts, src, 1)
+				let nk = mut TokStore.listSize(ts, keys)
+				for q in 0..nk{
+					let mine = mut TokStore.listGet(ts, vals, q)
+					let mname2 = mut Infos.fget(ts, fl, mine, FI_NAME)
+					let cands = mut ? ImplColl.candidates(ts, mr, ex, mname2, pass)
+					let ncd = mut TokStore.listSize(ts, cands)
+					let tl = mut TokStore.listGet(ts, cx, CX_TL)
+					for z in 0..ncd{
+						let em = mut TokStore.listGet(ts, cands, z)
+						if Funcs.sameSignature(ts, tl, fl, em, mine){
+							throw "a method is ambiguous: two impls of this type declare the same name and parameter signature"
+						}
+					}
+				}
+			}
+		}
+		? TokStore.listAdd(ts, existingImpls, im)
+	}
+}

@@ -1,0 +1,464 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "Ty.caspien"
+
+/**
+ * Port of TypeCheckerExpressions.resolveExprType, first slice: literals, parentheses, `mut`/`imut`, unary minus, `atomic` and array literals,
+ * enough to type the initialiser of most globals. One explicit stack of (node, phase) pairs; a node's children are typed first (post-order) and their
+ * Ty rows wait on a value stack. typeOf returns the Ty row, or TOK_NONE for any construct (or error case) this slice does not cover yet.
+ * Literal values are decimal-text string ids in TY_LITVAL / the list in TY_LIT_ELEMS. Not yet done: the node.chk annotations (resolvedType, adaptLiteral retags).
+ */
+const XK_IND 0
+const XK_IMUT 1
+const XK_MUT 2
+const XK_U64 3
+const XK_S64 4
+const XK_STRING 5
+const XK_STATIC 6
+const XK_CHAR 7
+const XK_BOOL 8
+const XK_NULL 9
+const XK_F32 10
+const XK_NEG 11
+const XK_ZERO 12
+
+@pub
+struct Expr{@pub{
+}}
+
+@pub
+impl Expr{
+	@throws
+	static func consts(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let k = mut ? TokStore.newList(ts)
+		let a0 = mut ? TokStore.addLit(ts, "indeterminate")
+		? TokStore.listAdd(ts, k, a0)
+		let a1 = mut ? TokStore.addLit(ts, "imut")
+		? TokStore.listAdd(ts, k, a1)
+		let a2 = mut ? TokStore.addLit(ts, "mut")
+		? TokStore.listAdd(ts, k, a2)
+		let a3 = mut ? TokStore.addLit(ts, "u64")
+		? TokStore.listAdd(ts, k, a3)
+		let a4 = mut ? TokStore.addLit(ts, "s64")
+		? TokStore.listAdd(ts, k, a4)
+		let a5 = mut ? TokStore.addLit(ts, "string")
+		? TokStore.listAdd(ts, k, a5)
+		let a6 = mut ? TokStore.addLit(ts, "static")
+		? TokStore.listAdd(ts, k, a6)
+		let a7 = mut ? TokStore.addLit(ts, "char")
+		? TokStore.listAdd(ts, k, a7)
+		let a8 = mut ? TokStore.addLit(ts, "bool")
+		? TokStore.listAdd(ts, k, a8)
+		let a9 = mut ? TokStore.addLit(ts, "null")
+		? TokStore.listAdd(ts, k, a9)
+		let a10 = mut ? TokStore.addLit(ts, "f32")
+		? TokStore.listAdd(ts, k, a10)
+		let a11 = mut ? TokStore.addLit(ts, "-")
+		? TokStore.listAdd(ts, k, a11)
+		let a12 = mut ? TokStore.addLit(ts, "0")
+		? TokStore.listAdd(ts, k, a12)
+		return k
+	}
+
+	@pub
+	static func isIntBase(ts: ref imut TokStore, sid: mut u64) mut bool{
+		if TokStore.strEq(ts, sid, "u8") || TokStore.strEq(ts, sid, "u16") || TokStore.strEq(ts, sid, "u32") || TokStore.strEq(ts, sid, "u64"){
+			return true
+		}
+		if TokStore.strEq(ts, sid, "s8") || TokStore.strEq(ts, sid, "s16") || TokStore.strEq(ts, sid, "s32") || TokStore.strEq(ts, sid, "s64"){
+			return true
+		}
+		return false
+	}
+
+	@pub
+	static func isFloatBase(ts: ref imut TokStore, sid: mut u64) mut bool{
+		return TokStore.strEq(ts, sid, "f32") || TokStore.strEq(ts, sid, "f64")
+	}
+
+	/** Compares the digits of `a` from index `from` with the whole text `b`: 0 equal, 1 a > b, 2 a < b (no leading zeros assumed). */
+	static func cmpDec(ts: ref imut TokStore, a: mut u64, from: mut u64, b: mut u64) mut u64{
+		let la = mut (TokStore.strLen(ts, a) - from)
+		let lb = mut TokStore.strLen(ts, b)
+		if la > lb{
+			return 1
+		}
+		if la < lb{
+			return 2
+		}
+		for i in 0..la{
+			let ca = mut String.charCode(TokStore.strCh(ts, a, from + i))
+			let cb = mut String.charCode(TokStore.strCh(ts, b, i))
+			if ca > cb{
+				return 1
+			}
+			if ca < cb{
+				return 2
+			}
+		}
+		return 0
+	}
+
+	/** True when the decimal text `v` (optionally with a leading '-') fits s64. `lim` and `limNeg` are the texts of 9223372036854775807 and 9223372036854775808. */
+	static func fitsS64(ts: ref imut TokStore, v: mut u64, lim: mut u64, limNeg: mut u64) mut bool{
+		let n = mut TokStore.strLen(ts, v)
+		if n == 0{
+			return false
+		}
+		if TokStore.strCh(ts, v, 0) == '-'{
+			return Expr.cmpDec(ts, v, 1, limNeg) != 1
+		}
+		return Expr.cmpDec(ts, v, 0, lim) != 1
+	}
+
+	@pub
+	@throws
+	static func litTy(ts: ref mut TokStore, tl: mut u64, storage: mut u64, mutab: mut u64, base: mut u64) mut u64{
+		?catch(e){ throw e }
+		let t = mut ? Ty.make(ts, tl, storage, mutab, base, TOK_NONE)
+		return t
+	}
+
+	/** Types `root`; TOK_NONE = not covered by this slice. */
+	@pub
+	@throws
+	static func typeOf(ts: ref mut TokStore, tl: mut u64, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		let k = mut ? Expr.consts(ts)
+		let stN = mut ? TokStore.newList(ts)
+		let stP = mut ? TokStore.newList(ts)
+		let vals = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, stN, root)
+		? TokStore.listAdd(ts, stP, 0)
+		for lp in 0..1000000000{
+			if TokStore.listSize(ts, stN) == 0{
+				break
+			}
+			let node = mut TokStore.listPop(ts, stN)
+			let ph = mut TokStore.listPop(ts, stP)
+			let kind = mut TokStore.kind(ts, node)
+			if ph == 0{
+				if kind == TT_STRING{
+					let ty0 = mut ? Expr.litTy(ts, tl, TokStore.listGet(ts, k, XK_STATIC), TokStore.listGet(ts, k, XK_IMUT), TokStore.listGet(ts, k, XK_STRING))
+					let ty1 = mut ? Ty.withSome(ts, tl, ty0, 1)
+					? TokStore.listAdd(ts, vals, ty1)
+					continue
+				}
+				if kind == TT_CHAR{
+					let ty0 = mut ? Expr.litTy(ts, tl, TOK_NONE, TokStore.listGet(ts, k, XK_IND), TokStore.listGet(ts, k, XK_CHAR))
+					? TokStore.listAdd(ts, vals, ty0)
+					continue
+				}
+				if kind == TT_INTEGER{
+					let txt = mut TokStore.text(ts, node)
+					let tn = mut TokStore.strLen(ts, txt)
+					if tn > 20{
+						return TOK_NONE
+					}
+					let ty0 = mut ? Expr.litTy(ts, tl, TOK_NONE, TokStore.listGet(ts, k, XK_IND), TokStore.listGet(ts, k, XK_U64))
+					Ty.set(ts, tl, ty0, TY_LITVAL, txt)
+					? TokStore.listAdd(ts, vals, ty0)
+					continue
+				}
+				if kind == TT_FLOAT{
+					let ty0 = mut ? Expr.litTy(ts, tl, TOK_NONE, TokStore.listGet(ts, k, XK_IND), TokStore.listGet(ts, k, XK_F32))
+					Ty.set(ts, tl, ty0, TY_FLOAT_LIT, 1)
+					? TokStore.listAdd(ts, vals, ty0)
+					continue
+				}
+				if kind == TT_BOOL{
+					let ty0 = mut ? Expr.litTy(ts, tl, TOK_NONE, TokStore.listGet(ts, k, XK_IND), TokStore.listGet(ts, k, XK_BOOL))
+					? TokStore.listAdd(ts, vals, ty0)
+					continue
+				}
+				if kind == TT_NULL{
+					let ty0 = mut ? Expr.litTy(ts, tl, TOK_NONE, TOK_NONE, TokStore.listGet(ts, k, XK_NULL))
+					? TokStore.listAdd(ts, vals, ty0)
+					continue
+				}
+				if kind == TT_DELINEATOR && TokStore.textEq(ts, node, "("){
+					let cs = mut TokStore.childs(ts, node)
+					if TokStore.listSize(ts, cs) == 0{
+						return TOK_NONE
+					}
+					? TokStore.listAdd(ts, stN, node)
+					? TokStore.listAdd(ts, stP, 1)
+					? TokStore.listAdd(ts, stN, TokStore.listGet(ts, cs, 0))
+					? TokStore.listAdd(ts, stP, 0)
+					continue
+				}
+				if kind == TT_DELINEATOR && TokStore.textEq(ts, node, "["){
+					let cs = mut TokStore.childs(ts, node)
+					if TokStore.listSize(ts, cs) == 0{
+						return TOK_NONE
+					}
+					let elems = mut ? TokStore.newList(ts)
+					let work = mut ? TokStore.newList(ts)
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, cs, 0))
+					for lp2 in 0..1000000000{
+						if TokStore.listSize(ts, work) == 0{
+							break
+						}
+						let w = mut TokStore.listPop(ts, work)
+						if TokStore.kind(ts, w) == TT_OPERATOR && TokStore.textEq(ts, w, ",") && TokStore.unary(ts, w) == 0{
+							? TokStore.listAdd(ts, work, TokStore.right(ts, w))
+							? TokStore.listAdd(ts, work, TokStore.left(ts, w))
+						} else {
+							? TokStore.listAdd(ts, elems, w)
+						}
+					}
+					let ne = mut TokStore.listSize(ts, elems)
+					? TokStore.listAdd(ts, stN, node)
+					? TokStore.listAdd(ts, stP, 2 + ne)
+					for ri in 0..ne{
+						? TokStore.listAdd(ts, stN, TokStore.listGet(ts, elems, ne - 1 - ri))
+						? TokStore.listAdd(ts, stP, 0)
+					}
+					continue
+				}
+				if kind == TT_OPERATOR && TokStore.unary(ts, node) != 0{
+					if TokStore.textEq(ts, node, "mut") || TokStore.textEq(ts, node, "imut") || TokStore.textEq(ts, node, "atomic") || TokStore.textEq(ts, node, "-"){
+						let lf = mut TokStore.left(ts, node)
+						if lf == TOK_NONE{
+							return TOK_NONE
+						}
+						? TokStore.listAdd(ts, stN, node)
+						? TokStore.listAdd(ts, stP, 1)
+						? TokStore.listAdd(ts, stN, lf)
+						? TokStore.listAdd(ts, stP, 0)
+						continue
+					}
+				}
+				return TOK_NONE
+			}
+			if ph == 1{
+				if kind == TT_DELINEATOR{
+					continue
+				}
+				let operand = mut TokStore.listPop(ts, vals)
+				let r = mut ? Expr.unaryResult(ts, tl, k, node, operand)
+				if r == TOK_NONE{
+					return TOK_NONE
+				}
+				? TokStore.listAdd(ts, vals, r)
+				continue
+			}
+			let n = mut (ph - 2)
+			let nv = mut TokStore.listSize(ts, vals)
+			let base0 = mut (nv - n)
+			let ets = mut ? TokStore.newList(ts)
+			for ei in 0..n{
+				? TokStore.listAdd(ts, ets, TokStore.listGet(ts, vals, base0 + ei))
+			}
+			for pi in 0..n{
+				TokStore.listPop(ts, vals)
+			}
+			let ar = mut ? Expr.arrayResult(ts, tl, k, ets)
+			if ar == TOK_NONE{
+				return TOK_NONE
+			}
+			? TokStore.listAdd(ts, vals, ar)
+		}
+		if TokStore.listSize(ts, vals) != 1{
+			return TOK_NONE
+		}
+		return TokStore.listGet(ts, vals, 0)
+	}
+
+	/** `mut`/`imut`, unary minus and `atomic` applied to an already-typed operand; TOK_NONE = unsupported or an error case. */
+	@throws
+	static func unaryResult(ts: ref mut TokStore, tl: mut u64, k: mut u64, node: mut u64, operand: mut u64) mut u64{
+		?catch(e){ throw e }
+		if TokStore.textEq(ts, node, "mut") || TokStore.textEq(ts, node, "imut"){
+			let target = mut TokStore.listGet(ts, k, XK_MUT)
+			if TokStore.textEq(ts, node, "imut"){
+				target = TokStore.listGet(ts, k, XK_IMUT)
+			}
+			let cur = mut Ty.get(ts, tl, operand, TY_MUT)
+			if cur != TOK_NONE && TokStore.strEq(ts, cur, "imut") && TokStore.textEq(ts, node, "mut"){
+				return TOK_NONE
+			}
+			let r = mut ? Ty.withMutability(ts, tl, operand, target)
+			return r
+		}
+		if TokStore.textEq(ts, node, "atomic"){
+			if Ty.get(ts, tl, operand, TY_STORAGE) != TOK_NONE{
+				return TOK_NONE
+			}
+			let bs = mut Ty.get(ts, tl, operand, TY_BASE)
+			if Expr.isIntBase(ts, bs) == false && TokStore.strEq(ts, bs, "bool") == false && TokStore.strEq(ts, bs, "char") == false{
+				return TOK_NONE
+			}
+			let t0 = mut ? Expr.litTy(ts, tl, TOK_NONE, Ty.get(ts, tl, operand, TY_MUT), bs)
+			let t1 = mut ? Ty.withAtomic(ts, tl, t0, 1)
+			return t1
+		}
+		// unary minus
+		if Ty.get(ts, tl, operand, TY_STORAGE) != TOK_NONE{
+			return TOK_NONE
+		}
+		let bs = mut Ty.get(ts, tl, operand, TY_BASE)
+		let isInt = mut Expr.isIntBase(ts, bs)
+		if isInt == false && Expr.isFloatBase(ts, bs) == false{
+			return TOK_NONE
+		}
+		if Ty.get(ts, tl, operand, TY_FLOAT_STATES) != TOK_NONE{
+			return TOK_NONE
+		}
+		let rb = mut bs
+		if TokStore.strEq(ts, bs, "u64"){
+			rb = TokStore.listGet(ts, k, XK_S64)
+		}
+		if TokStore.strEq(ts, bs, "u32") || TokStore.strEq(ts, bs, "u16") || TokStore.strEq(ts, bs, "u8"){
+			return TOK_NONE
+		}
+		let neg = mut ? Expr.litTy(ts, tl, TOK_NONE, TokStore.listGet(ts, k, XK_IND), rb)
+		let lv = mut Ty.get(ts, tl, operand, TY_LITVAL)
+		if lv != TOK_NONE && TokStore.strEq(ts, bs, "u64"){
+			let nl = mut ? Expr.negText(ts, k, lv)
+			Ty.set(ts, tl, neg, TY_LITVAL, nl)
+		}
+		if Ty.get(ts, tl, operand, TY_FLOAT_LIT) != 0{
+			Ty.set(ts, tl, neg, TY_FLOAT_LIT, 1)
+		}
+		return neg
+	}
+
+	/** BigInteger.negate on a decimal text. */
+	@throws
+	static func negText(ts: ref mut TokStore, k: mut u64, v: mut u64) mut u64{
+		?catch(e){ throw e }
+		if TokStore.strEq(ts, v, "0"){
+			return v
+		}
+		let sb = mut TokStore.strBegin(ts)
+		if TokStore.strCh(ts, v, 0) == '-'{
+			let n = mut TokStore.strLen(ts, v)
+			for i in 1..n{
+				? TokStore.strPush(ts, TokStore.strCh(ts, v, i))
+			}
+		} else {
+			? TokStore.strPush(ts, '-')
+			? TokStore.strAppendId(ts, v)
+		}
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	/** The type of an array literal from its element types (list `ets`); TOK_NONE = unsupported or an error case. */
+	@throws
+	static func arrayResult(ts: ref mut TokStore, tl: mut u64, k: mut u64, ets: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, ets)
+		let established = mut TOK_NONE
+		let allInt = mut true
+		let anyNeg = mut false
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, ets, i)
+			let bs = mut Ty.get(ts, tl, t, TY_BASE)
+			if TokStore.strEq(ts, bs, "null"){
+				return TOK_NONE
+			}
+			if Ty.get(ts, tl, t, TY_STORAGE) != TOK_NONE{
+				return TOK_NONE
+			}
+			if established == TOK_NONE{
+				established = t
+			}
+			let lv = mut Ty.get(ts, tl, t, TY_LITVAL)
+			if lv == TOK_NONE{
+				allInt = false
+				if Expr.isIntBase(ts, bs){
+					return TOK_NONE
+				}
+			} else {
+				if TokStore.strCh(ts, lv, 0) == '-'{
+					anyNeg = true
+				}
+			}
+		}
+		if established == TOK_NONE{
+			return TOK_NONE
+		}
+		if allInt && anyNeg{
+			let lim = mut ? TokStore.addLit(ts, "9223372036854775807")
+			let limNeg = mut ? TokStore.addLit(ts, "9223372036854775808")
+			for i in 0..n{
+				let t = mut TokStore.listGet(ts, ets, i)
+				if TokStore.strEq(ts, Ty.get(ts, tl, t, TY_BASE), "s64") == false{
+					let lv = mut Ty.get(ts, tl, t, TY_LITVAL)
+					if Expr.fitsS64(ts, lv, lim, limNeg){
+						let rt = mut ? Expr.litTy(ts, tl, TOK_NONE, Ty.get(ts, tl, t, TY_MUT), TokStore.listGet(ts, k, XK_S64))
+						Ty.set(ts, tl, rt, TY_LITVAL, lv)
+						TokStore.listSet(ts, ets, i, rt)
+					}
+				}
+			}
+			established = TokStore.listGet(ts, ets, 0)
+		}
+		let eb = mut Ty.get(ts, tl, established, TY_BASE)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, ets, i)
+			if TokStore.strsEq(ts, Ty.get(ts, tl, t, TY_BASE), eb) == false{
+				return TOK_NONE
+			}
+		}
+		let arr = mut ? Ty.array(ts, tl, established, n)
+		let allLiteral = mut Expr.isIntBase(ts, eb)
+		for i in 0..n{
+			if Ty.get(ts, tl, TokStore.listGet(ts, ets, i), TY_LITVAL) == TOK_NONE{
+				allLiteral = false
+			}
+		}
+		if allLiteral{
+			let vl = mut ? TokStore.newList(ts)
+			for i in 0..n{
+				? TokStore.listAdd(ts, vl, Ty.get(ts, tl, TokStore.listGet(ts, ets, i), TY_LITVAL))
+			}
+			Ty.set(ts, tl, arr, TY_LIT_ELEMS, vl)
+		}
+		let bracket = mut false
+		let el = mut TokStore.strLen(ts, eb)
+		for bi in 1..el{
+			if TokStore.strCh(ts, eb, bi) == '['{
+				bracket = true
+			}
+		}
+		if allLiteral == false && bracket{
+			let nested = mut true
+			let flat = mut ? TokStore.newList(ts)
+			for i in 0..n{
+				let le = mut Ty.get(ts, tl, TokStore.listGet(ts, ets, i), TY_LIT_ELEMS)
+				if le == TOK_NONE{
+					nested = false
+				} else {
+					? TokStore.listAddAll(ts, flat, le)
+				}
+			}
+			if nested{
+				Ty.set(ts, tl, arr, TY_LIT_ELEMS, flat)
+			}
+			let nestedF = mut true
+			for i in 0..n{
+				if Ty.get(ts, tl, TokStore.listGet(ts, ets, i), TY_FLOAT_ARR_LIT) == 0{
+					nestedF = false
+				}
+			}
+			if nestedF{
+				Ty.set(ts, tl, arr, TY_FLOAT_ARR_LIT, 1)
+			}
+		}
+		let allFloat = mut Expr.isFloatBase(ts, eb)
+		for i in 0..n{
+			if Ty.get(ts, tl, TokStore.listGet(ts, ets, i), TY_FLOAT_LIT) == 0{
+				allFloat = false
+			}
+		}
+		if allFloat{
+			Ty.set(ts, tl, arr, TY_FLOAT_ARR_LIT, 1)
+		}
+		return arr
+	}
+}

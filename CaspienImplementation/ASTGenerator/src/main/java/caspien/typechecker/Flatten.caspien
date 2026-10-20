@@ -1,0 +1,257 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Ty.caspien"
+import "TypeAnn.caspien"
+
+/**
+ * Port of TypeCheckerDeclarations.flattenStruct / validateSwapMutexField / validateLockEnumClause.
+ * A struct's raw member lines are resolved to types (name -> Ty row in SI_MEMBERS, in declaration order); the swap member and the
+ * struct-level @lock(match self.X : ...) clause are validated. Error texts are shortened.
+ */
+@pub
+struct Flatten{@pub{
+}}
+
+@pub
+impl Flatten{
+	static func variantsHas(ts: ref imut TokStore, er: mut u64, enumRow: mut u64, v: mut u64) mut bool{
+		let vs = mut Infos.rget(ts, er, 8, enumRow, EI_VARIANTS)
+		let n = mut TokStore.listSize(ts, vs)
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, vs, i), v){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** The swap member of a "match @lock" target must be an enum with exactly the variants OPEN and CLOSED. */
+	@throws
+	static func validateSwapMutexField(ts: ref mut TokStore, cx: mut u64, er: mut u64, members: mut u64, fieldName: mut u64) void{
+		?catch(e){ throw e }
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let ft = mut StrMap.get(ts, members, fieldName)
+		let base = mut Ty.get(ts, tl, ft, TY_BASE)
+		let enums = mut World.get(ts, w, W_M_ENUMS)
+		if StrMap.has(ts, enums, base) == false{
+			throw "a 'swap' member must be an enum-typed atomic member"
+		}
+		let row = mut StrMap.get(ts, enums, base)
+		let vs = mut Infos.rget(ts, er, 8, row, EI_VARIANTS)
+		if TokStore.listSize(ts, vs) != 2{
+			throw "a swap-mutex enum must have exactly the two variants OPEN and CLOSED"
+		}
+		let o = mut ? TokStore.addLit(ts, "OPEN")
+		let c = mut ? TokStore.addLit(ts, "CLOSED")
+		if Flatten.variantsHas(ts, er, row, o) == false{
+			throw "a swap-mutex enum must have exactly the two variants OPEN and CLOSED"
+		}
+		if Flatten.variantsHas(ts, er, row, c) == false{
+			throw "a swap-mutex enum must have exactly the two variants OPEN and CLOSED"
+		}
+	}
+
+	/** "@lock(match self.x : X)": the field exists, is enum-typed, and every variant belongs to that enum. */
+	@pub
+	@throws
+	static func validateLockEnumClause(ts: ref imut TokStore, cx: mut u64, er: mut u64, d: mut u64, members: mut u64) void{
+		?catch(e){ throw e }
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let field = mut TokStore.dLockField(ts, d)
+		if StrMap.has(ts, members, field) == false{
+			throw "'@lock(match self.X : ...)' names a member the struct does not have"
+		}
+		let ft = mut StrMap.get(ts, members, field)
+		let base = mut Ty.get(ts, tl, ft, TY_BASE)
+		let enums = mut World.get(ts, w, W_M_ENUMS)
+		if StrMap.has(ts, enums, base) == false{
+			throw "'@lock(match self.X : ...)' needs an enum-typed member"
+		}
+		let row = mut StrMap.get(ts, enums, base)
+		let vars = mut TokStore.dLockVariants(ts, d)
+		let n = mut TokStore.listSize(ts, vars)
+		for i in 0..n{
+			if Flatten.variantsHas(ts, er, row, TokStore.listGet(ts, vars, i)) == false{
+				throw "the lock enum has no variant of this name"
+			}
+		}
+	}
+
+	@pub
+	@throws
+	static func flattenStruct(ts: ref mut TokStore, cx: mut u64, er: mut u64, name: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		if StrMap.has(ts, structs, name) == false{
+			return
+		}
+		let row = mut StrMap.get(ts, structs, name)
+		if Infos.sget(ts, sr, row, SI_FLATTENED) != 0{
+			return
+		}
+		let members = mut Infos.sget(ts, sr, row, SI_MEMBERS)
+		let pubm = mut Infos.sget(ts, sr, row, SI_PUBLIC_MEMBERS)
+		let mfile = mut Infos.sget(ts, sr, row, SI_MEMBER_FILE)
+		let lines = mut Infos.sget(ts, sr, row, SI_RAW_LINES)
+		let swapField = mut TOK_NONE
+		let nl = mut TokStore.listSize(ts, lines)
+		for i in 0..nl{
+			let ml = mut TokStore.listGet(ts, lines, i)
+			let kids = mut TokStore.childs(ts, ml)
+			let linePublic = mut 0
+			if TokStore.listSize(ts, kids) > 0{
+				if TokStore.isPubBlockMember(ts, TokStore.listGet(ts, kids, 0)) != 0{
+					linePublic = 1
+				}
+			}
+			let acc = mut ? TokStore.newList(ts)
+			? TypeAnn.parseNameTypeGroups(ts, cx, kids, 1, acc)
+			let na = mut (TokStore.listSize(ts, acc) / 3)
+			for j in 0..na{
+				let mname = mut TokStore.listGet(ts, acc, j * 3)
+				if StrMap.has(ts, members, mname){
+					throw "the struct already has a member of this name"
+				}
+				? StrMap.put(ts, members, mname, TokStore.listGet(ts, acc, j * 3 + 1))
+				if linePublic == 1{
+					? StrMap.put(ts, pubm, mname, 1)
+				}
+				? StrMap.put(ts, mfile, mname, TokStore.fileId(ts, ml))
+				if TokStore.listGet(ts, acc, j * 3 + 2) != 0{
+					if swapField != TOK_NONE{
+						throw "a struct can have at most one 'swap'-tagged member"
+					}
+					swapField = mname
+				}
+			}
+		}
+		if swapField != TOK_NONE{
+			? Flatten.validateSwapMutexField(ts, cx, er, members, swapField)
+			Infos.sset(ts, sr, row, SI_SWAP_FIELD, swapField)
+		}
+		let decl = mut Infos.sget(ts, sr, row, SI_DECL_TOK)
+		let decos = mut TokStore.decorators(ts, decl)
+		let lockDeco = mut TOK_NONE
+		let nd = mut TokStore.listSize(ts, decos)
+		for k in 0..nd{
+			let d = mut TokStore.listGet(ts, decos, k)
+			if lockDeco == TOK_NONE{
+				if TokStore.strEq(ts, TokStore.dName(ts, d), "lock"){
+					if TokStore.dLockField(ts, d) != TOK_NONE{
+						lockDeco = d
+					}
+				}
+			}
+		}
+		if lockDeco != TOK_NONE{
+			? Flatten.validateLockEnumClause(ts, cx, er, lockDeco, members)
+			let mkeys = mut TokStore.listGet(ts, members, 0)
+			let lf = mut TokStore.dLockField(ts, lockDeco)
+			if TokStore.listSize(ts, mkeys) > 0{
+				if TokStore.strsEq(ts, TokStore.listGet(ts, mkeys, 0), lf) == false{
+					throw "the @lock field must be the struct's first member"
+				}
+			}
+			Infos.sset(ts, sr, row, SI_LOCK_FIELD, lf)
+			Infos.sset(ts, sr, row, SI_LOCK_VARIANTS, TokStore.dLockVariants(ts, lockDeco))
+			if swapField != TOK_NONE{
+				if TokStore.strsEq(ts, swapField, lf) == false{
+					throw "a swap member plus a struct-level @lock must name the same field"
+				}
+			}
+		}
+		Infos.sset(ts, sr, row, SI_FLATTENED, 1)
+	}
+
+	/** Copies every method of StrMap `src` into `dst`; throws on a name already in `dst`. */
+	@throws
+	static func mergeMethods(ts: ref mut TokStore, dst: mut u64, src: mut u64) void{
+		?catch(e){ throw e }
+		let keys = mut TokStore.listGet(ts, src, 0)
+		let vals = mut TokStore.listGet(ts, src, 1)
+		let n = mut TokStore.listSize(ts, keys)
+		for i in 0..n{
+			let k = mut TokStore.listGet(ts, keys, i)
+			if StrMap.has(ts, dst, k){
+				throw "an interface gets the same method name from more than one source"
+			}
+			? StrMap.put(ts, dst, k, TokStore.listGet(ts, vals, i))
+		}
+	}
+
+	/** Merges extended interfaces' methods (parents first, in `extends` order) and then the interface's own; no recursion (frame stack). */
+	@pub
+	@throws
+	static func flattenInterface(ts: ref mut TokStore, w: mut u64, ir: mut u64, rootName: mut u64) void{
+		?catch(e){ throw e }
+		let ifaces = mut World.get(ts, w, W_M_IFACES)
+		let visiting = mut ? StrMap.make(ts)
+		let stk = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, stk, rootName)
+		? TokStore.listAdd(ts, stk, TOK_NONE)
+		? TokStore.listAdd(ts, stk, TOK_NONE)
+		for lp in 0..1000000000{
+			let sz = mut TokStore.listSize(ts, stk)
+			if sz == 0{
+				break
+			}
+			let b = mut (sz - 3)
+			let name = mut TokStore.listGet(ts, stk, b)
+			let hasInfo = mut StrMap.has(ts, ifaces, name)
+			let row = mut StrMap.get(ts, ifaces, name)
+			if TokStore.listGet(ts, stk, b + 1) == TOK_NONE{
+				if hasInfo == false{
+					TokStore.listPop(ts, stk)
+					TokStore.listPop(ts, stk)
+					TokStore.listPop(ts, stk)
+					continue
+				}
+				if Infos.rget(ts, ir, 8, row, II_FLATTENED) != 0{
+					TokStore.listPop(ts, stk)
+					TokStore.listPop(ts, stk)
+					TokStore.listPop(ts, stk)
+					continue
+				}
+				if StrMap.get(ts, visiting, name) == 1{
+					throw "circular inheritance among interfaces"
+				}
+				? StrMap.put(ts, visiting, name, 1)
+				TokStore.listSet(ts, stk, b + 1, 0)
+			}
+			let methods = mut Infos.rget(ts, ir, 8, row, II_METHODS)
+			let pending = mut TokStore.listGet(ts, stk, b + 2)
+			if pending != TOK_NONE{
+				let prow = mut StrMap.get(ts, ifaces, pending)
+				TokStore.listSet(ts, stk, b + 2, TOK_NONE)
+				? Flatten.mergeMethods(ts, methods, Infos.rget(ts, ir, 8, prow, II_METHODS))
+			}
+			let parents = mut Infos.rget(ts, ir, 8, row, II_EXTENDS)
+			let pi = mut TokStore.listGet(ts, stk, b + 1)
+			if pi < TokStore.listSize(ts, parents){
+				let pn = mut TokStore.listGet(ts, parents, pi)
+				if StrMap.has(ts, ifaces, pn) == false{
+					throw "an extended name is not a known interface"
+				}
+				TokStore.listSet(ts, stk, b + 1, pi + 1)
+				TokStore.listSet(ts, stk, b + 2, pn)
+				? TokStore.listAdd(ts, stk, pn)
+				? TokStore.listAdd(ts, stk, TOK_NONE)
+				? TokStore.listAdd(ts, stk, TOK_NONE)
+				continue
+			}
+			? Flatten.mergeMethods(ts, methods, Infos.rget(ts, ir, 8, row, II_OWN_METHODS))
+			Infos.rset(ts, ir, 8, row, II_FLATTENED, 1)
+			? StrMap.put(ts, visiting, name, 0)
+			TokStore.listPop(ts, stk)
+			TokStore.listPop(ts, stk)
+			TokStore.listPop(ts, stk)
+		}
+	}
+}

@@ -1,0 +1,642 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Dec.caspien"
+import "Ty.caspien"
+import "../token/TokenType.caspien"
+
+/**
+ * First collection passes of TypeCheckerDeclarations: registerStructLike, registerAlias, registerConst, registerLibraryName.
+ * `t` is the declaration token; its name is the text of sub[0]. Registries live in the World `w`; records are rows of the matching row list.
+ * Error texts are shortened (names are not repeated, since a Caspien `throw` takes a literal).
+ */
+@pub
+struct Collect{@pub{
+}}
+
+@pub
+impl Collect{
+	/** The declared name (string id): the text of the first sub token. */
+	@pub
+	static func declName(ts: ref imut TokStore, t: mut u64) mut u64{
+		return TokStore.text(ts, TokStore.listGet(ts, TokStore.sub(ts, t), 0))
+	}
+
+	/** A StrMap set holding the given decorator names. */
+	@throws
+	static func nameSet4(ts: ref mut TokStore, a: static imut string, b: static imut string, c: static imut string, d: static imut string) mut u64{
+		?catch(e){ throw e }
+		let m = mut ? StrMap.make(ts)
+		let sa = mut ? TokStore.addLit(ts, a)
+		? StrMap.put(ts, m, sa, 1)
+		let sb = mut ? TokStore.addLit(ts, b)
+		? StrMap.put(ts, m, sb, 1)
+		let sc = mut ? TokStore.addLit(ts, c)
+		? StrMap.put(ts, m, sc, 1)
+		let sd = mut ? TokStore.addLit(ts, d)
+		? StrMap.put(ts, m, sd, 1)
+		return m
+	}
+
+	@pub
+	@throws
+	static func pubOnly(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let m = mut ? StrMap.make(ts)
+		let sa = mut ? TokStore.addLit(ts, "pub")
+		? StrMap.put(ts, m, sa, 1)
+		return m
+	}
+
+	@pub
+	@throws
+	static func registerStructLike(ts: ref mut TokStore, w: mut u64, sr: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut Collect.declName(ts, t)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){
+			throw "a struct, enum, interface or library of this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "a struct, enum, interface or library of this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name){
+			throw "a struct, enum, interface or library of this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_LIBS), name){
+			throw "a struct, enum, interface or library of this name is already declared"
+		}
+		let decos = mut TokStore.decorators(ts, t)
+		let allowed = mut ? Collect.nameSet4(ts, "unpadded", "untyped", "pub", "lock")
+		? Dec.validateDecorators(ts, decos, allowed)
+		if Dec.getDecorator(ts, decos, "unpadded") != TOK_NONE{
+			throw "'@unpadded' is not supported yet -- every struct is compiler-padded to its own natural alignment"
+		}
+		let row = mut ? Infos.makeStruct(ts, sr, name)
+		if Dec.getDecorator(ts, decos, "pub") != TOK_NONE{
+			Infos.sset(ts, sr, row, SI_PUBLIC, 1)
+		}
+		let impls = mut TokStore.implementsNames(ts, t)
+		if impls != TOK_NONE{
+			Infos.sset(ts, sr, row, SI_IMPLEMENTS, impls)
+		}
+		Infos.sset(ts, sr, row, SI_RAW_LINES, TokStore.childs(ts, t))
+		Infos.sset(ts, sr, row, SI_DECL_TOK, t)
+		? StrMap.put(ts, World.get(ts, w, W_M_STRUCTS), name, row)
+		? TokStore.listAdd(ts, World.get(ts, w, W_L_STRUCT_ORDER), name)
+	}
+
+	/** "type NAME = ...": records the raw target tokens (sub[1..]) under the name. */
+	@pub
+	@throws
+	static func registerAlias(ts: ref mut TokStore, w: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut Collect.declName(ts, t)
+		if StrMap.has(ts, World.get(ts, w, W_M_ALIAS_RAW_TARGETS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_LIBS), name){
+			throw "this name is already declared"
+		}
+		let sub = mut TokStore.sub(ts, t)
+		let rest = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, sub)
+		for i in 1..n{
+			? TokStore.listAdd(ts, rest, TokStore.listGet(ts, sub, i))
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_ALIAS_RAW_TARGETS), name, rest)
+	}
+
+	/** "const NAME EXPR": records the raw expression token (childs[0]); evaluated lazily later. */
+	@pub
+	@throws
+	static func registerConst(ts: ref mut TokStore, w: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut Collect.declName(ts, t)
+		if StrMap.has(ts, World.get(ts, w, W_M_CONST_EXPRS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ALIAS_RAW_TARGETS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_LIBS), name){
+			throw "this name is already declared"
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_CONST_EXPRS), name, TokStore.listGet(ts, TokStore.childs(ts, t), 0))
+	}
+
+	/** Raw registration of a library name; its functions are built later. */
+	@pub
+	@throws
+	static func registerLibraryName(ts: ref mut TokStore, w: mut u64, lr: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut Collect.declName(ts, t)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_LIBS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ALIAS_RAW_TARGETS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_CONST_EXPRS), name){
+			throw "this name is already declared"
+		}
+		let decos = mut TokStore.decorators(ts, t)
+		let allowed = mut ? Collect.pubOnly(ts)
+		? Dec.validateDecorators(ts, decos, allowed)
+		let row = mut ? Infos.makeLibrary(ts, lr, name)
+		Infos.rset(ts, lr, 8, row, LI_DECL_TOK, t)
+		if Dec.getDecorator(ts, decos, "pub") != TOK_NONE{
+			Infos.rset(ts, lr, 8, row, LI_PUBLIC, 1)
+		}
+		let ext = mut TokStore.extendsNames(ts, t)
+		if ext != TOK_NONE{
+			Infos.rset(ts, lr, 8, row, LI_EXTENDS, ext)
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_LIBS), name, row)
+	}
+
+	/** "enum Name{...}": variants, the non_exhaustive flag, and explicit u64 values or ranges (never mixed, no duplicates). */
+	@pub
+	@throws
+	static func collectEnum(ts: ref mut TokStore, w: mut u64, er: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut Collect.declName(ts, t)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "this name is already declared"
+		}
+		let decos = mut TokStore.decorators(ts, t)
+		let ne = mut ? TokStore.addLit(ts, "non_exhaustive")
+		let allowed = mut ? StrMap.make(ts)
+		? StrMap.put(ts, allowed, ne, 1)
+		? Dec.validateDecorators(ts, decos, allowed)
+		let row = mut ? Infos.makeEnum(ts, er, name)
+		if Dec.getDecorator(ts, decos, "non_exhaustive") != TOK_NONE{
+			Infos.rset(ts, er, 8, row, EI_NON_EXHAUSTIVE, 1)
+		}
+		let vars = mut Infos.rget(ts, er, 8, row, EI_VARIANTS)
+		let seenNames = mut ? StrMap.make(ts)
+		let childs = mut TokStore.childs(ts, t)
+		let n = mut TokStore.listSize(ts, childs)
+		let valueCount = mut 0
+		let rangeCount = mut 0
+		for i in 0..n{
+			let v = mut TokStore.listGet(ts, childs, i)
+			let vt = mut TokStore.text(ts, v)
+			if StrMap.has(ts, seenNames, vt){
+				throw "enum has two variants with the same name"
+			}
+			? StrMap.put(ts, seenNames, vt, 1)
+			? TokStore.listAdd(ts, vars, vt)
+			if TokStore.hasEnumValue(ts, v) != 0{
+				valueCount = valueCount + 1
+			}
+			if TokStore.hasRangeStart(ts, v) != 0{
+				rangeCount = rangeCount + 1
+			}
+		}
+		if valueCount > 0{
+			if rangeCount > 0{
+				throw "enum mixes u64-valued and range-valued variants"
+			}
+		}
+		if valueCount != 0{
+			if valueCount != n{
+				throw "enum mixes explicit and default variant values"
+			}
+		}
+		if rangeCount != 0{
+			if rangeCount != n{
+				throw "enum mixes explicit and default variant ranges"
+			}
+		}
+		if valueCount > 0{
+			let vals = mut ? TokStore.newList(ts)
+			let seen = mut ? StrMap.make(ts)
+			for i in 0..n{
+				let v = mut TokStore.listGet(ts, childs, i)
+				let ev = mut TokStore.enumValue(ts, v)
+				let key = mut ? Ty.u64Text(ts, ev)
+				if StrMap.has(ts, seen, key){
+					throw "enum has two variants both explicitly valued the same"
+				}
+				? StrMap.put(ts, seen, key, 1)
+				? TokStore.listAdd(ts, vals, ev)
+			}
+			Infos.rset(ts, er, 8, row, EI_VALUES, vals)
+		}
+		if rangeCount > 0{
+			let starts = mut ? TokStore.newList(ts)
+			let ends = mut ? TokStore.newList(ts)
+			let seen = mut ? StrMap.make(ts)
+			for i in 0..n{
+				let v = mut TokStore.listGet(ts, childs, i)
+				let rs = mut TokStore.rangeStart(ts, v)
+				let re = mut TokStore.rangeEnd(ts, v)
+				if rs > re{
+					throw "enum variant has a range whose start is after its end"
+				}
+				let a = mut ? Ty.u64Text(ts, rs)
+				let dots = mut ? TokStore.addLit(ts, "..")
+				let b = mut ? Ty.u64Text(ts, re)
+				let sb = mut TokStore.strBegin(ts)
+				? TokStore.strAppendId(ts, a)
+				? TokStore.strAppendId(ts, dots)
+				? TokStore.strAppendId(ts, b)
+				let key = mut ? TokStore.strEnd(ts, sb)
+				if StrMap.has(ts, seen, key){
+					throw "enum has two variants both explicitly valued the identical range"
+				}
+				? StrMap.put(ts, seen, key, 1)
+				? TokStore.listAdd(ts, starts, rs)
+				? TokStore.listAdd(ts, ends, re)
+			}
+			Infos.rset(ts, er, 8, row, EI_RANGE_STARTS, starts)
+			Infos.rset(ts, er, 8, row, EI_RANGE_ENDS, ends)
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_ENUMS), name, row)
+	}
+
+	/** Throws if any token in the method's signature or body (iteratively) is the variable 'self'. */
+	@pub
+	@throws
+	static func forbidSelfReference(ts: ref mut TokStore, methodTok: mut u64) void{
+		?catch(e){ throw e }
+		let work = mut ? TokStore.newList(ts)
+		let sub = mut TokStore.sub(ts, methodTok)
+		if sub != TOK_NONE{
+			let n = mut TokStore.listSize(ts, sub)
+			for i in 0..n{
+				? TokStore.listAdd(ts, work, TokStore.listGet(ts, sub, n - 1 - i))
+			}
+		}
+		let ch = mut TokStore.childs(ts, methodTok)
+		if ch != TOK_NONE{
+			let n2 = mut TokStore.listSize(ts, ch)
+			for i in 0..n2{
+				? TokStore.listAdd(ts, work, TokStore.listGet(ts, ch, n2 - 1 - i))
+			}
+		}
+		for lp in 0..1000000000{
+			if TokStore.listSize(ts, work) == 0{
+				break
+			}
+			let node = mut TokStore.listPop(ts, work)
+			if node == TOK_NONE{
+				continue
+			}
+			if TokStore.kind(ts, node) == TT_VARREF{
+				if TokStore.strEq(ts, TokStore.text(ts, node), "self"){
+					throw "a static or '@default' interface method cannot reference 'self' anywhere in its signature or body"
+				}
+			}
+			let ns = mut TokStore.sub(ts, node)
+			if ns != TOK_NONE{
+				let m = mut TokStore.listSize(ts, ns)
+				for i in 0..m{
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, ns, m - 1 - i))
+				}
+			}
+			let nc = mut TokStore.childs(ts, node)
+			if nc != TOK_NONE{
+				let m2 = mut TokStore.listSize(ts, nc)
+				for i in 0..m2{
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, nc, m2 - 1 - i))
+				}
+			}
+			? TokStore.listAdd(ts, work, TokStore.next(ts, node))
+			? TokStore.listAdd(ts, work, TokStore.right(ts, node))
+			? TokStore.listAdd(ts, work, TokStore.left(ts, node))
+		}
+	}
+
+	/** "interface Name{...}": own method signatures stay raw (self is not concrete yet). validateSelfIsPointer and the func-decorator arg-shape check are not ported yet. */
+	@pub
+	@throws
+	static func registerInterface(ts: ref mut TokStore, w: mut u64, ir: mut u64, mr: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let name = mut Collect.declName(ts, t)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name){
+			throw "this name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_LIBS), name){
+			throw "this name is already declared"
+		}
+		let decos = mut TokStore.decorators(ts, t)
+		let allowed = mut ? Collect.pubOnly(ts)
+		? Dec.validateDecorators(ts, decos, allowed)
+		let row = mut ? Infos.makeInterface(ts, ir, name)
+		Infos.rset(ts, ir, 8, row, II_DECL_TOK, t)
+		if Dec.getDecorator(ts, decos, "pub") != TOK_NONE{
+			Infos.rset(ts, ir, 8, row, II_PUBLIC, 1)
+		}
+		let ext = mut TokStore.extendsNames(ts, t)
+		if ext != TOK_NONE{
+			Infos.rset(ts, ir, 8, row, II_EXTENDS, ext)
+		}
+		let own = mut ? StrMap.make(ts)
+		Infos.rset(ts, ir, 8, row, II_OWN_METHODS, own)
+		let childs = mut TokStore.childs(ts, t)
+		let n = mut TokStore.listSize(ts, childs)
+		for i in 0..n{
+			let m = mut TokStore.listGet(ts, childs, i)
+			let isDefault = mut TokStore.strEq(ts, TokStore.text(ts, m), "func")
+			let mdecos = mut TokStore.decorators(ts, m)
+			let hasDefaultDeco = mut (Dec.getDecorator(ts, mdecos, "default") != TOK_NONE)
+			if isDefault{
+				if hasDefaultDeco == false{
+					throw "a method with a body inside an interface must be labelled '@default'"
+				}
+			}
+			if isDefault == false{
+				if hasDefaultDeco{
+					throw "'@default' requires a method body"
+				}
+			}
+			if Dec.getDecorator(ts, mdecos, "overrides") != TOK_NONE{
+				throw "'@overrides' decorates an impl's method, not an interface's own declaration"
+			}
+			if Dec.getDecorator(ts, mdecos, "realizes") != TOK_NONE{
+				throw "'@realizes' decorates an impl's method, not an interface's own declaration"
+			}
+			let isStatic = mut TokStore.isStaticMethod(ts, m)
+			if isStatic != 0{
+				? Collect.forbidSelfReference(ts, m)
+			}
+			if isStatic == 0{
+				if isDefault{
+					? Collect.forbidSelfReference(ts, m)
+				}
+			}
+			let msub = mut TokStore.sub(ts, m)
+			let nameTok = mut TokStore.listGet(ts, msub, 0)
+			let mname = mut TokStore.text(ts, nameTok)
+			if StrMap.has(ts, own, mname){
+				throw "interface already declares a method of this name"
+			}
+			let sig = mut ? Infos.newRow(ts, mr, 8)
+			let rets = mut ? TokStore.newList(ts)
+			let sn = mut TokStore.listSize(ts, msub)
+			for j in 2..sn{
+				? TokStore.listAdd(ts, rets, TokStore.listGet(ts, msub, j))
+			}
+			Infos.rset(ts, mr, 8, sig, MS_NAME_TOK, nameTok)
+			Infos.rset(ts, mr, 8, sig, MS_PARAMS_TOK, TokStore.listGet(ts, msub, 1))
+			Infos.rset(ts, mr, 8, sig, MS_RETURN, rets)
+			Infos.rset(ts, mr, 8, sig, MS_DEFAULT, 0)
+			if isDefault{
+				Infos.rset(ts, mr, 8, sig, MS_DEFAULT, 1)
+				Infos.rset(ts, mr, 8, sig, MS_BODY, m)
+			}
+			Infos.rset(ts, mr, 8, sig, MS_DECOS, mdecos)
+			Infos.rset(ts, mr, 8, sig, MS_STATIC, isStatic)
+			? StrMap.put(ts, own, mname, sig)
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_IFACES), name, row)
+	}
+
+	/**
+	 * Flattens root lines through unsafe/safe wrappers. Appends each declaration line to `outLines` and its safety text ("indeterminate"/"unsafe"/"safe", a string id) to `outSafety`.
+	 * An 'unsafe' nested inside 'safe' throws.
+	 */
+	@pub
+	@throws
+	static func flattenRootLines(ts: ref mut TokStore, lines: mut u64, outLines: mut u64, outSafety: mut u64) void{
+		?catch(e){ throw e }
+		let ind = mut ? TokStore.addLit(ts, "indeterminate")
+		let safeS = mut ? TokStore.addLit(ts, "safe")
+		let stLists = mut ? TokStore.newList(ts)
+		let stIdx = mut ? TokStore.newList(ts)
+		let stSafe = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, stLists, lines)
+		? TokStore.listAdd(ts, stIdx, 0)
+		? TokStore.listAdd(ts, stSafe, ind)
+		for lp in 0..1000000000{
+			let depth = mut TokStore.listSize(ts, stLists)
+			if depth == 0{
+				break
+			}
+			let top = mut (depth - 1)
+			let cur = mut TokStore.listGet(ts, stLists, top)
+			let i = mut TokStore.listGet(ts, stIdx, top)
+			let safety = mut TokStore.listGet(ts, stSafe, top)
+			if i >= TokStore.listSize(ts, cur){
+				let d1 = mut TokStore.listPop(ts, stLists)
+				let d2 = mut TokStore.listPop(ts, stIdx)
+				let d3 = mut TokStore.listPop(ts, stSafe)
+				continue
+			}
+			TokStore.listSet(ts, stIdx, top, i + 1)
+			let lineTok = mut TokStore.listGet(ts, cur, i)
+			let t = mut TokStore.listGet(ts, TokStore.childs(ts, lineTok), 0)
+			let isWrap = mut false
+			if TokStore.kind(ts, t) == TT_KEYWORD{
+				if TokStore.strEq(ts, TokStore.text(ts, t), "unsafe"){
+					isWrap = true
+				}
+				if TokStore.strEq(ts, TokStore.text(ts, t), "safe"){
+					isWrap = true
+				}
+			}
+			if isWrap{
+				if TokStore.strEq(ts, TokStore.text(ts, t), "unsafe"){
+					if TokStore.strsEq(ts, safety, safeS){
+						throw "'unsafe' cannot be nested inside 'safe'"
+					}
+				}
+				? TokStore.listAdd(ts, stLists, TokStore.childs(ts, t))
+				? TokStore.listAdd(ts, stIdx, 0)
+				? TokStore.listAdd(ts, stSafe, TokStore.text(ts, t))
+			} else {
+				? TokStore.listAdd(ts, outLines, lineTok)
+				? TokStore.listAdd(ts, outSafety, safety)
+			}
+		}
+	}
+
+	/** The `=` token when the line is a global "let ... = ...", else TOK_NONE. */
+	@pub
+	static func globalLetAssignOf(ts: ref imut TokStore, lineTok: mut u64) mut u64{
+		let t = mut TokStore.listGet(ts, TokStore.childs(ts, lineTok), 0)
+		if TokStore.kind(ts, t) != TT_OPERATOR{
+			return TOK_NONE
+		}
+		if TokStore.strEq(ts, TokStore.text(ts, t), "=") == false{
+			return TOK_NONE
+		}
+		let l = mut TokStore.left(ts, t)
+		if l == TOK_NONE{
+			return TOK_NONE
+		}
+		if TokStore.kind(ts, l) != TT_KEYWORD{
+			return TOK_NONE
+		}
+		if TokStore.strEq(ts, TokStore.text(ts, l), "let"){
+			return t
+		}
+		return TOK_NONE
+	}
+
+	/** The single token of a top-level line; throws unless it is a declaration keyword or a bare variable reference (an ASM invocation). */
+	@pub
+	@throws
+	static func requireTopLevelDecl(ts: ref mut TokStore, lineTok: mut u64) mut u64{
+		?catch(e){ throw e }
+		let ch = mut TokStore.childs(ts, lineTok)
+		if TokStore.listSize(ts, ch) != 1{
+			throw "only declarations (struct, enum, interface, impl, library, func, type, const, extern, export, ASM) are allowed at the top level"
+		}
+		let t = mut TokStore.listGet(ts, ch, 0)
+		if TokStore.kind(ts, t) == TT_VARREF{
+			return t
+		}
+		if TokStore.kind(ts, t) != TT_KEYWORD{
+			throw "only declarations (struct, enum, interface, impl, library, func, type, const, extern, export, ASM) are allowed at the top level"
+		}
+		let tx = mut TokStore.text(ts, t)
+		let ok = mut false
+		if TokStore.strEq(ts, tx, "struct"){ ok = true }
+		if TokStore.strEq(ts, tx, "enum"){ ok = true }
+		if TokStore.strEq(ts, tx, "func"){ ok = true }
+		if TokStore.strEq(ts, tx, "interface"){ ok = true }
+		if TokStore.strEq(ts, tx, "impl"){ ok = true }
+		if TokStore.strEq(ts, tx, "impl_default_lock_match"){ ok = true }
+		if TokStore.strEq(ts, tx, "library"){ ok = true }
+		if TokStore.strEq(ts, tx, "type"){ ok = true }
+		if TokStore.strEq(ts, tx, "extern"){ ok = true }
+		if TokStore.strEq(ts, tx, "export"){ ok = true }
+		if TokStore.strEq(ts, tx, "ASM"){ ok = true }
+		if TokStore.strEq(ts, tx, "const"){ ok = true }
+		if ok == false{
+			throw "only declarations (struct, enum, interface, impl, library, func, type, const, extern, export, ASM) are allowed at the top level"
+		}
+		return t
+	}
+
+	/**
+	 * Pass 1a of collectDeclarations: registers structs, enums, interfaces, libraries, aliases and consts (raw) from the flattened root lines.
+	 * `sr` struct rows, `er` enum rows, `ir`/`mr` interface and method-signature rows, `lr` library rows.
+	 */
+	@pub
+	@throws
+	static func pass1a(ts: ref mut TokStore, w: mut u64, sr: mut u64, er: mut u64, ir: mut u64, mr: mut u64, lr: mut u64, flatLines: mut u64) void{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, flatLines)
+		for i in 0..n{
+			let lineTok = mut TokStore.listGet(ts, flatLines, i)
+			if Collect.globalLetAssignOf(ts, lineTok) != TOK_NONE{
+				continue
+			}
+			let t = mut ? Collect.requireTopLevelDecl(ts, lineTok)
+			let tx = mut TokStore.text(ts, t)
+			if TokStore.strEq(ts, tx, "struct"){
+				? Collect.registerStructLike(ts, w, sr, t)
+			}
+			if TokStore.strEq(ts, tx, "enum"){
+				? Collect.collectEnum(ts, w, er, t)
+			}
+			if TokStore.strEq(ts, tx, "interface"){
+				? Collect.registerInterface(ts, w, ir, mr, t)
+			}
+			if TokStore.strEq(ts, tx, "library"){
+				? Collect.registerLibraryName(ts, w, lr, t)
+			}
+			if TokStore.strEq(ts, tx, "type"){
+				? Collect.registerAlias(ts, w, t)
+			}
+			if TokStore.strEq(ts, tx, "const"){
+				? Collect.registerConst(ts, w, t)
+			}
+		}
+	}
+
+	/** 1 if string `a` sorts before string `b` (char-by-char, shorter prefix first). */
+	@pub
+	static func sidLess(ts: ref imut TokStore, a: mut u64, b: mut u64) mut u64{
+		let la = mut TokStore.strLen(ts, a)
+		let lb = mut TokStore.strLen(ts, b)
+		let m = mut la
+		if lb < la{
+			m = lb
+		}
+		for i in 0..m{
+			let ca = mut TokStore.strCh(ts, a, i)
+			let cb = mut TokStore.strCh(ts, b, i)
+			if ca != cb{
+				if ca < cb{
+					return 1
+				}
+				return 0
+			}
+		}
+		if la < lb{
+			return 1
+		}
+		return 0
+	}
+
+	/** The keys of a StrMap in sorted order, as a new list of string ids. */
+	@pub
+	@throws
+	static func sortedKeys(ts: ref mut TokStore, m: mut u64) mut u64{
+		?catch(e){ throw e }
+		let keys = mut TokStore.listGet(ts, m, 0)
+		let out = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, keys)
+		for i in 0..n{
+			let k = mut TokStore.listGet(ts, keys, i)
+			? TokStore.listAdd(ts, out, k)
+			let j = mut (TokStore.listSize(ts, out) - 1)
+			for lp in 0..1000000000{
+				if j == 0{
+					break
+				}
+				let prev = mut TokStore.listGet(ts, out, j - 1)
+				if Collect.sidLess(ts, k, prev) == 1{
+					TokStore.listSet(ts, out, j, prev)
+					TokStore.listSet(ts, out, j - 1, k)
+					j = j - 1
+				} else {
+					break
+				}
+			}
+		}
+		return out
+	}
+}

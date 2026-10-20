@@ -1,0 +1,467 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../lexer/Lexer.caspien"
+
+/**
+ * Port of caspien.typechecker.TypeInfo: an immutable type description, held as a row of TY_STRIDE slots in one list of the token store (`tl` is that list's id).
+ * A type is the row's index. Strings are string ids, absent values TOK_NONE, flags 0/1, nested types are row indexes, lists are list ids. The `with...` copies make a
+ * new row. Only the literal-value slots are ever changed after construction (the Java fields are not final either).
+ */
+const TY_STRIDE 20
+const TY_STORAGE 0
+const TY_MUT 1
+const TY_BASE 2
+const TY_ALIAS 3
+const TY_FP_PARAMS 4
+const TY_FP_RET 5
+const TY_FP_DECOS 6
+const TY_FP_CC 7
+const TY_DYN_ELEM 8
+const TY_UDYN_ELEM 9
+const TY_ARR_ELEM 10
+const TY_RAW_POINTEE 11
+const TY_SOME 12
+const TY_FLOAT_STATES 13
+const TY_CONST 14
+const TY_ATOMIC 15
+const TY_LITVAL 16
+const TY_FLOAT_LIT 17
+const TY_FLOAT_ARR_LIT 18
+const TY_LIT_ELEMS 19
+
+@pub
+struct Ty{@pub{
+}}
+
+@pub
+impl Ty{
+	/** A new type row with every slot unset/false except the three given strings; returns its id. */
+	@pub
+	@throws
+	static func make(ts: ref mut TokStore, tl: mut u64, storage: mut u64, mutability: mut u64, baseType: mut u64, alias: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut (TokStore.listSize(ts, tl) / 20)
+		? TokStore.listAdd(ts, tl, storage)
+		? TokStore.listAdd(ts, tl, mutability)
+		? TokStore.listAdd(ts, tl, baseType)
+		? TokStore.listAdd(ts, tl, alias)
+		for k in 4..12{
+			? TokStore.listAdd(ts, tl, TOK_NONE)
+		}
+		? TokStore.listAdd(ts, tl, 0)
+		? TokStore.listAdd(ts, tl, TOK_NONE)
+		? TokStore.listAdd(ts, tl, 0)
+		? TokStore.listAdd(ts, tl, 0)
+		? TokStore.listAdd(ts, tl, TOK_NONE)
+		? TokStore.listAdd(ts, tl, 0)
+		? TokStore.listAdd(ts, tl, 0)
+		? TokStore.listAdd(ts, tl, TOK_NONE)
+		return id
+	}
+
+	@pub
+	static func get(ts: ref imut TokStore, tl: mut u64, ty: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, tl, ty * 20 + k)
+	}
+
+	@pub
+	static func set(ts: ref mut TokStore, tl: mut u64, ty: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, tl, ty * 20 + k, v)
+	}
+
+	/** A copy of row `ty` as a new row (every slot, including the literal slots). */
+	@pub
+	@throws
+	static func copy(ts: ref mut TokStore, tl: mut u64, ty: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut (TokStore.listSize(ts, tl) / 20)
+		for k in 0..20{
+			? TokStore.listAdd(ts, tl, Ty.get(ts, tl, ty, k))
+		}
+		return id
+	}
+
+	// ---- with... copies ------------------------------------------------------------------------------------------------------
+
+	@throws
+	static func withSlot(ts: ref mut TokStore, tl: mut u64, ty: mut u64, k: mut u64, v: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.copy(ts, tl, ty)
+		Ty.set(ts, tl, c, k, v)
+		return c
+	}
+
+	@pub
+	@throws
+	static func withSome(ts: ref mut TokStore, tl: mut u64, ty: mut u64, v: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.withSlot(ts, tl, ty, TY_SOME, v)
+		return c
+	}
+
+	@pub
+	@throws
+	static func withConst(ts: ref mut TokStore, tl: mut u64, ty: mut u64, v: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.withSlot(ts, tl, ty, TY_CONST, v)
+		return c
+	}
+
+	@pub
+	@throws
+	static func withAtomic(ts: ref mut TokStore, tl: mut u64, ty: mut u64, v: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.withSlot(ts, tl, ty, TY_ATOMIC, v)
+		return c
+	}
+
+	@pub
+	@throws
+	static func withFloatStates(ts: ref mut TokStore, tl: mut u64, ty: mut u64, states: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.withSlot(ts, tl, ty, TY_FLOAT_STATES, states)
+		return c
+	}
+
+	@pub
+	@throws
+	static func withMutability(ts: ref mut TokStore, tl: mut u64, ty: mut u64, m: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.withSlot(ts, tl, ty, TY_MUT, m)
+		return c
+	}
+
+	@pub
+	@throws
+	static func withStorage(ts: ref mut TokStore, tl: mut u64, ty: mut u64, s: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? Ty.withSlot(ts, tl, ty, TY_STORAGE, s)
+		return c
+	}
+
+	// ---- strings -------------------------------------------------------------------------------------------------------------
+
+	/** Byte-wise comparison of two strings (UTF-8 order = UTF-16 order for the ASCII names used here): negative -> 0, equal -> 1, greater -> 2. */
+	@pub
+	static func cmp(ts: ref imut TokStore, a: mut u64, b: mut u64) mut u64{
+		let la = mut TokStore.strLen(ts, a)
+		let lb = mut TokStore.strLen(ts, b)
+		let n = mut la
+		if lb < la{
+			n = lb
+		}
+		for i in 0..n{
+			let ca = mut String.charCode(TokStore.strCh(ts, a, i))
+			let cb = mut String.charCode(TokStore.strCh(ts, b, i))
+			if ca < cb{
+				return 0
+			}
+			if ca > cb{
+				return 2
+			}
+		}
+		if la < lb{
+			return 0
+		}
+		if la > lb{
+			return 2
+		}
+		return 1
+	}
+
+	/** A new sorted copy of a list of string ids (insertion sort; the lists are tiny). */
+	@pub
+	@throws
+	static func sortedCopy(ts: ref mut TokStore, l: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			let x = mut TokStore.listGet(ts, l, i)
+			let at = mut TokStore.listSize(ts, out)
+			let m = mut TokStore.listSize(ts, out)
+			for j in 0..m{
+				let k = mut (m - 1 - j)
+				if Ty.cmp(ts, TokStore.listGet(ts, out, k), x) == 2{
+					at = k
+				}
+			}
+			? TokStore.listInsert(ts, out, at, x)
+		}
+		return out
+	}
+
+	/** Canonical type string: storage_some_mutability_atomic_states_@decorators_baseType. */
+	@pub
+	@throws
+	static func canonical(ts: ref mut TokStore, tl: mut u64, ty: mut u64) mut u64{
+		?catch(e){ throw e }
+		let storage = mut Ty.get(ts, tl, ty, TY_STORAGE)
+		let mutability = mut Ty.get(ts, tl, ty, TY_MUT)
+		let states = mut Ty.get(ts, tl, ty, TY_FLOAT_STATES)
+		let decos = mut Ty.get(ts, tl, ty, TY_FP_DECOS)
+		let cc = mut Ty.get(ts, tl, ty, TY_FP_CC)
+		let sortedDecos = mut TOK_NONE
+		if TokStore.listSize(ts, decos) > 0{
+			sortedDecos = ? Ty.sortedCopy(ts, decos)
+		}
+		let sb = mut TokStore.strBegin(ts)
+		if storage != TOK_NONE{
+			? TokStore.strAppendId(ts, storage)
+			? TokStore.strPush(ts, '_')
+		}
+		if Ty.get(ts, tl, ty, TY_SOME) != 0{
+			? TokStore.strPush(ts, 's')
+			? TokStore.strPush(ts, 'o')
+			? TokStore.strPush(ts, 'm')
+			? TokStore.strPush(ts, 'e')
+			? TokStore.strPush(ts, '_')
+		}
+		if mutability != TOK_NONE{
+			? TokStore.strAppendId(ts, mutability)
+			? TokStore.strPush(ts, '_')
+		}
+		if Ty.get(ts, tl, ty, TY_ATOMIC) != 0{
+			? TokStore.strPush(ts, 'a')
+			? TokStore.strPush(ts, 't')
+			? TokStore.strPush(ts, 'o')
+			? TokStore.strPush(ts, 'm')
+			? TokStore.strPush(ts, 'i')
+			? TokStore.strPush(ts, 'c')
+			? TokStore.strPush(ts, '_')
+		}
+		if states != TOK_NONE{
+			let ns = mut TokStore.listSize(ts, states)
+			for i in 0..ns{
+				if i > 0{
+					? TokStore.strPush(ts, '|')
+				}
+				? TokStore.strAppendId(ts, TokStore.listGet(ts, states, i))
+			}
+			? TokStore.strPush(ts, '_')
+		}
+		let nd = mut TokStore.listSize(ts, sortedDecos)
+		for di in 0..nd{
+			let d = mut TokStore.listGet(ts, sortedDecos, di)
+			? TokStore.strPush(ts, '@')
+			? TokStore.strAppendId(ts, d)
+			if TokStore.strEq(ts, d, "call_convention") && cc != TOK_NONE{
+				? TokStore.strPush(ts, '(')
+				? TokStore.strAppendId(ts, cc)
+				? TokStore.strPush(ts, ')')
+			}
+			? TokStore.strPush(ts, '_')
+		}
+		? TokStore.strAppendId(ts, Ty.get(ts, tl, ty, TY_BASE))
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	@pub
+	static func sameBaseType(ts: ref imut TokStore, tl: mut u64, a: mut u64, b: mut u64) mut bool{
+		if b == TOK_NONE{
+			return false
+		}
+		return TokStore.strsEq(ts, Ty.get(ts, tl, a, TY_BASE), Ty.get(ts, tl, b, TY_BASE))
+	}
+
+	// ---- constructors of the structured types ---------------------------------------------------------------------------------
+
+	/** Element text embedded in a dynarray baseType: the element's storage keyword (if any) plus '_' plus base type, never mutability. */
+	@pub
+	@throws
+	static func dynArrayElementText(ts: ref mut TokStore, tl: mut u64, elem: mut u64) mut u64{
+		?catch(e){ throw e }
+		let storage = mut Ty.get(ts, tl, elem, TY_STORAGE)
+		let sb = mut TokStore.strBegin(ts)
+		if storage != TOK_NONE{
+			? TokStore.strAppendId(ts, storage)
+			? TokStore.strPush(ts, '_')
+		}
+		? TokStore.strAppendId(ts, Ty.get(ts, tl, elem, TY_BASE))
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	@pub
+	@throws
+	static func prefixed(ts: ref mut TokStore, lit: static imut string, mid: mut u64, suffix: static imut string) mut u64{
+		?catch(e){ throw e }
+		let a = mut ? TokStore.addLit(ts, lit)
+		let b = mut ? TokStore.addLit(ts, suffix)
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, a)
+		? TokStore.strAppendId(ts, mid)
+		? TokStore.strAppendId(ts, b)
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	/** "dynarray(T)": always owns storage. */
+	@pub
+	@throws
+	static func dynArray(ts: ref mut TokStore, tl: mut u64, mutability: mut u64, elem: mut u64) mut u64{
+		?catch(e){ throw e }
+		let text = mut ? Ty.dynArrayElementText(ts, tl, elem)
+		let base = mut ? Ty.prefixed(ts, "dynarray(", text, ")")
+		let ownsSid = mut ? TokStore.addLit(ts, "owns")
+		let ty = mut ? Ty.make(ts, tl, ownsSid, mutability, base, TOK_NONE)
+		Ty.set(ts, tl, ty, TY_DYN_ELEM, elem)
+		return ty
+	}
+
+	/** "unsafe_dynarray(T)" */
+	@pub
+	@throws
+	static func unsafeDynArray(ts: ref mut TokStore, tl: mut u64, mutability: mut u64, elem: mut u64) mut u64{
+		?catch(e){ throw e }
+		let text = mut ? Ty.dynArrayElementText(ts, tl, elem)
+		let base = mut ? Ty.prefixed(ts, "unsafe_dynarray(", text, ")")
+		let ownsSid = mut ? TokStore.addLit(ts, "owns")
+		let ty = mut ? Ty.make(ts, tl, ownsSid, mutability, base, TOK_NONE)
+		Ty.set(ts, tl, ty, TY_UDYN_ELEM, elem)
+		return ty
+	}
+
+	/** A fixed-array literal type "elem[N]": baseType embeds only the element base type; mutability "indeterminate". */
+	@pub
+	@throws
+	static func array(ts: ref mut TokStore, tl: mut u64, elem: mut u64, length: mut u64) mut u64{
+		?catch(e){ throw e }
+		let digits = mut ? Ty.u64Text(ts, length)
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, Ty.get(ts, tl, elem, TY_BASE))
+		? TokStore.strPush(ts, '[')
+		? TokStore.strAppendId(ts, digits)
+		? TokStore.strPush(ts, ']')
+		let base = mut ? TokStore.strEnd(ts, sb)
+		let ind = mut ? TokStore.addLit(ts, "indeterminate")
+		let ty = mut ? Ty.make(ts, tl, TOK_NONE, ind, base, TOK_NONE)
+		Ty.set(ts, tl, ty, TY_ARR_ELEM, elem)
+		return ty
+	}
+
+	/** A recursive raw pointer: baseType is the pointee's full canonical string. */
+	@pub
+	@throws
+	static func rawPointer(ts: ref mut TokStore, tl: mut u64, mutability: mut u64, pointee: mut u64) mut u64{
+		?catch(e){ throw e }
+		let base = mut ? Ty.canonical(ts, tl, pointee)
+		let rawSid = mut ? TokStore.addLit(ts, "raw")
+		let ty = mut ? Ty.make(ts, tl, rawSid, mutability, base, TOK_NONE)
+		Ty.set(ts, tl, ty, TY_RAW_POINTEE, pointee)
+		return ty
+	}
+
+	/** A function-pointer type: baseType "func(p1,p2)ret" over the canonical strings; storage "static". */
+	@pub
+	@throws
+	static func funcPointer(ts: ref mut TokStore, tl: mut u64, mutability: mut u64, params: mut u64, ret: mut u64, decorators: mut u64, callConvention: mut u64) mut u64{
+		?catch(e){ throw e }
+		let parts = mut ? TokStore.newList(ts)
+		let np = mut TokStore.listSize(ts, params)
+		for i in 0..np{
+			let c = mut ? Ty.canonical(ts, tl, TokStore.listGet(ts, params, i))
+			? TokStore.listAdd(ts, parts, c)
+		}
+		let rc = mut ? Ty.canonical(ts, tl, ret)
+		let f = mut ? TokStore.addLit(ts, "func(")
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, f)
+		let nparts = mut TokStore.listSize(ts, parts)
+		for j in 0..nparts{
+			if j > 0{
+				? TokStore.strPush(ts, ',')
+			}
+			? TokStore.strAppendId(ts, TokStore.listGet(ts, parts, j))
+		}
+		? TokStore.strPush(ts, ')')
+		? TokStore.strAppendId(ts, rc)
+		let base = mut ? TokStore.strEnd(ts, sb)
+		let st = mut ? TokStore.addLit(ts, "static")
+		let ty = mut ? Ty.make(ts, tl, st, mutability, base, TOK_NONE)
+		Ty.set(ts, tl, ty, TY_FP_PARAMS, params)
+		Ty.set(ts, tl, ty, TY_FP_RET, ret)
+		Ty.set(ts, tl, ty, TY_FP_DECOS, decorators)
+		Ty.set(ts, tl, ty, TY_FP_CC, callConvention)
+		return ty
+	}
+
+	/** Inverse of dynArrayElementText for element text only available as a baseType string. */
+	@pub
+	@throws
+	static func parseDynArrayElementText(ts: ref mut TokStore, tl: mut u64, text: mut u64) mut u64{
+		?catch(e){ throw e }
+		let ind = mut ? TokStore.addLit(ts, "indeterminate")
+		let n = mut TokStore.strLen(ts, text)
+		let kws = mut ? TokStore.newList(ts)
+		let k1 = mut ? TokStore.addLit(ts, "owns")
+		? TokStore.listAdd(ts, kws, k1)
+		let k2 = mut ? TokStore.addLit(ts, "ref")
+		? TokStore.listAdd(ts, kws, k2)
+		let k3 = mut ? TokStore.addLit(ts, "raw")
+		? TokStore.listAdd(ts, kws, k3)
+		let k4 = mut ? TokStore.addLit(ts, "static")
+		? TokStore.listAdd(ts, kws, k4)
+		let k5 = mut ? TokStore.addLit(ts, "auto")
+		? TokStore.listAdd(ts, kws, k5)
+		for ki in 0..5{
+			let kw = mut TokStore.listGet(ts, kws, ki)
+			let kl = mut TokStore.strLen(ts, kw)
+			if n > kl{
+				let ok = mut true
+				for ci in 0..kl{
+					if TokStore.strCh(ts, text, ci) != TokStore.strCh(ts, kw, ci){
+						ok = false
+					}
+				}
+				if ok && TokStore.strCh(ts, text, kl) == '_'{
+					let rest = mut ? Ty.subStr(ts, text, kl + 1, n)
+					let ty = mut ? Ty.make(ts, tl, kw, ind, rest, TOK_NONE)
+					return ty
+				}
+			}
+		}
+		let plain = mut ? Ty.make(ts, tl, TOK_NONE, ind, text, TOK_NONE)
+		return plain
+	}
+
+	@pub
+	@throws
+	static func subStr(ts: ref mut TokStore, sid: mut u64, a: mut u64, b: mut u64) mut u64{
+		?catch(e){ throw e }
+		let sb = mut TokStore.strBegin(ts)
+		for i in a..b{
+			? TokStore.strPush(ts, TokStore.strCh(ts, sid, i))
+		}
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+
+	/** Decimal text of a u64. */
+	@pub
+	@throws
+	static func u64Text(ts: ref mut TokStore, v: mut u64) mut u64{
+		?catch(e){ throw e }
+		let digits = mut ? TokStore.newList(ts)
+		let x = mut v
+		if x == 0{
+			? TokStore.listAdd(ts, digits, 0)
+		}
+		for lp1 in 0..1000000000{
+			if x == 0{
+				break
+			}
+			? TokStore.listAdd(ts, digits, x % 10)
+			x = x / 10
+		}
+		let sb = mut TokStore.strBegin(ts)
+		let nd = mut TokStore.listSize(ts, digits)
+		for i in 0..nd{
+			let d = mut TokStore.listGet(ts, digits, nd - 1 - i)
+			? TokStore.strPush(ts, LexWords.charOf(48 + d))
+		}
+		let id = mut ? TokStore.strEnd(ts, sb)
+		return id
+	}
+}

@@ -1,0 +1,262 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+
+/**
+ * Port of caspien.typechecker.Scope as a fixed-width row in one TokStore list (`sl`); a scope is its row index, TOK_NONE = none.
+ * Name sets are StrMaps (value 1 = member, 0 = removed). Sharing semantics follow the Java: movedSlots, patterns and lock releases are the parent's list/map ids unless overridden.
+ * The ProofKills.stamp call of the Java constructors belongs to the proof code and is not made here.
+ */
+const SC_STRIDE 20
+const SC_PARENT 0
+const SC_VARS 1
+const SC_STATIC 2
+const SC_CONST 3
+const SC_LOOP_IMM 4
+const SC_ASM 5
+const SC_MOVED 6
+const SC_SAFETY 7
+const SC_UNSAFE_BLOCK 8
+const SC_PATTERNS 9
+const SC_SUSPEND 10
+const SC_OWNS_HERE 11
+const SC_FN_ROOT 12
+const SC_LOOP_BOUND 13
+const SC_TRY_BOUND 14
+const SC_DYN_FOR 15
+const SC_LOCK_REL 16
+const SC_TRANSPARENT 17
+const SC_SERIAL 18
+const SC_BORROW 19
+
+@pub
+struct Scope{@pub{
+}}
+
+@pub
+impl Scope{
+	@pub
+	static func get(ts: ref imut TokStore, sl: mut u64, s: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, sl, s * 20 + k)
+	}
+
+	@pub
+	static func set(ts: ref mut TokStore, sl: mut u64, s: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, sl, s * 20 + k, v)
+	}
+
+	/** A new StrMap with the same entries as `m`. */
+	@pub
+	@throws
+	static func copyMap(ts: ref mut TokStore, m: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut ? StrMap.make(ts)
+		let keys = mut TokStore.listGet(ts, m, 0)
+		let vals = mut TokStore.listGet(ts, m, 1)
+		let cnt = mut TokStore.listSize(ts, keys)
+		for i in 0..cnt{
+			? StrMap.put(ts, n, TokStore.listGet(ts, keys, i), TokStore.listGet(ts, vals, i))
+		}
+		return n
+	}
+
+	/**
+	 * A child scope. Pass TOK_NONE to inherit: `moved` (the parent's shared set), `safety`, `patterns`. `suspend`/`newLoop`/`dynFor`/`newTry` are 0/1;
+	 * `extraRelease` (a token id, TOK_NONE = none) appends to a copy of the parent's release list. A null `parent` makes a function root.
+	 */
+	@pub
+	@throws
+	static func child(ts: ref mut TokStore, sl: mut u64, parent: mut u64, moved: mut u64, safety: mut u64, patterns: mut u64, suspend: mut u64, newLoop: mut u64, dynFor: mut u64, newTry: mut u64, extraRelease: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut (TokStore.listSize(ts, sl) / 20)
+		let hasParent = mut (parent != TOK_NONE)
+		let vars = mut ? StrMap.make(ts)
+		let stat = mut ? StrMap.make(ts)
+		let cons = mut ? StrMap.make(ts)
+		let asm = mut ? StrMap.make(ts)
+		let owns_here = mut ? TokStore.newList(ts)
+		let serial = mut ? StrMap.make(ts)
+		let borrow = mut ? StrMap.make(ts)
+		let mv = mut moved
+		let sf = mut safety
+		let pt = mut patterns
+		let sus = mut suspend
+		let fr = mut id
+		let lb = mut TOK_NONE
+		let tb = mut TOK_NONE
+		let df = mut dynFor
+		let lr = mut TOK_NONE
+		if hasParent{
+			if mv == TOK_NONE{
+				mv = Scope.get(ts, sl, parent, SC_MOVED)
+			}
+			if sf == TOK_NONE{
+				sf = Scope.get(ts, sl, parent, SC_SAFETY)
+			}
+			if pt == TOK_NONE{
+				pt = Scope.get(ts, sl, parent, SC_PATTERNS)
+			}
+			if sus == 0{
+				sus = Scope.get(ts, sl, parent, SC_SUSPEND)
+			}
+			fr = Scope.get(ts, sl, parent, SC_FN_ROOT)
+			lb = Scope.get(ts, sl, parent, SC_LOOP_BOUND)
+			tb = Scope.get(ts, sl, parent, SC_TRY_BOUND)
+			if df == 0{
+				df = Scope.get(ts, sl, parent, SC_DYN_FOR)
+			}
+			lr = Scope.get(ts, sl, parent, SC_LOCK_REL)
+		}
+		if mv == TOK_NONE{
+			mv = ? StrMap.make(ts)
+		}
+		if sf == TOK_NONE{
+			sf = ? TokStore.addLit(ts, "indeterminate")
+		}
+		if pt == TOK_NONE{
+			pt = ? TokStore.newList(ts)
+		}
+		if lr == TOK_NONE{
+			lr = ? TokStore.newList(ts)
+		}
+		if extraRelease != TOK_NONE{
+			let nl = mut ? TokStore.newList(ts)
+			? TokStore.listAddAll(ts, nl, lr)
+			? TokStore.listAdd(ts, nl, extraRelease)
+			lr = nl
+		}
+		if newLoop == 1{
+			lb = id
+		}
+		if newTry == 1{
+			tb = id
+		}
+		? TokStore.listAdd(ts, sl, parent)
+		? TokStore.listAdd(ts, sl, vars)
+		? TokStore.listAdd(ts, sl, stat)
+		? TokStore.listAdd(ts, sl, cons)
+		? TokStore.listAdd(ts, sl, TOK_NONE)
+		? TokStore.listAdd(ts, sl, asm)
+		? TokStore.listAdd(ts, sl, mv)
+		? TokStore.listAdd(ts, sl, sf)
+		? TokStore.listAdd(ts, sl, TOK_NONE)
+		? TokStore.listAdd(ts, sl, pt)
+		? TokStore.listAdd(ts, sl, sus)
+		? TokStore.listAdd(ts, sl, owns_here)
+		? TokStore.listAdd(ts, sl, fr)
+		? TokStore.listAdd(ts, sl, lb)
+		? TokStore.listAdd(ts, sl, tb)
+		? TokStore.listAdd(ts, sl, df)
+		? TokStore.listAdd(ts, sl, lr)
+		? TokStore.listAdd(ts, sl, 0)
+		? TokStore.listAdd(ts, sl, serial)
+		? TokStore.listAdd(ts, sl, borrow)
+		return id
+	}
+
+	/** The type row of `name` in the nearest scope declaring it, or TOK_NONE. */
+	@pub
+	static func lookup(ts: ref imut TokStore, sl: mut u64, s: mut u64, name: mut u64) mut u64{
+		let cur = mut s
+		for lp in 0..1000000000{
+			if cur == TOK_NONE{
+				break
+			}
+			let v = mut StrMap.get(ts, Scope.get(ts, sl, cur, SC_VARS), name)
+			if v != TOK_NONE{
+				return v
+			}
+			cur = Scope.get(ts, sl, cur, SC_PARENT)
+		}
+		return TOK_NONE
+	}
+
+	/** The scope that declares `name`, or TOK_NONE. */
+	@pub
+	static func declaringScope(ts: ref imut TokStore, sl: mut u64, s: mut u64, name: mut u64) mut u64{
+		let cur = mut s
+		for lp in 0..1000000000{
+			if cur == TOK_NONE{
+				break
+			}
+			if StrMap.has(ts, Scope.get(ts, sl, cur, SC_VARS), name){
+				return cur
+			}
+			cur = Scope.get(ts, sl, cur, SC_PARENT)
+		}
+		return TOK_NONE
+	}
+
+	/** 1 if `name` (found in the nearest declaring scope) was declared `let static`. */
+	@pub
+	static func isStatic(ts: ref imut TokStore, sl: mut u64, s: mut u64, name: mut u64) mut u64{
+		let d = mut Scope.declaringScope(ts, sl, s, name)
+		if d == TOK_NONE{
+			return 0
+		}
+		if StrMap.has(ts, Scope.get(ts, sl, d, SC_STATIC), name){
+			return 1
+		}
+		return 0
+	}
+
+	@pub
+	static func isConstName(ts: ref imut TokStore, sl: mut u64, s: mut u64, name: mut u64) mut u64{
+		let d = mut Scope.declaringScope(ts, sl, s, name)
+		if d == TOK_NONE{
+			return 0
+		}
+		if StrMap.has(ts, Scope.get(ts, sl, d, SC_CONST), name){
+			return 1
+		}
+		return 0
+	}
+
+	/** The nearest enclosing real scope: unsafe/safe markers are skipped. */
+	@pub
+	static func declScope(ts: ref imut TokStore, sl: mut u64, s: mut u64) mut u64{
+		let cur = mut s
+		for lp in 0..1000000000{
+			if Scope.get(ts, sl, cur, SC_TRANSPARENT) == 0{
+				break
+			}
+			let p = mut Scope.get(ts, sl, cur, SC_PARENT)
+			if p == TOK_NONE{
+				break
+			}
+			cur = p
+		}
+		return cur
+	}
+
+	/** Declares `name` with type row `ty`; returns 0 if already declared in the target scope (the caller reports the error). */
+	@pub
+	@throws
+	static func declare(ts: ref mut TokStore, sl: mut u64, s: mut u64, name: mut u64, ty: mut u64, serial: mut u64) mut u64{
+		?catch(e){ throw e }
+		let t = mut Scope.declScope(ts, sl, s)
+		let vars = mut Scope.get(ts, sl, t, SC_VARS)
+		if StrMap.has(ts, vars, name){
+			return 0
+		}
+		? StrMap.put(ts, vars, name, ty)
+		? StrMap.put(ts, Scope.get(ts, sl, t, SC_SERIAL), name, serial)
+		return 1
+	}
+
+	/** Number of real scopes between this one and the function root. */
+	@pub
+	static func depth(ts: ref imut TokStore, sl: mut u64, s: mut u64) mut u64{
+		let d = mut 0
+		let cur = mut Scope.declScope(ts, sl, s)
+		for lp in 0..1000000000{
+			let p = mut Scope.get(ts, sl, cur, SC_PARENT)
+			if p == TOK_NONE{
+				break
+			}
+			d = d + 1
+			cur = Scope.declScope(ts, sl, p)
+		}
+		return d
+	}
+}

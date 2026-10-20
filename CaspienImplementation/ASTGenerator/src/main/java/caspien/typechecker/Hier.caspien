@@ -1,0 +1,514 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Ty.caspien"
+import "Dec.caspien"
+import "Collect.caspien"
+import "Funcs.caspien"
+import "TypeAnn.caspien"
+import "ImplColl.caspien"
+
+/**
+ * Ports of pass 1c .. 1c-ter of collectDeclarations: checkImplementsContract, the compiler-generated `Class` enum and "$enum_for_<Interface>" enums,
+ * and the interface-method dispatcher functions (built directly as token trees). Synthesized root lines are appended to the list at cx slot 15.
+ */
+@pub
+struct Hier{@pub{
+}}
+
+@pub
+impl Hier{
+	/** A new token with text `text`, positioned like `at`. */
+	@throws
+	static func mk(ts: ref mut TokStore, kind: mut u64, text: static imut string, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		let tx = mut ? TokStore.addLit(ts, text)
+		let ln = mut TokStore.line(ts, at)
+		let fid = mut TokStore.fileId(ts, at)
+		let t = mut ? TokStore.newToken(ts, kind, tx, ln, fid)
+		return t
+	}
+
+	/** A new token whose text is the existing string id `tx`, positioned like `at`. */
+	@throws
+	static func mkId(ts: ref mut TokStore, kind: mut u64, tx: mut u64, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		let ln = mut TokStore.line(ts, at)
+		let fid = mut TokStore.fileId(ts, at)
+		let t = mut ? TokStore.newToken(ts, kind, tx, ln, fid)
+		return t
+	}
+
+	@throws
+	static func list1(ts: ref mut TokStore, a: mut u64) mut u64{
+		?catch(e){ throw e }
+		let l = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, l, a)
+		return l
+	}
+
+	/** Wraps `t` in a LINE token and appends it to the synthesized root lines (cx slot 15). */
+	@throws
+	static func appendRoot(ts: ref mut TokStore, cx: mut u64, t: mut u64) void{
+		?catch(e){ throw e }
+		let ln = mut ? Hier.mk(ts, TT_LINE, "line", t)
+		let cs = mut ? Hier.list1(ts, t)
+		TokStore.setChilds(ts, ln, cs)
+		let roots = mut TokStore.listGet(ts, cx, 15)
+		? TokStore.listAdd(ts, roots, ln)
+	}
+
+	@throws
+	static func appendEnumRoot(ts: ref mut TokStore, cx: mut u64, nameSid: mut u64) void{
+		?catch(e){ throw e }
+		let kwTx = mut ? TokStore.addLit(ts, "enum")
+		let kw = mut ? TokStore.newToken(ts, TT_KEYWORD, kwTx, 0, 0)
+		let nm = mut ? TokStore.newToken(ts, TT_VARREF, nameSid, 0, 0)
+		let sb = mut ? Hier.list1(ts, nm)
+		TokStore.setSub(ts, kw, sb)
+		let cs = mut ? TokStore.newList(ts)
+		TokStore.setChilds(ts, kw, cs)
+		? Hier.appendRoot(ts, cx, kw)
+	}
+
+	/** Every struct that declares `implements I` needs an `impl I for S`. */
+	@pub
+	@throws
+	static func checkImplementsContract(ts: ref mut TokStore, cx: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		let skeys = mut TokStore.listGet(ts, structs, 0)
+		let svals = mut TokStore.listGet(ts, structs, 1)
+		let ns = mut TokStore.listSize(ts, skeys)
+		for i in 0..ns{
+			let name = mut TokStore.listGet(ts, skeys, i)
+			let row = mut TokStore.listGet(ts, svals, i)
+			let imp = mut Infos.sget(ts, sr, row, SI_IMPLEMENTS)
+			let ni = mut TokStore.listSize(ts, imp)
+			if ni == 0{
+				continue
+			}
+			let impls = mut StrMap.get(ts, World.get(ts, w, W_M_IMPLS_BY_TYPE), name)
+			for j in 0..ni{
+				let iface = mut TokStore.listGet(ts, imp, j)
+				let ok = mut false
+				let nim = mut TokStore.listSize(ts, impls)
+				for q in 0..nim{
+					let im = mut TokStore.listGet(ts, impls, q)
+					let ifn = mut Infos.rget(ts, mr, 12, im, IM_INTERFACE)
+					if ifn != TOK_NONE{
+						if TokStore.strsEq(ts, iface, ifn){
+							ok = true
+						}
+					}
+				}
+				if ok == false{
+					throw "a struct declares 'implements I' but no matching 'impl I for S' exists"
+				}
+			}
+		}
+	}
+
+	/** The compiler-owned `Class` enum: one u64 variant per non-@untyped struct in declaration order (0..n-1). */
+	@pub
+	@throws
+	static func generateClassEnum(ts: ref mut TokStore, cx: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let er = mut TokStore.listGet(ts, cx, 6)
+		let cn = mut ? TokStore.addLit(ts, "Class")
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), cn) || StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), cn) || StrMap.has(ts, World.get(ts, w, W_M_IFACES), cn){
+			throw "'Class' is reserved for the compiler-generated enum of every struct"
+		}
+		let row = mut ? Infos.makeEnum(ts, er, cn)
+		let vals = mut ? TokStore.newList(ts)
+		Infos.rset(ts, er, 8, row, EI_VALUES, vals)
+		let vars = mut Infos.rget(ts, er, 8, row, EI_VARIANTS)
+		let order = mut World.get(ts, w, W_L_STRUCT_ORDER)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		let n = mut TokStore.listSize(ts, order)
+		let next = mut 0
+		for i in 0..n{
+			let name = mut TokStore.listGet(ts, order, i)
+			let srow = mut StrMap.get(ts, structs, name)
+			let decl = mut Infos.sget(ts, sr, srow, SI_DECL_TOK)
+			if Dec.getDecorator(ts, TokStore.decorators(ts, decl), "untyped") != TOK_NONE{
+				continue
+			}
+			? TokStore.listAdd(ts, vars, name)
+			? TokStore.listAdd(ts, vals, next)
+			Infos.sset(ts, sr, srow, SI_CLASS_ID, next)
+			next = next + 1
+		}
+		if TokStore.listSize(ts, vars) == 0{
+			return
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_ENUMS), cn, row)
+		? Hier.appendEnumRoot(ts, cx, cn)
+	}
+
+	/** One "$enum_for_<Interface>" enum per interface with at least one implementing (class-id'd) struct. */
+	@pub
+	@throws
+	static func generateEnumForEnums(ts: ref mut TokStore, cx: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let er = mut TokStore.listGet(ts, cx, 6)
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let ifaces = mut World.get(ts, w, W_M_IFACES)
+		let ikeys = mut TokStore.listGet(ts, ifaces, 0)
+		let nik = mut TokStore.listSize(ts, ikeys)
+		let order = mut World.get(ts, w, W_L_STRUCT_ORDER)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		let byType = mut World.get(ts, w, W_M_IMPLS_BY_TYPE)
+		let ns = mut TokStore.listSize(ts, order)
+		for i in 0..nik{
+			let iname = mut TokStore.listGet(ts, ikeys, i)
+			let impls = mut ? TokStore.newList(ts)
+			for j in 0..ns{
+				let sname = mut TokStore.listGet(ts, order, j)
+				let srow = mut StrMap.get(ts, structs, sname)
+				if Infos.sget(ts, sr, srow, SI_CLASS_ID) == TOK_NONE{
+					continue
+				}
+				let il = mut StrMap.get(ts, byType, sname)
+				let nil = mut TokStore.listSize(ts, il)
+				for q in 0..nil{
+					let im = mut TokStore.listGet(ts, il, q)
+					let ifn = mut Infos.rget(ts, mr, 12, im, IM_INTERFACE)
+					if ifn != TOK_NONE{
+						if TokStore.strsEq(ts, ifn, iname){
+							? TokStore.listAdd(ts, impls, sname)
+							break
+						}
+					}
+				}
+			}
+			if TokStore.listSize(ts, impls) > 0{
+				let pre = mut ? TokStore.addLit(ts, "$enum_for_")
+				let parts = mut ? TokStore.newList(ts)
+				? TokStore.listAdd(ts, parts, pre)
+				? TokStore.listAdd(ts, parts, iname)
+				let synth = mut ? ImplColl.catList(ts, parts)
+				let row = mut ? Infos.makeEnum(ts, er, synth)
+				let vals = mut ? TokStore.newList(ts)
+				Infos.rset(ts, er, 8, row, EI_VALUES, vals)
+				let vars = mut Infos.rget(ts, er, 8, row, EI_VARIANTS)
+				let nm = mut TokStore.listSize(ts, impls)
+				for q in 0..nm{
+					let mname = mut TokStore.listGet(ts, impls, q)
+					? TokStore.listAdd(ts, vars, mname)
+					let mrow = mut StrMap.get(ts, structs, mname)
+					let cid = mut Infos.sget(ts, sr, mrow, SI_CLASS_ID)
+					? TokStore.listAdd(ts, vals, cid)
+				}
+				? StrMap.put(ts, World.get(ts, w, W_M_ENUMS), synth, row)
+				? Hier.appendEnumRoot(ts, cx, synth)
+			}
+		}
+	}
+
+	/** "mut 0" / "imut 0" in the unary-prefix shape the RPN converter builds. */
+	@throws
+	static func mutabilityWrap(ts: ref mut TokStore, tl: mut u64, ty: mut u64, lit: mut u64) mut u64{
+		?catch(e){ throw e }
+		let m = mut Ty.get(ts, tl, ty, TY_MUT)
+		let op = mut 0
+		if m != TOK_NONE && TokStore.strEq(ts, m, "mut"){
+			op = ? Hier.mk(ts, TT_OPERATOR, "mut", lit)
+		}
+		else{
+			op = ? Hier.mk(ts, TT_OPERATOR, "imut", lit)
+		}
+		TokStore.setUnary(ts, op, 1)
+		TokStore.setLeft(ts, op, lit)
+		return op
+	}
+
+	/** A trivial well-typed literal for a dispatcher's unreachable fallback return, or TOK_NONE when none exists. */
+	@throws
+	static func defaultLiteralFor(ts: ref mut TokStore, tl: mut u64, ty: mut u64, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		if Ty.get(ts, tl, ty, TY_STORAGE) != TOK_NONE{
+			if Ty.get(ts, tl, ty, TY_SOME) != 0{
+				return TOK_NONE
+			}
+			let nl = mut ? Hier.mk(ts, TT_NULL, "null", at)
+			return nl
+		}
+		if Funcs.baseIs(ts, tl, ty, "bool"){
+			let l = mut ? Hier.mk(ts, TT_BOOL, "false", at)
+			let r = mut ? Hier.mutabilityWrap(ts, tl, ty, l)
+			return r
+		}
+		if Funcs.baseIs(ts, tl, ty, "f32") || Funcs.baseIs(ts, tl, ty, "f64"){
+			let l = mut ? Hier.mk(ts, TT_FLOAT, "0.0", at)
+			let r = mut ? Hier.mutabilityWrap(ts, tl, ty, l)
+			return r
+		}
+		let isInt = mut false
+		if Funcs.baseIs(ts, tl, ty, "u8") || Funcs.baseIs(ts, tl, ty, "u16") || Funcs.baseIs(ts, tl, ty, "u32") || Funcs.baseIs(ts, tl, ty, "u64"){
+			isInt = true
+		}
+		if Funcs.baseIs(ts, tl, ty, "s8") || Funcs.baseIs(ts, tl, ty, "s16") || Funcs.baseIs(ts, tl, ty, "s32") || Funcs.baseIs(ts, tl, ty, "s64"){
+			isInt = true
+		}
+		if isInt{
+			let l = mut ? Hier.mk(ts, TT_INTEGER, "0", at)
+			let r = mut ? Hier.mutabilityWrap(ts, tl, ty, l)
+			return r
+		}
+		return TOK_NONE
+	}
+
+	@throws
+	static func varref(ts: ref mut TokStore, sid: mut u64, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		let t = mut ? Hier.mkId(ts, TT_VARREF, sid, at)
+		return t
+	}
+
+	/** The dispatcher for one (interface, method): `match Some(recv){ match recv implements I.enum{ Impl:{ [return] recv.m(args) } .. } }`. */
+	@throws
+	static func generateOneDispatcher(ts: ref mut TokStore, cx: mut u64, iname: mut u64, mname: mut u64, ms: mut u64, variants: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let pre = mut ? TokStore.addLit(ts, "__iface_dispatch__")
+		let parts = mut ? TokStore.newList(ts)
+		let sep = mut ? TokStore.addLit(ts, "__")
+		? TokStore.listAdd(ts, parts, pre)
+		? TokStore.listAdd(ts, parts, iname)
+		? TokStore.listAdd(ts, parts, sep)
+		? TokStore.listAdd(ts, parts, mname)
+		let dname = mut ? ImplColl.catList(ts, parts)
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		if StrMap.has(ts, funcs, dname){
+			return
+		}
+		let paramsTok = mut Infos.rget(ts, msr, 8, ms, MS_PARAMS_TOK)
+		let pch = mut TokStore.childs(ts, paramsTok)
+		let groups = mut ? TypeAnn.splitIntoRawGroups(ts, pch)
+		let pnames = mut ? TokStore.newList(ts)
+		let ptypes = mut ? TokStore.newList(ts)
+		let selfIdx = mut TOK_NONE
+		let ng = mut TokStore.listSize(ts, groups)
+		for i in 0..ng{
+			let grp = mut TokStore.listGet(ts, groups, i)
+			let gn = mut TokStore.listSize(ts, grp)
+			let g0 = mut TokStore.listGet(ts, grp, 0)
+			let pname = mut TokStore.text(ts, g0)
+			let orig = mut ? TypeAnn.sublist(ts, grp, 2, gn)
+			let no = mut TokStore.listSize(ts, orig)
+			if selfIdx == TOK_NONE && no > 0{
+				let lastTok = mut TokStore.listGet(ts, orig, no - 1)
+				if TokStore.kind(ts, lastTok) == TT_VARREF && TokStore.textEq(ts, lastTok, "self"){
+					selfIdx = TokStore.listSize(ts, pnames)
+				}
+			}
+			let subst = mut ? ImplColl.substituteSelfCopy(ts, orig, iname)
+			? TokStore.listAdd(ts, pnames, pname)
+			let rty = mut ? TypeAnn.resolve(ts, cx, subst, g0, 0)
+			? TokStore.listAdd(ts, ptypes, rty)
+		}
+		if selfIdx == TOK_NONE{
+			return
+		}
+		let nameTok = mut Infos.rget(ts, msr, 8, ms, MS_NAME_TOK)
+		let rtoks = mut Infos.rget(ts, msr, 8, ms, MS_RETURN)
+		let subRet = mut ? ImplColl.substituteSelfCopy(ts, rtoks, iname)
+		let retTy = mut 0
+		if TokStore.listSize(ts, subRet) == 0{
+			retTy = ? Funcs.voidType(ts, tl)
+		}
+		else{
+			retTy = ? TypeAnn.resolve(ts, cx, subRet, nameTok, 1)
+		}
+		let isVoid = mut Funcs.baseIs(ts, tl, retTy, "void")
+		let fallback = mut TOK_NONE
+		if isVoid == false{
+			fallback = ? Hier.defaultLiteralFor(ts, tl, retTy, nameTok)
+			if fallback == TOK_NONE{
+				return
+			}
+		}
+		let recv = mut TokStore.listGet(ts, pnames, selfIdx)
+		let at = mut nameTok
+		let someArgs = mut ? Hier.mk(ts, TT_DELINEATOR, "(", at)
+		let rv0 = mut ? Hier.varref(ts, recv, at)
+		let sac = mut ? Hier.list1(ts, rv0)
+		TokStore.setChilds(ts, someArgs, sac)
+		let someCall = mut ? Hier.mk(ts, TT_OPERATOR, "CALL", at)
+		let someName = mut ? Hier.mk(ts, TT_VARREF, "Some", at)
+		TokStore.setLeft(ts, someCall, someName)
+		TokStore.setRight(ts, someCall, someArgs)
+		let dotEnum = mut ? Hier.mk(ts, TT_OPERATOR, ".", at)
+		let ifaceRef = mut ? Hier.varref(ts, iname, at)
+		let enumRef = mut ? Hier.mk(ts, TT_VARREF, "enum", at)
+		TokStore.setLeft(ts, dotEnum, ifaceRef)
+		TokStore.setRight(ts, dotEnum, enumRef)
+		let implOp = mut ? Hier.mk(ts, TT_OPERATOR, "implements", at)
+		let rv1 = mut ? Hier.varref(ts, recv, at)
+		TokStore.setLeft(ts, implOp, rv1)
+		TokStore.setRight(ts, implOp, dotEnum)
+		let caseMatch = mut ? Hier.mk(ts, TT_KEYWORD, "match", at)
+		TokStore.setIsCaseMatch(ts, caseMatch, 1)
+		let cmd = mut ? TokStore.newList(ts)
+		TokStore.setDecorators(ts, caseMatch, cmd)
+		let cms = mut ? Hier.list1(ts, implOp)
+		TokStore.setSub(ts, caseMatch, cms)
+		let cmc = mut ? TokStore.newList(ts)
+		TokStore.setChilds(ts, caseMatch, cmc)
+		let nv = mut TokStore.listSize(ts, variants)
+		let np = mut TokStore.listSize(ts, pnames)
+		for i in 0..nv{
+			let vn = mut TokStore.listGet(ts, variants, i)
+			let dotCall = mut ? Hier.mk(ts, TT_OPERATOR, ".", at)
+			let rv2 = mut ? Hier.varref(ts, recv, at)
+			let mref = mut ? Hier.varref(ts, mname, at)
+			TokStore.setLeft(ts, dotCall, rv2)
+			TokStore.setRight(ts, dotCall, mref)
+			let argsD = mut ? Hier.mk(ts, TT_DELINEATOR, "(", at)
+			let ac = mut ? TokStore.newList(ts)
+			TokStore.setChilds(ts, argsD, ac)
+			if np > 0{
+				let first = mut TokStore.listGet(ts, pnames, 0)
+				let chain = mut ? Hier.varref(ts, first, at)
+				for k in 1..np{
+					let comma = mut ? Hier.mk(ts, TT_OPERATOR, ",", at)
+					let pk = mut TokStore.listGet(ts, pnames, k)
+					let pr = mut ? Hier.varref(ts, pk, at)
+					TokStore.setLeft(ts, comma, chain)
+					TokStore.setRight(ts, comma, pr)
+					chain = comma
+				}
+				? TokStore.listAdd(ts, ac, chain)
+			}
+			let callOp = mut ? Hier.mk(ts, TT_OPERATOR, "CALL", at)
+			TokStore.setLeft(ts, callOp, dotCall)
+			TokStore.setRight(ts, callOp, argsD)
+			let stmt = mut callOp
+			if isVoid == false{
+				stmt = ? Hier.mk(ts, TT_KEYWORD, "return", at)
+				let rs = mut ? Hier.list1(ts, callOp)
+				TokStore.setSub(ts, stmt, rs)
+			}
+			let stmtLine = mut ? Hier.mk(ts, TT_LINE, "line", at)
+			let slc = mut ? Hier.list1(ts, stmt)
+			TokStore.setChilds(ts, stmtLine, slc)
+			let caseTok = mut ? Hier.varref(ts, vn, at)
+			let cn2 = mut ? Hier.varref(ts, vn, at)
+			let cts = mut ? Hier.list1(ts, cn2)
+			TokStore.setSub(ts, caseTok, cts)
+			let ctc = mut ? Hier.list1(ts, stmtLine)
+			TokStore.setChilds(ts, caseTok, ctc)
+			? TokStore.listAdd(ts, cmc, caseTok)
+		}
+		let cmLine = mut ? Hier.mk(ts, TT_LINE, "line", at)
+		let cml = mut ? Hier.list1(ts, caseMatch)
+		TokStore.setChilds(ts, cmLine, cml)
+		let someMatch = mut ? Hier.mk(ts, TT_KEYWORD, "match", at)
+		let smd = mut ? TokStore.newList(ts)
+		TokStore.setDecorators(ts, someMatch, smd)
+		let sms = mut ? Hier.list1(ts, someCall)
+		TokStore.setSub(ts, someMatch, sms)
+		let smc = mut ? Hier.list1(ts, cmLine)
+		TokStore.setChilds(ts, someMatch, smc)
+		let smLine = mut ? Hier.mk(ts, TT_LINE, "line", at)
+		let sml = mut ? Hier.list1(ts, someMatch)
+		TokStore.setChilds(ts, smLine, sml)
+		let funcTok = mut ? Hier.mk(ts, TT_KEYWORD, "func", at)
+		let fd = mut ? TokStore.newList(ts)
+		TokStore.setDecorators(ts, funcTok, fd)
+		let dnTok = mut ? Hier.varref(ts, dname, at)
+		let fs = mut ? Hier.list1(ts, dnTok)
+		TokStore.setSub(ts, funcTok, fs)
+		let fc = mut ? Hier.list1(ts, smLine)
+		TokStore.setChilds(ts, funcTok, fc)
+		if fallback != TOK_NONE{
+			let fr = mut ? Hier.mk(ts, TT_KEYWORD, "return", at)
+			let frs = mut ? Hier.list1(ts, fallback)
+			TokStore.setSub(ts, fr, frs)
+			let fline = mut ? Hier.mk(ts, TT_LINE, "line", at)
+			let flc = mut ? Hier.list1(ts, fr)
+			TokStore.setChilds(ts, fline, flc)
+			? TokStore.listAdd(ts, fc, fline)
+		}
+		let fi = mut ? Infos.makeFunc(ts, fl, dname)
+		let pn2 = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+		let pt2 = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+		? TokStore.listAddAll(ts, pn2, pnames)
+		? TokStore.listAddAll(ts, pt2, ptypes)
+		Infos.fset(ts, fl, fi, FI_RETURN, retTy)
+		Infos.fset(ts, fl, fi, FI_CALL_CONV, TokStore.listGet(ts, cx, CX_DEFCC))
+		Infos.fset(ts, fl, fi, FI_PUBLIC, 1)
+		Infos.fset(ts, fl, fi, FI_FUNC_TOK, funcTok)
+		let ovs = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, ovs, fi)
+		? StrMap.put(ts, funcs, dname, ovs)
+		? Hier.appendRoot(ts, cx, funcTok)
+	}
+
+	/** One dispatcher per (interface, non-static, non-@lock method) of an interface with implementers; only when a '@gt_alive_check' function exists. */
+	@pub
+	@throws
+	static func generateInterfaceDispatchers(ts: ref mut TokStore, cx: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let ir = mut TokStore.listGet(ts, cx, CX_IR)
+		let msr = mut TokStore.listGet(ts, cx, 10)
+		let gk = mut ? TokStore.addLit(ts, "gt_alive_check")
+		if StrMap.has(ts, World.get(ts, w, W_M_GHOST_FUNCS), gk) == false{
+			return
+		}
+		let ifaces = mut World.get(ts, w, W_M_IFACES)
+		let ikeys = mut TokStore.listGet(ts, ifaces, 0)
+		let ivals = mut TokStore.listGet(ts, ifaces, 1)
+		let nik = mut TokStore.listSize(ts, ikeys)
+		let enums = mut World.get(ts, w, W_M_ENUMS)
+		let er = mut TokStore.listGet(ts, cx, 6)
+		for i in 0..nik{
+			let iname = mut TokStore.listGet(ts, ikeys, i)
+			let irow = mut TokStore.listGet(ts, ivals, i)
+			let pre = mut ? TokStore.addLit(ts, "$enum_for_")
+			let parts = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, parts, pre)
+			? TokStore.listAdd(ts, parts, iname)
+			let en = mut ? ImplColl.catList(ts, parts)
+			if StrMap.has(ts, enums, en) == false{
+				continue
+			}
+			let erow = mut StrMap.get(ts, enums, en)
+			let variants = mut Infos.rget(ts, er, 8, erow, EI_VARIANTS)
+			if TokStore.listSize(ts, variants) == 0{
+				continue
+			}
+			let meths = mut Infos.rget(ts, ir, 8, irow, II_METHODS)
+			let mkeys = mut TokStore.listGet(ts, meths, 0)
+			let mvals = mut TokStore.listGet(ts, meths, 1)
+			let nm = mut TokStore.listSize(ts, mkeys)
+			for j in 0..nm{
+				let ms = mut TokStore.listGet(ts, mvals, j)
+				if Infos.rget(ts, msr, 8, ms, MS_STATIC) != 0{
+					continue
+				}
+				let mdecos = mut Infos.rget(ts, msr, 8, ms, MS_DECOS)
+				if Dec.getDecorator(ts, mdecos, "lock") != TOK_NONE{
+					continue
+				}
+				let mname = mut TokStore.listGet(ts, mkeys, j)
+				? Hier.generateOneDispatcher(ts, cx, iname, mname, ms, variants)
+			}
+		}
+	}
+}

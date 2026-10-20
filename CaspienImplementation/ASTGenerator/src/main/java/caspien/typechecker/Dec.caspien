@@ -1,0 +1,241 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+
+/**
+ * Decorator helpers of TypeCheckerImpls: getDecorator and validateDecorators (the allow-list, '@dont', bare '@lock', '@pure(rt)' with '@non').
+ * `decos` is a decorator list id (TOK_NONE = none); a decorator is its row id in the token store; `allowed` is a StrMap used as a set of names.
+ * validateDecoratorArgShape (per-decorator argument rules) is a separate later port; error texts are shortened (the owner accepts that).
+ */
+@pub
+struct Dec{@pub{
+}}
+
+@pub
+impl Dec{
+	/** The first decorator whose name equals the literal `name`, or TOK_NONE. */
+	@pub
+	static func getDecorator(ts: ref imut TokStore, decos: mut u64, name: static imut string) mut u64{
+		if decos == TOK_NONE{
+			return TOK_NONE
+		}
+		let n = mut TokStore.listSize(ts, decos)
+		for i in 0..n{
+			let d = mut TokStore.listGet(ts, decos, i)
+			if TokStore.strEq(ts, TokStore.dName(ts, d), name){
+				return d
+			}
+		}
+		return TOK_NONE
+	}
+
+	/** Checks every decorator against the allow-list; throws on the first bad one. */
+	@pub
+	@throws
+	static func validateDecorators(ts: ref mut TokStore, decos: mut u64, allowed: mut u64) void{
+		?catch(e){ throw e }
+		if decos == TOK_NONE{
+			return
+		}
+		let n = mut TokStore.listSize(ts, decos)
+		for i in 0..n{
+			let d = mut TokStore.listGet(ts, decos, i)
+			let name = mut TokStore.dName(ts, d)
+			if TokStore.strEq(ts, name, "dont"){
+				let args = mut TokStore.dArgs(ts, d)
+				if args == TOK_NONE{
+					throw "'@dont' takes exactly one argument (par/unroll/inline)"
+				}
+				if TokStore.listSize(ts, args) != 1{
+					throw "'@dont' takes exactly one argument (par/unroll/inline)"
+				}
+				if StrMap.has(ts, allowed, TokStore.listGet(ts, args, 0)) == false{
+					throw "'@dont(...)' is not valid on this declaration"
+				}
+				continue
+			}
+			if StrMap.has(ts, allowed, name) == false{
+				throw "decorator is not valid on this declaration"
+			}
+			if TokStore.strEq(ts, name, "lock"){
+				if TokStore.dLockField(ts, d) == TOK_NONE{
+					if TokStore.dLockInParams(ts, d) == TOK_NONE{
+						throw "a bare '@lock' method decorator has been removed; write '@lock(match self.field : VARIANT)' or '@lock(match x in self.field)'"
+					}
+				}
+			}
+			? Dec.validateDecoratorArgShape(ts, d)
+		}
+		let pureDec = mut Dec.getDecorator(ts, decos, "pure")
+		let nonDec = mut Dec.getDecorator(ts, decos, "non")
+		if pureDec != TOK_NONE{
+			if nonDec != TOK_NONE{
+				let pargs = mut TokStore.dArgs(ts, pureDec)
+				if pargs != TOK_NONE{
+					if TokStore.listSize(ts, pargs) > 0{
+						throw "'@pure(rt)' (referentially transparent) cannot also be '@non(deterministic)'"
+					}
+				}
+			}
+		}
+	}
+
+	/** The i-th argument of decorator d is a quoted string (1) or a bare word (0). */
+	static func argIsStr(ts: ref imut TokStore, d: mut u64, i: mut u64) mut u64{
+		let fl = mut TokStore.dArgIsString(ts, d)
+		if fl == TOK_NONE{
+			return 0
+		}
+		if TokStore.listGet(ts, fl, i) == 1{
+			return 1
+		}
+		return 0
+	}
+
+	static func nArgs(ts: ref imut TokStore, d: mut u64) mut u64{
+		let args = mut TokStore.dArgs(ts, d)
+		if args == TOK_NONE{
+			return 0
+		}
+		return TokStore.listSize(ts, args)
+	}
+
+	/** True if argument 0 of d is a bare (non-string) word equal to lit. */
+	static func arg0Is(ts: ref imut TokStore, d: mut u64, lit: static imut string) mut bool{
+		if Dec.argIsStr(ts, d, 0) == 1{
+			return false
+		}
+		return TokStore.strEq(ts, TokStore.listGet(ts, TokStore.dArgs(ts, d), 0), lit)
+	}
+
+	/** Argument-shape rules per decorator (call_convention, link_name, pure, non, fs_root, unroll, reads/writes, default = no arguments). */
+	@throws
+	static func validateDecoratorArgShape(ts: ref imut TokStore, d: mut u64) void{
+		let name = mut TokStore.dName(ts, d)
+		let na = mut Dec.nArgs(ts, d)
+		if TokStore.strEq(ts, name, "call_convention"){
+			if na != 1{
+				throw "'@call_convention' takes exactly one argument, e.g. '@call_convention(win64)'"
+			}
+			if Dec.argIsStr(ts, d, 0) == 1{
+				throw "'@call_convention' takes a bare name, not a string"
+			}
+			let ok = mut false
+			if Dec.arg0Is(ts, d, "win64"){ ok = true }
+			if Dec.arg0Is(ts, d, "sysv_x64"){ ok = true }
+			if Dec.arg0Is(ts, d, "arm64"){ ok = true }
+			if ok == false{
+				throw "is not a calling convention declared in compiler.config"
+			}
+			return
+		}
+		if TokStore.strEq(ts, name, "link_name"){
+			if na != 1{
+				throw "'@link_name' takes exactly one argument, e.g. '@link_name(sleep)'"
+			}
+			if Dec.argIsStr(ts, d, 0) == 1{
+				throw "'@link_name' takes a bare name, not a string"
+			}
+			return
+		}
+		if TokStore.strEq(ts, name, "pure"){
+			if na > 1{
+				throw "'@pure' takes nothing or 'rt'"
+			}
+			if na == 1{
+				if Dec.arg0Is(ts, d, "rt") == false{
+					throw "'@pure' takes nothing or 'rt'"
+				}
+			}
+			return
+		}
+		if TokStore.strEq(ts, name, "non"){
+			if na != 1{
+				throw "'@non' takes exactly 'deterministic'"
+			}
+			if Dec.arg0Is(ts, d, "deterministic") == false{
+				throw "'@non' takes exactly 'deterministic'"
+			}
+			return
+		}
+		if TokStore.strEq(ts, name, "fs_root"){
+			if na > 1{
+				throw "'@fs_root' takes nothing or 'rw'"
+			}
+			if na == 1{
+				let a0 = mut TokStore.listGet(ts, TokStore.dArgs(ts, d), 0)
+				if TokStore.strEq(ts, a0, "rw") == false{
+					throw "'@fs_root' takes nothing or 'rw'"
+				}
+			}
+			return
+		}
+		if TokStore.strEq(ts, name, "unroll"){
+			if na > 1{
+				throw "'@unroll' takes nothing or one factor"
+			}
+			if na == 1{
+				let a0 = mut TokStore.listGet(ts, TokStore.dArgs(ts, d), 0)
+				let len = mut TokStore.strLen(ts, a0)
+				let digits = mut true
+				if Dec.argIsStr(ts, d, 0) == 1{ digits = false }
+				if len == 0 || len > 3{ digits = false }
+				let v = mut 0
+				if digits{
+					for k in 0..len{
+						let c = mut TokStore.strCh(ts, a0, k)
+						if c < '0' || c > '9'{
+							digits = false
+						}
+						else{
+							let dv = mut (String.charCode(c) - 48)
+							v = v * 10 + dv
+						}
+					}
+				}
+				if digits == false || v < 2 || v > 64{
+					throw "'@unroll(N)' needs a whole-number factor from 2 to 64"
+				}
+			}
+			return
+		}
+		if TokStore.strEq(ts, name, "reads") || TokStore.strEq(ts, name, "writes"){
+			if na == 0{
+				throw "requires at least one argument (all/self/others/globals)"
+			}
+			let args = mut TokStore.dArgs(ts, d)
+			for k in 0..na{
+				let a = mut TokStore.listGet(ts, args, k)
+				let ok = mut false
+				if TokStore.strEq(ts, a, "all"){ ok = true }
+				if TokStore.strEq(ts, a, "self"){ ok = true }
+				if TokStore.strEq(ts, a, "others"){ ok = true }
+				if TokStore.strEq(ts, a, "globals"){ ok = true }
+				if ok == false{
+					throw "argument must be one of all/self/others/globals"
+				}
+			}
+			return
+		}
+		if na > 0{
+			throw "this decorator takes no arguments"
+		}
+	}
+
+	/** The three decorators that only belong on interface/impl methods. */
+	@pub
+	@throws
+	static func forbidMethodOnlyDecorators(ts: ref imut TokStore, decos: mut u64) void{
+		?catch(e){ throw e }
+		if Dec.getDecorator(ts, decos, "default") != TOK_NONE{
+			throw "'@default' is only valid on an interface method or an impl method"
+		}
+		if Dec.getDecorator(ts, decos, "overrides") != TOK_NONE{
+			throw "'@overrides' is only valid on an interface method or an impl method"
+		}
+		if Dec.getDecorator(ts, decos, "realizes") != TOK_NONE{
+			throw "'@realizes' is only valid on an interface method or an impl method"
+		}
+	}
+
+}

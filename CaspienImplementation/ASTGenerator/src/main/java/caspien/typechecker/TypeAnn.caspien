@@ -1,0 +1,1026 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Ty.caspien"
+import "Decl.caspien"
+
+/**
+ * Port of the type-annotation resolver of TypeCheckerSignatures: alias expansion, name:type groups, swap members and the frame-stack
+ * resolver (resolveTypeAnnotationRaw / stepAnnotation / deliverAnnotation / finishAnnotation). Token spans are lists of token ids.
+ * Context `cx` (a list): world, type-row list, default calling convention (string id), known-convention StrMap, struct rows, interface rows.
+ * Annotation frames are rows of AF_STRIDE slots in a per-call list. Error texts are shortened (a Caspien throw takes a literal).
+ */
+const CX_W 0
+const CX_TL 1
+const CX_DEFCC 2
+const CX_CCS 3
+const CX_SR 4
+const CX_IR 5
+
+const AF_STRIDE 25
+const AF_TOKENS 0
+const AF_ALLOW_IND 1
+const AF_I 2
+const AF_CONST 3
+const AF_MUT 4
+const AF_STORAGE 5
+const AF_SOME 6
+const AF_RANK 7
+const AF_FSTATES 8
+const AF_BASE 9
+const AF_BASE_TOK 10
+const AF_ARR 11
+const AF_INCOMPLETE 12
+const AF_DYN 13
+const AF_UDYN 14
+const AF_RAW 15
+const AF_FPP 16
+const AF_FPR 17
+const AF_FPD 18
+const AF_FPCC 19
+const AF_WAIT 20
+const AF_WTOK 21
+const AF_SPANS 22
+const AF_PNEXT 23
+const AF_RSPAN 24
+
+@pub
+struct TypeAnn{@pub{
+}}
+
+@pub
+impl TypeAnn{
+	@pub
+	@throws
+	static func makeCx(ts: ref mut TokStore, w: mut u64, tl: mut u64, defCc: mut u64, ccs: mut u64, sr: mut u64, ir: mut u64) mut u64{
+		?catch(e){ throw e }
+		let cx = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, cx, w)
+		? TokStore.listAdd(ts, cx, tl)
+		? TokStore.listAdd(ts, cx, defCc)
+		? TokStore.listAdd(ts, cx, ccs)
+		? TokStore.listAdd(ts, cx, sr)
+		? TokStore.listAdd(ts, cx, ir)
+		return cx
+	}
+
+	static func cget(ts: ref imut TokStore, cx: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, cx, k)
+	}
+
+	static func fg(ts: ref imut TokStore, fr: mut u64, f: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, fr, f * 25 + k)
+	}
+
+	static func fs(ts: ref mut TokStore, fr: mut u64, f: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, fr, f * 25 + k, v)
+	}
+
+	/** A new list holding tokens [from, to) of list `l`. */
+	@pub
+	@throws
+	static func sublist(ts: ref mut TokStore, l: mut u64, from: mut u64, to: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		for i in from..to{
+			? TokStore.listAdd(ts, out, TokStore.listGet(ts, l, i))
+		}
+		return out
+	}
+
+	static func isOp(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		if TokStore.kind(ts, t) != TT_OPERATOR{
+			return false
+		}
+		return TokStore.textEq(ts, t, lit)
+	}
+
+	static func isDel(ts: ref imut TokStore, t: mut u64, lit: static imut string) mut bool{
+		if TokStore.kind(ts, t) != TT_DELINEATOR{
+			return false
+		}
+		return TokStore.textEq(ts, t, lit)
+	}
+
+	static func isFloatStateName(ts: ref imut TokStore, sid: mut u64) mut bool{
+		if TokStore.strEq(ts, sid, "finite"){ return true }
+		if TokStore.strEq(ts, sid, "infinite"){ return true }
+		if TokStore.strEq(ts, sid, "nan"){ return true }
+		return false
+	}
+
+	static func isFloatType(ts: ref imut TokStore, sid: mut u64) mut bool{
+		if TokStore.strEq(ts, sid, "f32"){ return true }
+		if TokStore.strEq(ts, sid, "f64"){ return true }
+		return false
+	}
+
+	static func listHas(ts: ref imut TokStore, l: mut u64, sid: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, l, i), sid){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** Inserts `sid` into a sorted list of strings (Ty.cmp order); returns 0 when already present. */
+	static func sortedInsert(ts: ref mut TokStore, l: mut u64, sid: mut u64) mut u64{
+		?catch(e){ return 0 }
+		let n = mut TokStore.listSize(ts, l)
+		let at = mut n
+		for j in 0..n{
+			let k = mut (n - 1 - j)
+			let c = mut Ty.cmp(ts, TokStore.listGet(ts, l, k), sid)
+			if c == 0{
+				return 0
+			}
+			if c == 2{
+				at = k
+			}
+		}
+		? TokStore.listInsert(ts, l, at, sid)
+		return 1
+	}
+
+	/** Splits on top-level commas (whitespace tokens skipped); an empty group before a comma is kept. */
+	@pub
+	@throws
+	static func splitArgGroups(ts: ref mut TokStore, tokens: mut u64) mut u64{
+		?catch(e){ throw e }
+		let groups = mut ? TokStore.newList(ts)
+		let cur = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, tokens)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, tokens, i)
+			if TokStore.kind(ts, t) == TT_WHITESPACE{
+				continue
+			}
+			if TypeAnn.isOp(ts, t, ","){
+				? TokStore.listAdd(ts, groups, cur)
+				cur = ? TokStore.newList(ts)
+				continue
+			}
+			? TokStore.listAdd(ts, cur, t)
+		}
+		if TokStore.listSize(ts, cur) > 0{
+			? TokStore.listAdd(ts, groups, cur)
+		}
+		return groups
+	}
+
+	/** A range bound in an annotation: integer literal text, or "imut_" + identifier. */
+	@throws
+	static func rangeBound(ts: ref mut TokStore, toks: mut u64) mut u64{
+		?catch(e){ throw e }
+		if TokStore.listSize(ts, toks) != 1{
+			throw "a range bound must be a single integer literal or a bare identifier"
+		}
+		let t = mut TokStore.listGet(ts, toks, 0)
+		if TokStore.kind(ts, t) == TT_INTEGER{
+			return TokStore.text(ts, t)
+		}
+		if TokStore.kind(ts, t) == TT_VARREF{
+			let r = mut ? Ty.prefixed(ts, "imut_", TokStore.text(ts, t), "")
+			return r
+		}
+		throw "a range bound must be a single integer literal or a bare identifier"
+	}
+
+	@throws
+	static func parseRangeArgs(ts: ref mut TokStore, paren: mut u64) mut u64{
+		?catch(e){ throw e }
+		let args = mut ? TypeAnn.splitArgGroups(ts, TokStore.childs(ts, paren))
+		if TokStore.listSize(ts, args) != 2{
+			throw "'range(...)' requires exactly two bounds"
+		}
+		let a = mut ? TypeAnn.rangeBound(ts, TokStore.listGet(ts, args, 0))
+		let b = mut ? TypeAnn.rangeBound(ts, TokStore.listGet(ts, args, 1))
+		let openSid = mut ? TokStore.addLit(ts, "range(")
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, openSid)
+		? TokStore.strAppendId(ts, a)
+		? TokStore.strPush(ts, ',')
+		? TokStore.strAppendId(ts, b)
+		? TokStore.strPush(ts, ')')
+		let r = mut ? TokStore.strEnd(ts, sb)
+		return r
+	}
+
+	@throws
+	static func parseCallConv(ts: ref mut TokStore, cx: mut u64, paren: mut u64) mut u64{
+		?catch(e){ throw e }
+		let kids = mut TokStore.childs(ts, paren)
+		let n = mut TokStore.listSize(ts, kids)
+		let found = mut 0
+		let name = mut TOK_NONE
+		for i in 0..n{
+			let a = mut TokStore.listGet(ts, kids, i)
+			if TypeAnn.isOp(ts, a, ","){
+				continue
+			}
+			if TokStore.kind(ts, a) != TT_VARREF{
+				throw "'@call_convention' takes a bare name"
+			}
+			name = TokStore.text(ts, a)
+			found = found + 1
+		}
+		if found != 1{
+			throw "'@call_convention' takes exactly one argument"
+		}
+		if StrMap.has(ts, TypeAnn.cget(ts, cx, CX_CCS), name) == false{
+			throw "not a calling convention declared in compiler.config"
+		}
+		return name
+	}
+
+	/**
+	 * Splices alias targets for the first VARREF of each (nested) span into `out`; returns the outermost alias name (TOK_NONE when none).
+	 * Stack rows: [list, index, sawBase, alias name to release].
+	 */
+	@pub
+	@throws
+	static func expandAliases(ts: ref mut TokStore, cx: mut u64, tokens: mut u64, out: mut u64) mut u64{
+		?catch(e){ throw e }
+		let aliasMap = mut World.get(ts, TypeAnn.cget(ts, cx, CX_W), W_M_ALIAS_RAW_TARGETS)
+		let stk = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, stk, tokens)
+		? TokStore.listAdd(ts, stk, 0)
+		? TokStore.listAdd(ts, stk, 0)
+		? TokStore.listAdd(ts, stk, TOK_NONE)
+		let aliasSid = mut TOK_NONE
+		for lp in 0..1000000000{
+			let sz = mut TokStore.listSize(ts, stk)
+			if sz == 0{
+				break
+			}
+			let b = mut (sz - 4)
+			let l = mut TokStore.listGet(ts, stk, b)
+			let idx = mut TokStore.listGet(ts, stk, b + 1)
+			if idx >= TokStore.listSize(ts, l){
+				TokStore.listPop(ts, stk)
+				TokStore.listPop(ts, stk)
+				TokStore.listPop(ts, stk)
+				TokStore.listPop(ts, stk)
+				continue
+			}
+			let t = mut TokStore.listGet(ts, l, idx)
+			TokStore.listSet(ts, stk, b + 1, idx + 1)
+			if TokStore.kind(ts, t) == TT_VARREF && TokStore.listGet(ts, stk, b + 2) == 0{
+				TokStore.listSet(ts, stk, b + 2, 1)
+				let nm = mut TokStore.text(ts, t)
+				if StrMap.has(ts, aliasMap, nm){
+					let nf = mut (sz / 4)
+					for q in 0..nf{
+						let rel = mut TokStore.listGet(ts, stk, q * 4 + 3)
+						if rel != TOK_NONE{
+							if TokStore.strsEq(ts, rel, nm){
+								throw "circular type alias"
+							}
+						}
+					}
+					if aliasSid == TOK_NONE{
+						aliasSid = nm
+					}
+					? TokStore.listAdd(ts, stk, StrMap.get(ts, aliasMap, nm))
+					? TokStore.listAdd(ts, stk, 0)
+					? TokStore.listAdd(ts, stk, 0)
+					? TokStore.listAdd(ts, stk, nm)
+					continue
+				}
+			}
+			? TokStore.listAdd(ts, out, t)
+		}
+		return aliasSid
+	}
+
+	static func isKnownType(ts: ref imut TokStore, cx: mut u64, name: mut u64) mut bool{
+		if TokStore.strEq(ts, name, "u64"){ return true }
+		if TokStore.strEq(ts, name, "s64"){ return true }
+		if TokStore.strEq(ts, name, "u32"){ return true }
+		if TokStore.strEq(ts, name, "s32"){ return true }
+		if TokStore.strEq(ts, name, "u16"){ return true }
+		if TokStore.strEq(ts, name, "s16"){ return true }
+		if TokStore.strEq(ts, name, "u8"){ return true }
+		if TokStore.strEq(ts, name, "s8"){ return true }
+		if TokStore.strEq(ts, name, "f32"){ return true }
+		if TokStore.strEq(ts, name, "f64"){ return true }
+		if TokStore.strEq(ts, name, "bool"){ return true }
+		if TokStore.strEq(ts, name, "char"){ return true }
+		if TokStore.strEq(ts, name, "string"){ return true }
+		if TokStore.strEq(ts, name, "void"){ return true }
+		if TokStore.strEq(ts, name, "null"){ return true }
+		let w = mut TypeAnn.cget(ts, cx, CX_W)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name){ return true }
+		if StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){ return true }
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name){ return true }
+		return false
+	}
+
+	/** A struct/interface named in an annotation must be @pub or declared in the same file as `at`. */
+	@throws
+	static func checkVisibility(ts: ref imut TokStore, cx: mut u64, base: mut u64, at: mut u64) void{
+		?catch(e){ throw e }
+		let w = mut TypeAnn.cget(ts, cx, CX_W)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		if StrMap.has(ts, structs, base){
+			let row = mut StrMap.get(ts, structs, base)
+			let sr = mut TypeAnn.cget(ts, cx, CX_SR)
+			if Infos.sget(ts, sr, row, SI_PUBLIC) == 0{
+				let dt = mut Infos.sget(ts, sr, row, SI_DECL_TOK)
+				if TokStore.fileId(ts, dt) != TokStore.fileId(ts, at){
+					throw "a struct is private -- not accessible outside the file it is declared in"
+				}
+			}
+			return
+		}
+		let ifaces = mut World.get(ts, w, W_M_IFACES)
+		if StrMap.has(ts, ifaces, base){
+			let row = mut StrMap.get(ts, ifaces, base)
+			let ir = mut TypeAnn.cget(ts, cx, CX_IR)
+			if Infos.rget(ts, ir, 8, row, II_PUBLIC) == 0{
+				let dt = mut Infos.rget(ts, ir, 8, row, II_DECL_TOK)
+				if TokStore.fileId(ts, dt) != TokStore.fileId(ts, at){
+					throw "an interface is private -- not accessible outside the file it is declared in"
+				}
+			}
+		}
+	}
+
+	@throws
+	static func requireOrder(seen: mut u64, thisRank: mut u64) void{
+		?catch(e){ throw e }
+		if thisRank < seen{
+			throw "modifier is out of order -- constancy, then storage, then presence, then mutability, then the base type"
+		}
+	}
+
+	@throws
+	static func newFrame(ts: ref mut TokStore, fr: mut u64, tokens: mut u64, allowInd: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut (TokStore.listSize(ts, fr) / 25)
+		let isConst = mut 0
+		let toks = mut tokens
+		let first = mut TokStore.listGet(ts, tokens, 0)
+		if TokStore.listSize(ts, tokens) > 0{
+			if TokStore.kind(ts, first) == TT_KEYWORD{
+				if TokStore.textEq(ts, first, "const"){
+					isConst = 1
+					toks = ? TypeAnn.sublist(ts, tokens, 1, TokStore.listSize(ts, tokens))
+				}
+			}
+		}
+		? TokStore.listAdd(ts, fr, toks)
+		? TokStore.listAdd(ts, fr, allowInd)
+		? TokStore.listAdd(ts, fr, 0)
+		? TokStore.listAdd(ts, fr, isConst)
+		for k in 4..6{
+			? TokStore.listAdd(ts, fr, TOK_NONE)
+		}
+		? TokStore.listAdd(ts, fr, 0)
+		? TokStore.listAdd(ts, fr, 0)
+		for k in 8..12{
+			? TokStore.listAdd(ts, fr, TOK_NONE)
+		}
+		? TokStore.listAdd(ts, fr, 0)
+		for k in 13..20{
+			? TokStore.listAdd(ts, fr, TOK_NONE)
+		}
+		? TokStore.listAdd(ts, fr, 0)
+		? TokStore.listAdd(ts, fr, TOK_NONE)
+		? TokStore.listAdd(ts, fr, TOK_NONE)
+		? TokStore.listAdd(ts, fr, 0)
+		? TokStore.listAdd(ts, fr, TOK_NONE)
+		return id
+	}
+
+	/** Next parameter span of a `func(..) R` annotation as a nested frame, else the return span. */
+	@throws
+	static func nextFuncChild(ts: ref mut TokStore, fr: mut u64, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let spans = mut TypeAnn.fg(ts, fr, f, AF_SPANS)
+		let pn = mut TypeAnn.fg(ts, fr, f, AF_PNEXT)
+		if pn < TokStore.listSize(ts, spans){
+			TypeAnn.fs(ts, fr, f, AF_WAIT, 1)
+			TypeAnn.fs(ts, fr, f, AF_PNEXT, pn + 1)
+			let c = mut ? TypeAnn.newFrame(ts, fr, TokStore.listGet(ts, spans, pn), 0)
+			return c
+		}
+		let rs = mut TypeAnn.fg(ts, fr, f, AF_RSPAN)
+		if TokStore.listSize(ts, rs) == 0{
+			throw "'func(...)' requires a return type"
+		}
+		TypeAnn.fs(ts, fr, f, AF_WAIT, 2)
+		let c2 = mut ? TypeAnn.newFrame(ts, fr, rs, 0)
+		return c2
+	}
+
+	/** A frame's nested annotation has been resolved to `r`; takes it and returns another nested frame, or TOK_NONE to go on with the token loop. */
+	@throws
+	static func deliver(ts: ref mut TokStore, cx: mut u64, fr: mut u64, f: mut u64, r: mut u64) mut u64{
+		?catch(e){ throw e }
+		let tl = mut TypeAnn.cget(ts, cx, CX_TL)
+		let wt = mut TypeAnn.fg(ts, fr, f, AF_WAIT)
+		TypeAnn.fs(ts, fr, f, AF_WAIT, 0)
+		let ntoks = mut TokStore.listSize(ts, TypeAnn.fg(ts, fr, f, AF_TOKENS))
+		if wt == 1{
+			? TokStore.listAdd(ts, TypeAnn.fg(ts, fr, f, AF_FPP), r)
+			let c = mut ? TypeAnn.nextFuncChild(ts, fr, f)
+			return c
+		}
+		if wt == 2{
+			TypeAnn.fs(ts, fr, f, AF_FPR, r)
+			let fsid = mut ? TokStore.addLit(ts, "func")
+			TypeAnn.fs(ts, fr, f, AF_BASE, fsid)
+			TypeAnn.fs(ts, fr, f, AF_I, ntoks + 1)
+			return TOK_NONE
+		}
+		if wt == 3{
+			TypeAnn.fs(ts, fr, f, AF_RAW, r)
+			let cn = mut ? Ty.canonical(ts, tl, r)
+			TypeAnn.fs(ts, fr, f, AF_BASE, cn)
+			TypeAnn.fs(ts, fr, f, AF_I, ntoks + 1)
+			return TOK_NONE
+		}
+		if wt == 4{
+			TypeAnn.fs(ts, fr, f, AF_UDYN, r)
+			if Ty.get(ts, tl, r, TY_SOME) != 0{
+				if TokStore.strEq(ts, Ty.get(ts, tl, r, TY_STORAGE), "ref"){
+					throw "'ref some' is not allowed as an 'unsafe dynarray' element type"
+				}
+			}
+			let et = mut ? Ty.dynArrayElementText(ts, tl, r)
+			let bs = mut ? Ty.prefixed(ts, "unsafe_dynarray(", et, ")")
+			TypeAnn.fs(ts, fr, f, AF_BASE, bs)
+			TypeAnn.fs(ts, fr, f, AF_I, TypeAnn.fg(ts, fr, f, AF_I) + 3)
+			return TOK_NONE
+		}
+		if wt == 5{
+			TypeAnn.fs(ts, fr, f, AF_DYN, r)
+			if Ty.get(ts, tl, r, TY_SOME) != 0{
+				if TokStore.strEq(ts, Ty.get(ts, tl, r, TY_STORAGE), "ref"){
+					throw "'ref some' is not allowed as a 'dynarray' element type"
+				}
+			}
+			let et2 = mut ? Ty.dynArrayElementText(ts, tl, r)
+			let bs2 = mut ? Ty.prefixed(ts, "dynarray(", et2, ")")
+			TypeAnn.fs(ts, fr, f, AF_BASE, bs2)
+			TypeAnn.fs(ts, fr, f, AF_I, TypeAnn.fg(ts, fr, f, AF_I) + 2)
+			return TOK_NONE
+		}
+		throw "annotation frame delivered with nothing awaited"
+	}
+
+	/** Runs the token loop of frame `f` from its index; returns a nested frame to resolve first (the frame then waits), or TOK_NONE when the tokens are used up. */
+	@throws
+	static func step(ts: ref mut TokStore, cx: mut u64, fr: mut u64, f: mut u64) mut u64{
+		?catch(e){ throw e }
+		let w = mut TypeAnn.cget(ts, cx, CX_W)
+		let toks = mut TypeAnn.fg(ts, fr, f, AF_TOKENS)
+		let n = mut TokStore.listSize(ts, toks)
+		for lp in 0..1000000000{
+			let i = mut TypeAnn.fg(ts, fr, f, AF_I)
+			if i >= n{
+				break
+			}
+			let t = mut TokStore.listGet(ts, toks, i)
+			let kind = mut TokStore.kind(ts, t)
+			let base = mut TypeAnn.fg(ts, fr, f, AF_BASE)
+			let nextTok = mut TokStore.listGet(ts, toks, i + 1)
+			let hasNext = mut 0
+			if i + 1 < n{
+				hasNext = 1
+			}
+			if TypeAnn.isOp(ts, t, "@"){
+				if hasNext == 0{
+					throw "'@' must be followed by a decorator name"
+				}
+				if TokStore.kind(ts, nextTok) != TT_VARREF{
+					throw "'@' must be followed by a decorator name"
+				}
+				let dn = mut TokStore.text(ts, nextTok)
+				let decos = mut TypeAnn.fg(ts, fr, f, AF_FPD)
+				if decos == TOK_NONE{
+					decos = ? TokStore.newList(ts)
+					TypeAnn.fs(ts, fr, f, AF_FPD, decos)
+				}
+				if TypeAnn.listHas(ts, decos, dn) == false{
+					? TokStore.listAdd(ts, decos, dn)
+				}
+				let j = mut (i + 1)
+				TypeAnn.fs(ts, fr, f, AF_I, j)
+				if j + 1 < n{
+					let pt = mut TokStore.listGet(ts, toks, j + 1)
+					if TypeAnn.isDel(ts, pt, "("){
+						TypeAnn.fs(ts, fr, f, AF_I, j + 1)
+						if TokStore.strEq(ts, dn, "call_convention"){
+							let cc = mut ? TypeAnn.parseCallConv(ts, cx, pt)
+							TypeAnn.fs(ts, fr, f, AF_FPCC, cc)
+						}
+					}
+				}
+				TypeAnn.fs(ts, fr, f, AF_I, TypeAnn.fg(ts, fr, f, AF_I) + 1)
+				continue
+			}
+			if kind == TT_KEYWORD && TokStore.textEq(ts, t, "func") && base == TOK_NONE{
+				if hasNext == 0{
+					throw "'func' requires a parenthesized parameter list"
+				}
+				if TypeAnn.isDel(ts, nextTok, "(") == false{
+					throw "'func' requires a parenthesized parameter list"
+				}
+				let fpl = mut ? TokStore.newList(ts)
+				TypeAnn.fs(ts, fr, f, AF_FPP, fpl)
+				let pk = mut TokStore.childs(ts, nextTok)
+				let spans = mut TOK_NONE
+				if TokStore.listSize(ts, pk) == 0{
+					spans = ? TokStore.newList(ts)
+				}
+				else{
+					spans = ? TypeAnn.splitArgGroups(ts, pk)
+				}
+				TypeAnn.fs(ts, fr, f, AF_SPANS, spans)
+				TypeAnn.fs(ts, fr, f, AF_PNEXT, 0)
+				let rsp = mut ? TypeAnn.sublist(ts, toks, i + 2, n)
+				TypeAnn.fs(ts, fr, f, AF_RSPAN, rsp)
+				TypeAnn.fs(ts, fr, f, AF_WTOK, t)
+				let child = mut ? TypeAnn.nextFuncChild(ts, fr, f)
+				return child
+			}
+			if kind == TT_MODIFIER{
+				if TokStore.textEq(ts, t, "mut") || TokStore.textEq(ts, t, "imut"){
+					if TypeAnn.fg(ts, fr, f, AF_MUT) != TOK_NONE{
+						throw "duplicate mutability modifier in type annotation"
+					}
+					? TypeAnn.requireOrder(TypeAnn.fg(ts, fr, f, AF_RANK), 3)
+					TypeAnn.fs(ts, fr, f, AF_RANK, 3)
+					TypeAnn.fs(ts, fr, f, AF_MUT, TokStore.text(ts, t))
+				}
+				else{
+					if TokStore.textEq(ts, t, "some"){
+						if TypeAnn.fg(ts, fr, f, AF_SOME) != 0{
+							throw "duplicate 'some' modifier in type annotation"
+						}
+						? TypeAnn.requireOrder(TypeAnn.fg(ts, fr, f, AF_RANK), 2)
+						TypeAnn.fs(ts, fr, f, AF_RANK, 2)
+						TypeAnn.fs(ts, fr, f, AF_SOME, 1)
+					}
+					else{
+						let st = mut TypeAnn.fg(ts, fr, f, AF_STORAGE)
+						if st != TOK_NONE{
+							if TokStore.strEq(ts, st, "raw") && TokStore.textEq(ts, t, "raw"){
+								let pointee = mut ? TypeAnn.sublist(ts, toks, i, n)
+								TypeAnn.fs(ts, fr, f, AF_WAIT, 3)
+								let c3 = mut ? TypeAnn.newFrame(ts, fr, pointee, 0)
+								return c3
+							}
+							throw "duplicate storage modifier in type annotation"
+						}
+						? TypeAnn.requireOrder(TypeAnn.fg(ts, fr, f, AF_RANK), 1)
+						TypeAnn.fs(ts, fr, f, AF_RANK, 1)
+						TypeAnn.fs(ts, fr, f, AF_STORAGE, TokStore.text(ts, t))
+						if TokStore.textEq(ts, t, "owns") || TokStore.textEq(ts, t, "ref"){
+							World.set(ts, w, W_F_USES_OWNS_REF_DYN_NEW, 1)
+						}
+					}
+				}
+				TypeAnn.fs(ts, fr, f, AF_I, TypeAnn.fg(ts, fr, f, AF_I) + 1)
+				continue
+			}
+			if kind == TT_VARREF && base == TOK_NONE && hasNext == 1 && TypeAnn.isFloatStateName(ts, TokStore.text(ts, t)){
+				if TypeAnn.fg(ts, fr, f, AF_FSTATES) != TOK_NONE{
+					throw "duplicate float-state modifier in type annotation"
+				}
+				let states = mut ? TokStore.newList(ts)
+				TypeAnn.sortedInsert(ts, states, TokStore.text(ts, t))
+				TypeAnn.fs(ts, fr, f, AF_FSTATES, states)
+				let ii = mut i
+				for lq in 0..1000000{
+					if ii + 2 >= n{
+						break
+					}
+					let op = mut TokStore.listGet(ts, toks, ii + 1)
+					let nm = mut TokStore.listGet(ts, toks, ii + 2)
+					if TypeAnn.isOp(ts, op, "|") == false{
+						break
+					}
+					if TypeAnn.isFloatStateName(ts, TokStore.text(ts, nm)) == false{
+						break
+					}
+					let added = mut TypeAnn.sortedInsert(ts, states, TokStore.text(ts, nm))
+					if added == 0{
+						throw "a float state is repeated in a float-state modifier chain"
+					}
+					ii = ii + 2
+				}
+				if TokStore.listSize(ts, states) == 3{
+					throw "a float-state modifier chain names every possible float state -- write the bare type instead"
+				}
+				TypeAnn.fs(ts, fr, f, AF_I, ii + 1)
+				continue
+			}
+			if kind == TT_KEYWORD && TokStore.textEq(ts, t, "unsafe") && base == TOK_NONE && hasNext == 1{
+				if TokStore.kind(ts, nextTok) == TT_VARREF && TokStore.textEq(ts, nextTok, "dynarray"){
+					let parenTok = mut TokStore.listGet(ts, toks, i + 2)
+					if i + 2 >= n{
+						throw "'unsafe dynarray' requires its element type spelled out, e.g. 'unsafe dynarray(u64)'"
+					}
+					if TypeAnn.isDel(ts, parenTok, "(") == false{
+						throw "'unsafe dynarray' requires its element type spelled out, e.g. 'unsafe dynarray(u64)'"
+					}
+					let uargs = mut ? TypeAnn.splitArgGroups(ts, TokStore.childs(ts, parenTok))
+					if TokStore.listSize(ts, uargs) != 1{
+						throw "'unsafe dynarray(...)' requires exactly one argument: the element type"
+					}
+					TypeAnn.fs(ts, fr, f, AF_WAIT, 4)
+					TypeAnn.fs(ts, fr, f, AF_WTOK, parenTok)
+					let c4 = mut ? TypeAnn.newFrame(ts, fr, TokStore.listGet(ts, uargs, 0), 0)
+					return c4
+				}
+			}
+			if kind == TT_VARREF && TokStore.textEq(ts, t, "dynarray") && base == TOK_NONE{
+				if hasNext == 0{
+					throw "'dynarray' requires its element type spelled out, e.g. 'dynarray(u64)'"
+				}
+				if TypeAnn.isDel(ts, nextTok, "(") == false{
+					throw "'dynarray' requires its element type spelled out, e.g. 'dynarray(u64)'"
+				}
+				let dargs = mut ? TypeAnn.splitArgGroups(ts, TokStore.childs(ts, nextTok))
+				if TokStore.listSize(ts, dargs) != 1{
+					throw "'dynarray(...)' requires exactly one argument: the element type"
+				}
+				TypeAnn.fs(ts, fr, f, AF_WAIT, 5)
+				TypeAnn.fs(ts, fr, f, AF_WTOK, nextTok)
+				let c5 = mut ? TypeAnn.newFrame(ts, fr, TokStore.listGet(ts, dargs, 0), 0)
+				return c5
+			}
+			if kind == TT_VARREF && TokStore.textEq(ts, t, "slice") && base == TOK_NONE{
+				throw "'slice' is no longer a valid type -- Caspien has removed the slice type"
+			}
+			if kind == TT_VARREF && TokStore.textEq(ts, t, "range") && base == TOK_NONE{
+				if hasNext == 1 && TypeAnn.isDel(ts, nextTok, "("){
+					let rb = mut ? TypeAnn.parseRangeArgs(ts, nextTok)
+					TypeAnn.fs(ts, fr, f, AF_BASE, rb)
+					TypeAnn.fs(ts, fr, f, AF_I, i + 1)
+				}
+				else{
+					TypeAnn.fs(ts, fr, f, AF_BASE, TokStore.text(ts, t))
+					TypeAnn.fs(ts, fr, f, AF_INCOMPLETE, 1)
+				}
+				TypeAnn.fs(ts, fr, f, AF_I, TypeAnn.fg(ts, fr, f, AF_I) + 1)
+				continue
+			}
+			if kind == TT_VARREF{
+				if base != TOK_NONE{
+					throw "unexpected extra token in type annotation"
+				}
+				TypeAnn.fs(ts, fr, f, AF_BASE, TokStore.text(ts, t))
+				TypeAnn.fs(ts, fr, f, AF_BASE_TOK, t)
+				TypeAnn.fs(ts, fr, f, AF_I, i + 1)
+				continue
+			}
+			if TypeAnn.isDel(ts, t, "["){
+				if base == TOK_NONE{
+					throw "array length annotation '[...]' with no base type before it"
+				}
+				let kids = mut TokStore.childs(ts, t)
+				if TokStore.listSize(ts, kids) != 1{
+					throw "array length must be a single integer literal"
+				}
+				if TokStore.kind(ts, TokStore.listGet(ts, kids, 0)) != TT_INTEGER{
+					throw "array length must be a single integer literal"
+				}
+				let arr = mut TypeAnn.fg(ts, fr, f, AF_ARR)
+				if arr == TOK_NONE{
+					arr = ? TokStore.newList(ts)
+					TypeAnn.fs(ts, fr, f, AF_ARR, arr)
+				}
+				? TokStore.listAdd(ts, arr, TokStore.text(ts, TokStore.listGet(ts, kids, 0)))
+				TypeAnn.fs(ts, fr, f, AF_I, i + 1)
+				continue
+			}
+			throw "unexpected token in type annotation"
+		}
+		return TOK_NONE
+	}
+
+	/** baseType + "[N]..." */
+	@throws
+	static func withSuffix(ts: ref mut TokStore, base: mut u64, arr: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, arr)
+		if n == 0{
+			return base
+		}
+		let sb = mut TokStore.strBegin(ts)
+		? TokStore.strAppendId(ts, base)
+		for k in 0..n{
+			? TokStore.strPush(ts, '[')
+			? TokStore.strAppendId(ts, TokStore.listGet(ts, arr, k))
+			? TokStore.strPush(ts, ']')
+		}
+		let r = mut ? TokStore.strEnd(ts, sb)
+		return r
+	}
+
+	/** Sets the some/float-state/const slots on a freshly made type row. */
+	static func decorateType(ts: ref mut TokStore, tl: mut u64, ty: mut u64, isSome: mut u64, states: mut u64, isConst: mut u64) void{
+		Ty.set(ts, tl, ty, TY_SOME, isSome)
+		Ty.set(ts, tl, ty, TY_FLOAT_STATES, states)
+		Ty.set(ts, tl, ty, TY_CONST, isConst)
+	}
+
+	@throws
+	static func finish(ts: ref mut TokStore, cx: mut u64, fr: mut u64, f: mut u64, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		let tl = mut TypeAnn.cget(ts, cx, CX_TL)
+		let w = mut TypeAnn.cget(ts, cx, CX_W)
+		let mutab = mut TypeAnn.fg(ts, fr, f, AF_MUT)
+		let storage = mut TypeAnn.fg(ts, fr, f, AF_STORAGE)
+		let isSome = mut TypeAnn.fg(ts, fr, f, AF_SOME)
+		let states = mut TypeAnn.fg(ts, fr, f, AF_FSTATES)
+		let base = mut TypeAnn.fg(ts, fr, f, AF_BASE)
+		let baseTok = mut TypeAnn.fg(ts, fr, f, AF_BASE_TOK)
+		let arr = mut TypeAnn.fg(ts, fr, f, AF_ARR)
+		let isConst = mut TypeAnn.fg(ts, fr, f, AF_CONST)
+		let allowInd = mut TypeAnn.fg(ts, fr, f, AF_ALLOW_IND)
+		let dynE = mut TypeAnn.fg(ts, fr, f, AF_DYN)
+		let udynE = mut TypeAnn.fg(ts, fr, f, AF_UDYN)
+		let rawP = mut TypeAnn.fg(ts, fr, f, AF_RAW)
+		let fpp = mut TypeAnn.fg(ts, fr, f, AF_FPP)
+		if base == TOK_NONE{
+			throw "type annotation is missing a base type"
+		}
+		if isSome != 0{
+			if storage == TOK_NONE{
+				throw "'some' requires 'owns'/'ref'/'raw'/'static' storage"
+			}
+			if TokStore.strEq(ts, storage, "auto"){
+				throw "'some' requires 'owns'/'ref'/'raw'/'static' storage"
+			}
+		}
+		if states != TOK_NONE{
+			if TypeAnn.isFloatType(ts, base) == false{
+				throw "a float-state modifier requires 'f32' or 'f64'"
+			}
+		}
+		let pRange = mut ? TokStore.addLit(ts, "range(")
+		let pDyn = mut ? TokStore.addLit(ts, "dynarray(")
+		let pUdyn = mut ? TokStore.addLit(ts, "unsafe_dynarray(")
+		let imutSid = mut ? TokStore.addLit(ts, "imut")
+		let indet = mut ? TokStore.addLit(ts, "indeterminate")
+		if TypeAnn.fg(ts, fr, f, AF_INCOMPLETE) == 0{
+			if fpp != TOK_NONE{
+				if storage == TOK_NONE{
+					throw "a function-pointer type's storage must be 'static'"
+				}
+				if TokStore.strEq(ts, storage, "static") == false{
+					throw "a function-pointer type's storage must be 'static'"
+				}
+				if mutab == TOK_NONE{
+					throw "type annotations require an explicit 'mut' or 'imut'"
+				}
+				let decos = mut TypeAnn.fg(ts, fr, f, AF_FPD)
+				if decos == TOK_NONE{
+					decos = ? TokStore.newList(ts)
+				}
+				let cc = mut TypeAnn.fg(ts, fr, f, AF_FPCC)
+				if cc == TOK_NONE{
+					cc = TypeAnn.cget(ts, cx, CX_DEFCC)
+				}
+				let fp = mut ? Ty.funcPointer(ts, tl, mutab, fpp, TypeAnn.fg(ts, fr, f, AF_FPR), decos, cc)
+				TypeAnn.decorateType(ts, tl, fp, isSome, states, isConst)
+				return fp
+			}
+			if Decl.startsWith(ts, base, pRange) == 0 && Decl.startsWith(ts, base, pDyn) == 0 && Decl.startsWith(ts, base, pUdyn) == 0 && rawP == TOK_NONE && TypeAnn.isKnownType(ts, cx, base) == false{
+				throw "unknown type in type annotation"
+			}
+		}
+		if mutab == TOK_NONE && TokStore.strEq(ts, base, "void") == false && allowInd == 0{
+			throw "type annotations require an explicit 'mut' or 'imut' -- mutability is never inferred or defaulted here"
+		}
+		if mutab == TOK_NONE && allowInd != 0 && TokStore.strEq(ts, base, "void") == false{
+			mutab = indet
+		}
+		if mutab == TOK_NONE{
+			mutab = imutSid
+		}
+		let vtok = mut baseTok
+		if vtok == TOK_NONE{
+			vtok = at
+		}
+		? TypeAnn.checkVisibility(ts, cx, base, vtok)
+		let needsStorage = mut 0
+		if TokStore.strEq(ts, base, "string"){
+			needsStorage = 1
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), base){
+			needsStorage = 1
+		}
+		if needsStorage == 1 && storage == TOK_NONE{
+			throw "this type is a pointer type and requires a storage modifier (owns/ref/raw/auto/static)"
+		}
+		let full = mut ? TypeAnn.withSuffix(ts, base, arr)
+		if dynE != TOK_NONE && TokStore.listSize(ts, arr) == 0{
+			if storage != TOK_NONE{
+				if TokStore.strEq(ts, storage, "owns") == false{
+					throw "a dynarray is always 'owns' storage -- no other storage can be written before it"
+				}
+			}
+			let ownsSid = mut ? TokStore.addLit(ts, "owns")
+			let dt = mut ? Ty.make(ts, tl, ownsSid, mutab, full, TOK_NONE)
+			Ty.set(ts, tl, dt, TY_DYN_ELEM, dynE)
+			TypeAnn.decorateType(ts, tl, dt, isSome, states, isConst)
+			return dt
+		}
+		if udynE != TOK_NONE{
+			if storage != TOK_NONE{
+				if TokStore.strEq(ts, storage, "owns") == false{
+					throw "an unsafe dynarray is always 'owns' storage -- no other storage can be written before it"
+				}
+			}
+			let ownsSid2 = mut ? TokStore.addLit(ts, "owns")
+			let ut = mut ? Ty.make(ts, tl, ownsSid2, mutab, full, TOK_NONE)
+			Ty.set(ts, tl, ut, TY_UDYN_ELEM, udynE)
+			TypeAnn.decorateType(ts, tl, ut, isSome, states, isConst)
+			return ut
+		}
+		let gt = mut ? Ty.make(ts, tl, storage, mutab, full, TOK_NONE)
+		if rawP != TOK_NONE{
+			Ty.set(ts, tl, gt, TY_RAW_POINTEE, rawP)
+		}
+		TypeAnn.decorateType(ts, tl, gt, isSome, states, isConst)
+		return gt
+	}
+
+	/** The frame-stack resolver: no recursion, one frame per (nested) annotation. */
+	@throws
+	static func resolveRaw(ts: ref mut TokStore, cx: mut u64, tokens: mut u64, at: mut u64, allowInd: mut u64) mut u64{
+		?catch(e){ throw e }
+		let fr = mut ? TokStore.newList(ts)
+		let stk = mut ? TokStore.newList(ts)
+		let f0 = mut ? TypeAnn.newFrame(ts, fr, tokens, allowInd)
+		? TokStore.listAdd(ts, stk, f0)
+		let delivered = mut 0
+		let hasDel = mut 0
+		let result = mut 0
+		for lp in 0..1000000000{
+			let f = mut TokStore.listGet(ts, stk, TokStore.listSize(ts, stk) - 1)
+			if hasDel == 1{
+				let nxt = mut ? TypeAnn.deliver(ts, cx, fr, f, delivered)
+				hasDel = 0
+				if nxt != TOK_NONE{
+					? TokStore.listAdd(ts, stk, nxt)
+					continue
+				}
+			}
+			let child = mut ? TypeAnn.step(ts, cx, fr, f)
+			if child != TOK_NONE{
+				? TokStore.listAdd(ts, stk, child)
+				continue
+			}
+			result = ? TypeAnn.finish(ts, cx, fr, f, at)
+			TokStore.listPop(ts, stk)
+			if TokStore.listSize(ts, stk) == 0{
+				break
+			}
+			delivered = result
+			hasDel = 1
+		}
+		return result
+	}
+
+	/** Resolves a type annotation: aliases are spliced first and the outermost alias name is kept as the nominal tag. */
+	@pub
+	@throws
+	static func resolve(ts: ref mut TokStore, cx: mut u64, tokens: mut u64, at: mut u64, allowInd: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		let aliasSid = mut ? TypeAnn.expandAliases(ts, cx, tokens, out)
+		let r = mut ? TypeAnn.resolveRaw(ts, cx, out, at, allowInd)
+		if aliasSid == TOK_NONE{
+			return r
+		}
+		let tl = mut TypeAnn.cget(ts, cx, CX_TL)
+		let nt = mut ? Ty.make(ts, tl, Ty.get(ts, tl, r, TY_STORAGE), Ty.get(ts, tl, r, TY_MUT), Ty.get(ts, tl, r, TY_BASE), aliasSid)
+		return nt
+	}
+
+	/** A `swap` member's type: starts with `atomic`, concretely mut, no storage. */
+	@pub
+	@throws
+	static func resolveSwapMember(ts: ref mut TokStore, cx: mut u64, typeTokens: mut u64, at: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.listSize(ts, typeTokens)
+		if n == 0{
+			throw "a 'swap'-tagged struct member's type must begin with 'atomic'"
+		}
+		let a0 = mut TokStore.listGet(ts, typeTokens, 0)
+		if TokStore.kind(ts, a0) != TT_KEYWORD{
+			throw "a 'swap'-tagged struct member's type must begin with 'atomic'"
+		}
+		if TokStore.textEq(ts, a0, "atomic") == false{
+			throw "a 'swap'-tagged struct member's type must begin with 'atomic'"
+		}
+		let rest = mut ? TypeAnn.sublist(ts, typeTokens, 1, n)
+		let r = mut ? TypeAnn.resolve(ts, cx, rest, at, 0)
+		let tl = mut TypeAnn.cget(ts, cx, CX_TL)
+		let m = mut Ty.get(ts, tl, r, TY_MUT)
+		if m == TOK_NONE{
+			throw "a 'swap'-tagged member's atomic type must be concretely 'mut'"
+		}
+		if TokStore.strEq(ts, m, "mut") == false{
+			throw "a 'swap'-tagged member's atomic type must be concretely 'mut'"
+		}
+		if Ty.get(ts, tl, r, TY_STORAGE) != TOK_NONE{
+			throw "a 'swap'-tagged member's atomic type cannot carry a storage modifier"
+		}
+		let at2 = mut ? Ty.withAtomic(ts, tl, r, 1)
+		return at2
+	}
+
+	/** Splits a flat token list into raw "name : type..." groups (separators are commas and terminators). */
+	@pub
+	@throws
+	static func splitIntoRawGroups(ts: ref mut TokStore, flat: mut u64) mut u64{
+		?catch(e){ throw e }
+		let result = mut ? TokStore.newList(ts)
+		let cur = mut ? TokStore.newList(ts)
+		let n = mut TokStore.listSize(ts, flat)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, flat, i)
+			let sep = mut 0
+			if TypeAnn.isOp(ts, t, ","){
+				sep = 1
+			}
+			if TokStore.kind(ts, t) == TT_TERMINATOR{
+				sep = 1
+			}
+			if sep == 1{
+				if TokStore.listSize(ts, cur) > 0{
+					? TokStore.listAdd(ts, result, cur)
+					cur = ? TokStore.newList(ts)
+				}
+				continue
+			}
+			? TokStore.listAdd(ts, cur, t)
+		}
+		if TokStore.listSize(ts, cur) > 0{
+			? TokStore.listAdd(ts, result, cur)
+		}
+		return result
+	}
+
+	/** One "name : type" group; appends (name, type row, isSwap) to `out`. */
+	@pub
+	@throws
+	static func parseOneNameType(ts: ref mut TokStore, cx: mut u64, group: mut u64, allowSwap: mut u64, out: mut u64) void{
+		?catch(e){ throw e }
+		let g = mut group
+		let isSwap = mut 0
+		if allowSwap != 0 && TokStore.listSize(ts, g) > 0{
+			if TypeAnn.isOp(ts, TokStore.listGet(ts, g, 0), "swap"){
+				isSwap = 1
+				g = ? TypeAnn.sublist(ts, group, 1, TokStore.listSize(ts, group))
+			}
+		}
+		let n = mut TokStore.listSize(ts, g)
+		if n < 3{
+			throw "expected 'name : type'"
+		}
+		let g0 = mut TokStore.listGet(ts, g, 0)
+		if TokStore.kind(ts, g0) != TT_VARREF{
+			throw "expected 'name : type'"
+		}
+		if TypeAnn.isOp(ts, TokStore.listGet(ts, g, 1), ":") == false{
+			throw "expected 'name : type'"
+		}
+		let typeToks = mut ? TypeAnn.sublist(ts, g, 2, n)
+		let ty = mut 0
+		if isSwap == 1{
+			ty = ? TypeAnn.resolveSwapMember(ts, cx, typeToks, g0)
+		}
+		else{
+			ty = ? TypeAnn.resolve(ts, cx, typeToks, g0, 0)
+		}
+		? TokStore.listAdd(ts, out, TokStore.text(ts, g0))
+		? TokStore.listAdd(ts, out, ty)
+		? TokStore.listAdd(ts, out, isSwap)
+	}
+
+	/** All groups of a flat list; `out` receives triples (name, type row, isSwap). */
+	@pub
+	@throws
+	static func parseNameTypeGroups(ts: ref mut TokStore, cx: mut u64, flat: mut u64, allowSwap: mut u64, out: mut u64) void{
+		?catch(e){ throw e }
+		let groups = mut ? TypeAnn.splitIntoRawGroups(ts, flat)
+		let n = mut TokStore.listSize(ts, groups)
+		for i in 0..n{
+			? TypeAnn.parseOneNameType(ts, cx, TokStore.listGet(ts, groups, i), allowSwap, out)
+		}
+	}
+}

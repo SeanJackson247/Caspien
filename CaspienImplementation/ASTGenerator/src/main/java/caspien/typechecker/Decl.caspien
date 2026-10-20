@@ -1,0 +1,267 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+import "Ty.caspien"
+import "Infos.caspien"
+import "World.caspien"
+
+/**
+ * Ports of the type-text helpers of TypeCheckerDeclarations/TypeCheckerModel: pointeeOf, stripArrayDims, typeOwnsMemory, elementTextOwnsMemory, isInlineOwningStruct, udynTag.
+ * Types are Ty rows (list `tl`), type texts are string ids, structs are Infos rows (list `sr`) found through the World's struct map. Struct member maps are StrMaps (name -> Ty row).
+ */
+@pub
+struct Decl{@pub{
+}}
+
+@pub
+impl Decl{
+	/** 1 if the text ends with ']' and contains '[' (a fixed array type). */
+	@pub
+	static func isArrayType(ts: ref imut TokStore, sid: mut u64) mut u64{
+		let n = mut TokStore.strLen(ts, sid)
+		if n == 0{
+			return 0
+		}
+		if TokStore.strCh(ts, sid, n - 1) != ']'{
+			return 0
+		}
+		for i in 0..n{
+			if TokStore.strCh(ts, sid, i) == '['{
+				return 1
+			}
+		}
+		return 0
+	}
+
+	/** The text before its last '['. */
+	@pub
+	@throws
+	static func arrayElementType(ts: ref mut TokStore, sid: mut u64) mut u64{
+		?catch(e){ throw e }
+		let n = mut TokStore.strLen(ts, sid)
+		let cut = mut 0
+		for i in 0..n{
+			if TokStore.strCh(ts, sid, i) == '['{
+				cut = i
+			}
+		}
+		let r = mut ? Ty.subStr(ts, sid, 0, cut)
+		return r
+	}
+
+	/** `Holder[2][3]` -> `Holder`. */
+	@pub
+	@throws
+	static func stripArrayDims(ts: ref mut TokStore, sid: mut u64) mut u64{
+		?catch(e){ throw e }
+		let cur = mut sid
+		for lp in 0..1000000{
+			if Decl.isArrayType(ts, cur) == 0{
+				break
+			}
+			cur = ? Decl.arrayElementType(ts, cur)
+		}
+		return cur
+	}
+
+	/** 1 if the text starts with the given prefix text. */
+	@pub
+	static func startsWith(ts: ref imut TokStore, sid: mut u64, pre: mut u64) mut u64{
+		let n = mut TokStore.strLen(ts, pre)
+		if TokStore.strLen(ts, sid) < n{
+			return 0
+		}
+		for i in 0..n{
+			if TokStore.strCh(ts, sid, i) != TokStore.strCh(ts, pre, i){
+				return 0
+			}
+		}
+		return 1
+	}
+
+	/** The struct name a type points at (its base type with array dims stripped) if that is a declared struct, else TOK_NONE. */
+	@pub
+	@throws
+	static func pointeeOf(ts: ref mut TokStore, w: mut u64, tl: mut u64, ty: mut u64) mut u64{
+		?catch(e){ throw e }
+		if ty == TOK_NONE{
+			return TOK_NONE
+		}
+		let base = mut Ty.get(ts, tl, ty, TY_BASE)
+		if base == TOK_NONE{
+			return TOK_NONE
+		}
+		let b = mut ? Decl.stripArrayDims(ts, base)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), b){
+			return b
+		}
+		return TOK_NONE
+	}
+
+	/** 1 if some owns pointer is reachable from the type through struct members (the Java TypeCheckerModel.typeOwnsMemory). `visiting` is a StrMap used as a set. */
+	@pub
+	@throws
+	static func typeOwnsMemory(ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, root: mut u64, visiting: mut u64) mut u64{
+		?catch(e){ throw e }
+		let ownsLit = mut ? TokStore.addLit(ts, "owns")
+		let work = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, work, root)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		for lp in 0..1000000000{
+			let n = mut TokStore.listSize(ts, work)
+			if n == 0{
+				break
+			}
+			let t = mut TokStore.listPop(ts, work)
+			if t == TOK_NONE{
+				continue
+			}
+			let st = mut Ty.get(ts, tl, t, TY_STORAGE)
+			if st != TOK_NONE{
+				if TokStore.strsEq(ts, st, ownsLit){
+					return 1
+				}
+			}
+			let eb = mut Ty.get(ts, tl, t, TY_BASE)
+			if st == TOK_NONE{
+				eb = ? Decl.stripArrayDims(ts, eb)
+			}
+			let row = mut StrMap.get(ts, structs, eb)
+			if row == TOK_NONE{
+				continue
+			}
+			if StrMap.has(ts, visiting, eb){
+				continue
+			}
+			? StrMap.put(ts, visiting, eb, 1)
+			let members = mut Infos.sget(ts, sr, row, SI_MEMBERS)
+			let vals = mut TokStore.listGet(ts, members, 1)
+			let cnt = mut TokStore.listSize(ts, vals)
+			for i in 0..cnt{
+				? TokStore.listAdd(ts, work, TokStore.listGet(ts, vals, cnt - 1 - i))
+			}
+		}
+		return 0
+	}
+
+	/** 1 when a dynarray element text (`Holder`, `owns_some_mut_World`, `dynarray(..)`) owns memory (TypeCheckerDeclarations.elementTextOwnsMemory). */
+	@pub
+	@throws
+	static func elementTextOwnsMemory(ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, elem: mut u64) mut u64{
+		?catch(e){ throw e }
+		let p1 = mut ? TokStore.addLit(ts, "owns_")
+		let p2 = mut ? TokStore.addLit(ts, "dynarray(")
+		let p3 = mut ? TokStore.addLit(ts, "unsafe_dynarray(")
+		if Decl.startsWith(ts, elem, p1) == 1{
+			return 1
+		}
+		if Decl.startsWith(ts, elem, p2) == 1{
+			return 1
+		}
+		if Decl.startsWith(ts, elem, p3) == 1{
+			return 1
+		}
+		let row = mut StrMap.get(ts, World.get(ts, w, W_M_STRUCTS), elem)
+		if row == TOK_NONE{
+			return 0
+		}
+		let visiting = mut ? StrMap.make(ts)
+		? StrMap.put(ts, visiting, elem, 1)
+		let members = mut Infos.sget(ts, sr, row, SI_MEMBERS)
+		let vals = mut TokStore.listGet(ts, members, 1)
+		let cnt = mut TokStore.listSize(ts, vals)
+		for i in 0..cnt{
+			let o = mut ? Decl.typeOwnsMemory(ts, w, tl, sr, TokStore.listGet(ts, vals, i), visiting)
+			if o == 1{
+				return 1
+			}
+		}
+		return 0
+	}
+
+	/** 1 for a storage-less struct value that owns memory through some member (it is dropped at scope end and moved, not copied). */
+	@pub
+	@throws
+	static func isInlineOwningStruct(ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, ty: mut u64) mut u64{
+		?catch(e){ throw e }
+		if ty == TOK_NONE{
+			return 0
+		}
+		if Ty.get(ts, tl, ty, TY_STORAGE) != TOK_NONE{
+			return 0
+		}
+		let base = mut Ty.get(ts, tl, ty, TY_BASE)
+		if base == TOK_NONE{
+			return 0
+		}
+		let elem = mut ? Decl.stripArrayDims(ts, base)
+		if StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), elem) == false{
+			return 0
+		}
+		let r = mut ? Decl.elementTextOwnsMemory(ts, w, tl, sr, elem)
+		return r
+	}
+
+	/** The unsafe tag for an operation on an unsafe dynarray type: `udyn:owns` when its elements own memory, else `udyn` (string id). */
+	@pub
+	@throws
+	static func udynTag(ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, ty: mut u64) mut u64{
+		?catch(e){ throw e }
+		let el = mut TOK_NONE
+		if ty != TOK_NONE{
+			el = Ty.get(ts, tl, ty, TY_UDYN_ELEM)
+		}
+		let visiting = mut ? StrMap.make(ts)
+		let o = mut ? Decl.typeOwnsMemory(ts, w, tl, sr, el, visiting)
+		if o == 1{
+			let t = mut ? TokStore.addLit(ts, "udyn:owns")
+			return t
+		}
+		let t2 = mut ? TokStore.addLit(ts, "udyn")
+		return t2
+	}
+
+	/** Adds to the StrMap set `out` the names of the types an object of type `root` can contain by ownership (itself, owned members, inline members, transitively). */
+	@pub
+	@throws
+	static func collectDestroyed(ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, root: mut u64, out: mut u64) void{
+		?catch(e){ throw e }
+		let ownsLit = mut ? TokStore.addLit(ts, "owns")
+		let work = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, work, root)
+		let structs = mut World.get(ts, w, W_M_STRUCTS)
+		for lp in 0..1000000000{
+			if TokStore.listSize(ts, work) == 0{
+				break
+			}
+			let t = mut TokStore.listPop(ts, work)
+			if t == TOK_NONE{
+				continue
+			}
+			let base = mut Ty.get(ts, tl, t, TY_BASE)
+			if base == TOK_NONE{
+				continue
+			}
+			let st = mut Ty.get(ts, tl, t, TY_STORAGE)
+			if st != TOK_NONE{
+				if TokStore.strsEq(ts, st, ownsLit) == false{
+					continue
+				}
+			}
+			let b = mut ? Decl.stripArrayDims(ts, base)
+			if StrMap.has(ts, out, b){
+				continue
+			}
+			? StrMap.put(ts, out, b, 1)
+			let row = mut StrMap.get(ts, structs, b)
+			if row != TOK_NONE{
+				let members = mut Infos.sget(ts, sr, row, SI_MEMBERS)
+				let vals = mut TokStore.listGet(ts, members, 1)
+				let cnt = mut TokStore.listSize(ts, vals)
+				for i in 0..cnt{
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, vals, i))
+				}
+			}
+		}
+	}
+}

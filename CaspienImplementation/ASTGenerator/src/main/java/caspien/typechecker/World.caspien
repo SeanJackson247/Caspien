@@ -1,0 +1,185 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+
+/**
+ * The type checker's shared state (port of the registries and counters in TypeCheckerModel) as one row `w` of WORLD_STRIDE slots in the token store's list pool.
+ * Name registries (M_*) are StrMaps; ordered/row collections (L_*) are lists; scalar state (F_*) are plain numbers (TOK_NONE = unset). The row lists hold the
+ * fixed-width records of Ty/Infos/Scope; a record is its index in the matching list. The list pool is `ts`, so a World is created once per compilation.
+ */
+const W_M_STRUCTS 0
+const W_M_ENUMS 1
+const W_M_FUNCS 2
+const W_M_IFACES 3
+const W_M_EXTERNS 4
+const W_M_EXPORTED 5
+const W_M_ROOT_ASMS 6
+const W_M_IMPLS_BY_TYPE 7
+const W_M_LIBS 8
+const W_M_GLOBALS 9
+const W_M_GLOBAL_DECL_ORDER 10
+const W_M_GLOBAL_RHS 11
+const W_M_PUBLIC_GLOBALS 12
+const W_M_CONST_EXPRS 13
+const W_M_CONST_RESOLVED 14
+const W_M_CONSTS_EVAL 15
+const W_M_DROP_HOOK_OWNERS 16
+const W_M_ALIAS_RAW_TARGETS 17
+const W_M_UNAVAILABLE_GENERIC 18
+const W_M_GHOST_FUNCS 19
+const W_M_ASYNC_HANDLE_TYPES 20
+const W_M_ASYNC_TRAMPOLINES 21
+const W_M_ASYNC_DROP_HOOKS 22
+const W_M_ACTIVE_CATCH_TRIES 23
+const W_L_STRUCT_ROWS 24
+const W_L_ENUM_ROWS 25
+const W_L_FUNC_ROWS 26
+const W_L_IFACE_ROWS 27
+const W_L_EXTERN_ROWS 28
+const W_L_ASM_ROWS 29
+const W_L_IMPL_ROWS 30
+const W_L_LIB_ROWS 31
+const W_L_TYPE_ROWS 32
+const W_L_SCOPE_ROWS 33
+const W_L_STRUCT_ORDER 34
+const W_L_GLOBAL_ORDER 35
+const W_L_WARNINGS 36
+const W_L_FS_REPORT 37
+const W_L_GENERIC_CTOR_FUNCS 38
+const W_L_CALL_EDGES 39
+const W_L_THROW_SITES 40
+const W_F_FOR_VAR_COUNTER 41
+const W_F_USES_OWNS_REF_DYN_NEW 42
+const W_F_USES_THROW 43
+const W_F_INSIDE_THROWING_ALLOC 44
+const W_F_INSIDE_CATCH_BODY 45
+const W_F_BREAK_IS_TERMINATOR 46
+const W_F_ASSUME_KEY_MODE 47
+const W_F_NEW_DYN_DEPTH 48
+const W_F_SYNTH_GLUE 49
+const W_F_EVENT_LOOP_FUNC 50
+const W_F_LOCK_RETRY_CONTINUES 51
+const W_F_ASYNC_STATE_ENUM 52
+const W_F_ASYNC_GATE_ENUM 53
+const WORLD_STRIDE 54
+
+@pub
+struct World{@pub{
+}}
+
+@pub
+impl World{
+	@pub
+	static func get(ts: ref imut TokStore, w: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, w, k)
+	}
+
+	@pub
+	static func set(ts: ref mut TokStore, w: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, w, k, v)
+	}
+
+	/** A fresh World: every registry empty, every flag 0 (event loop function unset). Returns the row's list id. */
+	@pub
+	@throws
+	static func make(ts: ref mut TokStore) mut u64{
+		?catch(e){ throw e }
+		let w = mut ? TokStore.newList(ts)
+		let m0 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m0)
+		let m1 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m1)
+		let m2 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m2)
+		let m3 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m3)
+		let m4 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m4)
+		let m5 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m5)
+		let m6 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m6)
+		let m7 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m7)
+		let m8 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m8)
+		let m9 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m9)
+		let m10 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m10)
+		let m11 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m11)
+		let m12 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m12)
+		let m13 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m13)
+		let m14 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m14)
+		let m15 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m15)
+		let m16 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m16)
+		let m17 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m17)
+		let m18 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m18)
+		let m19 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m19)
+		let m20 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m20)
+		let m21 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m21)
+		let m22 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m22)
+		let m23 = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, w, m23)
+		let l24 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l24)
+		let l25 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l25)
+		let l26 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l26)
+		let l27 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l27)
+		let l28 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l28)
+		let l29 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l29)
+		let l30 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l30)
+		let l31 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l31)
+		let l32 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l32)
+		let l33 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l33)
+		let l34 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l34)
+		let l35 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l35)
+		let l36 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l36)
+		let l37 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l37)
+		let l38 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l38)
+		let l39 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l39)
+		let l40 = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, w, l40)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, TOK_NONE)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		? TokStore.listAdd(ts, w, 0)
+		return w
+	}
+}

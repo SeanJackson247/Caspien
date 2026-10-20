@@ -1,0 +1,301 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../util/StrMap.caspien"
+
+/**
+ * Ports of StructInfo and FuncInfo as fixed-width rows in one TokStore list (`il`): a record is its row index, a field is a slot.
+ * Strings are string ids, absent = TOK_NONE, flags 0/1, collections are list ids or StrMap ids. Types are Ty row indexes.
+ */
+const SI_STRIDE 16
+const SI_NAME 0
+const SI_MEMBERS 1
+const SI_IMPLEMENTS 2
+const SI_RAW_LINES 3
+const SI_FLATTENED 4
+const SI_DECL_TOK 5
+const SI_PUBLIC 6
+const SI_PUBLIC_MEMBERS 7
+const SI_MEMBER_FILE 8
+const SI_LOCK_FIELD 9
+const SI_LOCK_VARIANTS 10
+const SI_SWAP_FIELD 11
+const SI_DEFAULT_POLICY 12
+const SI_CLASS_ID 13
+
+const FI_STRIDE 24
+const FI_NAME 0
+const FI_MANGLED 1
+const FI_PARAM_NAMES 2
+const FI_PARAM_TYPES 3
+const FI_RETURN 4
+const FI_FUNC_TOK 5
+const FI_DECL_ORDER 6
+const FI_SAFETY 7
+const FI_EXPORTED 8
+const FI_CALL_CONV 9
+const FI_ASYNC 10
+const FI_THROWS 11
+const FI_SAW_THROW 12
+const FI_PUBLIC 13
+const FI_ENCL_IMPL 14
+const FI_ENCL_LIB 15
+const FI_EVENT_LOOP_LOOPS 16
+const FI_OWNS_LOCALS 17
+const FI_MAIN_SHAPE 18
+const FI_CONSTRUCTOR 19
+const FI_CTOR_NAME 20
+const FI_DEFERRED 21
+
+const EI_STRIDE 8
+const EI_NAME 0
+const EI_VARIANTS 1
+const EI_NON_EXHAUSTIVE 2
+const EI_VALUES 3
+const EI_RANGE_STARTS 4
+const EI_RANGE_ENDS 5
+
+const II_STRIDE 8
+const II_NAME 0
+const II_METHODS 1
+const II_EXTENDS 2
+const II_OWN_METHODS 3
+const II_FLATTENED 4
+const II_DECL_TOK 5
+const II_PUBLIC 6
+
+const IM_STRIDE 12
+const IM_INTERFACE 0
+const IM_CONCRETE 1
+const IM_METHODS 2
+const IM_STATIC_METHODS 3
+const IM_OVERLOADS 4
+const IM_STATIC_OVERLOADS 5
+const IM_DECL_TOK 6
+const IM_PUBLIC 7
+const IM_SAFETY 8
+const IM_GENERIC_TEMPLATES 9
+const IM_GENERIC_INSTANCES 10
+
+const XI_STRIDE 8
+const XI_NAME 0
+const XI_LINK 1
+const XI_PARAMS 2
+const XI_VARARGS 3
+const XI_RETURN 4
+const XI_DECL_TOK 5
+const XI_CALL_CONV 6
+
+const LI_STRIDE 8
+const LI_NAME 0
+const LI_EXTENDS 1
+const LI_OWN_FUNCS 2
+const LI_FUNCS 3
+const LI_FLATTENED 4
+const LI_DECL_TOK 5
+const LI_PUBLIC 6
+
+const AI_STRIDE 4
+const AI_NAME 0
+const AI_TEXT 1
+const AI_DECL_TOK 2
+
+const MS_STRIDE 8
+const MS_NAME_TOK 0
+const MS_PARAMS_TOK 1
+const MS_RETURN 2
+const MS_DEFAULT 3
+const MS_BODY 4
+const MS_DECOS 5
+const MS_STATIC 6
+
+@pub
+struct Infos{@pub{
+}}
+
+@pub
+impl Infos{
+	/** A new struct record with the given name; member containers are fresh lists/maps. Returns its row index in `il`. */
+	@pub
+	@throws
+	static func makeStruct(ts: ref mut TokStore, il: mut u64, name: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut (TokStore.listSize(ts, il) / 16)
+		let members = mut ? StrMap.make(ts)
+		let impls = mut ? TokStore.newList(ts)
+		let pubm = mut ? StrMap.make(ts)
+		let mfile = mut ? StrMap.make(ts)
+		? TokStore.listAdd(ts, il, name)
+		? TokStore.listAdd(ts, il, members)
+		? TokStore.listAdd(ts, il, impls)
+		? TokStore.listAdd(ts, il, TOK_NONE)
+		? TokStore.listAdd(ts, il, 0)
+		? TokStore.listAdd(ts, il, TOK_NONE)
+		? TokStore.listAdd(ts, il, 0)
+		? TokStore.listAdd(ts, il, pubm)
+		? TokStore.listAdd(ts, il, mfile)
+		for k in 9..16{
+			? TokStore.listAdd(ts, il, TOK_NONE)
+		}
+		return id
+	}
+
+	@pub
+	static func sget(ts: ref imut TokStore, il: mut u64, r: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, il, r * 16 + k)
+	}
+
+	@pub
+	static func sset(ts: ref mut TokStore, il: mut u64, r: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, il, r * 16 + k, v)
+	}
+
+	/** A new function record: name, mangled name = name, empty param lists, defaults as in the Java class. */
+	@pub
+	@throws
+	static func makeFunc(ts: ref mut TokStore, fl: mut u64, name: mut u64) mut u64{
+		?catch(e){ throw e }
+		let id = mut (TokStore.listSize(ts, fl) / 24)
+		let pn = mut ? TokStore.newList(ts)
+		let pt = mut ? TokStore.newList(ts)
+		let ownsMap = mut ? StrMap.make(ts)
+		let safety = mut ? TokStore.addLit(ts, "indeterminate")
+		? TokStore.listAdd(ts, fl, name)
+		? TokStore.listAdd(ts, fl, name)
+		? TokStore.listAdd(ts, fl, pn)
+		? TokStore.listAdd(ts, fl, pt)
+		? TokStore.listAdd(ts, fl, TOK_NONE)
+		? TokStore.listAdd(ts, fl, TOK_NONE)
+		? TokStore.listAdd(ts, fl, 2147483647)
+		? TokStore.listAdd(ts, fl, safety)
+		for k in 8..16{
+			? TokStore.listAdd(ts, fl, 0)
+		}
+		? TokStore.listAdd(ts, fl, 0)
+		? TokStore.listAdd(ts, fl, ownsMap)
+		? TokStore.listAdd(ts, fl, TOK_NONE)
+		? TokStore.listAdd(ts, fl, 0)
+		? TokStore.listAdd(ts, fl, TOK_NONE)
+		for k in 21..24{
+			? TokStore.listAdd(ts, fl, 0)
+		}
+		return id
+	}
+
+	@pub
+	static func fget(ts: ref imut TokStore, fl: mut u64, r: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, fl, r * 24 + k)
+	}
+
+	@pub
+	static func fset(ts: ref mut TokStore, fl: mut u64, r: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, fl, r * 24 + k, v)
+	}
+
+	/** Appends `stride` unset slots (TOK_NONE) to row list `rl`; returns the new row's index. */
+	@pub
+	@throws
+	static func newRow(ts: ref mut TokStore, rl: mut u64, stride: mut u64) mut u64{
+		?catch(e){ throw e }
+		match stride != 0{
+			let id = mut (TokStore.listSize(ts, rl) / stride)
+			for k in 0..stride{
+				? TokStore.listAdd(ts, rl, TOK_NONE)
+			}
+			return id
+		}
+		return 0
+	}
+
+	@pub
+	static func rget(ts: ref imut TokStore, rl: mut u64, stride: mut u64, r: mut u64, k: mut u64) mut u64{
+		return TokStore.listGet(ts, rl, r * stride + k)
+	}
+
+	@pub
+	static func rset(ts: ref mut TokStore, rl: mut u64, stride: mut u64, r: mut u64, k: mut u64, v: mut u64) void{
+		TokStore.listSet(ts, rl, r * stride + k, v)
+	}
+
+	@pub
+	@throws
+	static func makeEnum(ts: ref mut TokStore, rl: mut u64, name: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Infos.newRow(ts, rl, 8)
+		let vs = mut ? TokStore.newList(ts)
+		Infos.rset(ts, rl, 8, r, EI_NAME, name)
+		Infos.rset(ts, rl, 8, r, EI_VARIANTS, vs)
+		Infos.rset(ts, rl, 8, r, EI_NON_EXHAUSTIVE, 0)
+		return r
+	}
+
+	@pub
+	@throws
+	static func makeInterface(ts: ref mut TokStore, rl: mut u64, name: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Infos.newRow(ts, rl, 8)
+		let m = mut ? StrMap.make(ts)
+		let ex = mut ? TokStore.newList(ts)
+		Infos.rset(ts, rl, 8, r, II_NAME, name)
+		Infos.rset(ts, rl, 8, r, II_METHODS, m)
+		Infos.rset(ts, rl, 8, r, II_EXTENDS, ex)
+		Infos.rset(ts, rl, 8, r, II_FLATTENED, 0)
+		Infos.rset(ts, rl, 8, r, II_PUBLIC, 0)
+		return r
+	}
+
+	@pub
+	@throws
+	static func makeImpl(ts: ref mut TokStore, rl: mut u64, iface: mut u64, concrete: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Infos.newRow(ts, rl, 12)
+		Infos.rset(ts, rl, 12, r, IM_INTERFACE, iface)
+		Infos.rset(ts, rl, 12, r, IM_CONCRETE, concrete)
+		for k in 2..6{
+			let m = mut ? StrMap.make(ts)
+			Infos.rset(ts, rl, 12, r, k, m)
+		}
+		let gt = mut ? StrMap.make(ts)
+		let gi = mut ? StrMap.make(ts)
+		Infos.rset(ts, rl, 12, r, IM_GENERIC_TEMPLATES, gt)
+		Infos.rset(ts, rl, 12, r, IM_GENERIC_INSTANCES, gi)
+		Infos.rset(ts, rl, 12, r, IM_PUBLIC, 0)
+		return r
+	}
+
+	@pub
+	@throws
+	static func makeExtern(ts: ref mut TokStore, rl: mut u64, name: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Infos.newRow(ts, rl, 8)
+		let ps = mut ? TokStore.newList(ts)
+		Infos.rset(ts, rl, 8, r, XI_NAME, name)
+		Infos.rset(ts, rl, 8, r, XI_PARAMS, ps)
+		Infos.rset(ts, rl, 8, r, XI_VARARGS, 0)
+		return r
+	}
+
+	@pub
+	@throws
+	static func makeLibrary(ts: ref mut TokStore, rl: mut u64, name: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Infos.newRow(ts, rl, 8)
+		let ex = mut ? TokStore.newList(ts)
+		let fs = mut ? StrMap.make(ts)
+		Infos.rset(ts, rl, 8, r, LI_NAME, name)
+		Infos.rset(ts, rl, 8, r, LI_EXTENDS, ex)
+		Infos.rset(ts, rl, 8, r, LI_FUNCS, fs)
+		Infos.rset(ts, rl, 8, r, LI_FLATTENED, 0)
+		Infos.rset(ts, rl, 8, r, LI_PUBLIC, 0)
+		return r
+	}
+
+	@pub
+	@throws
+	static func makeAsm(ts: ref mut TokStore, rl: mut u64, name: mut u64, text: mut u64) mut u64{
+		?catch(e){ throw e }
+		let r = mut ? Infos.newRow(ts, rl, 4)
+		Infos.rset(ts, rl, 4, r, AI_NAME, name)
+		Infos.rset(ts, rl, 4, r, AI_TEXT, text)
+		return r
+	}
+}
