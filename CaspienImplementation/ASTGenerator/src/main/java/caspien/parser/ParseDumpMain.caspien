@@ -19,6 +19,9 @@ import "../typechecker/Impls.caspien"
 import "../typechecker/ImplColl.caspien"
 import "../typechecker/Hier.caspien"
 import "../typechecker/Expr.caspien"
+import "../typechecker/Globals.caspien"
+import "../typechecker/Lets.caspien"
+import "../typechecker/RootAsm.caspien"
 
 /**
  * Test tool: `parse_dump <nest|split|lines|full> <file.caspien>` prints the token tree in the format of the Java `ParseDump` (tools/ParseDump.java):
@@ -606,14 +609,103 @@ impl PDump{
 		return TokStore.kind(ts, t) == TT_OPERATOR && TokStore.textEq(ts, t, "atomic")
 	}
 
-	/** Resolved type of each global initialiser (Java ParseDump "gexpr"); UNSUP = not covered by Expr yet. */
-	static func dumpGexpr(out: ref mut String, ts: ref mut TokStore, tl: mut u64, flatLines: mut u64) void{
+	/** Type of every top-level plain `let` of every function body through Lets.typeLet (Java ParseDump "lets"); UNSUP = not covered by Expr yet. */
+	static func dumpLets(out: ref mut String, ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, er: mut u64) void{
+		?catch(e){
+			Io.eprintLit(e.msg)
+			Io.eprintLit("\n")
+			PDump.putLit(out, "lets ERR\n")
+			return
+		}
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let lim = mut ? Expr.limits(ts)
+		let fk = mut ? Collect.sortedKeys(ts, World.get(ts, w, W_M_FUNCS))
+		let nf = mut TokStore.listSize(ts, fk)
+		for i in 0..nf{
+			let nm = mut TokStore.listGet(ts, fk, i)
+			let ov = mut StrMap.get(ts, World.get(ts, w, W_M_FUNCS), nm)
+			let no = mut TokStore.listSize(ts, ov)
+			for j in 0..no{
+				let fi = mut TokStore.listGet(ts, ov, j)
+				let env = mut ? StrMap.make(ts)
+				let pn = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+				let pt = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+				let np = mut TokStore.listSize(ts, pn)
+				for q in 0..np{
+					? StrMap.put(ts, env, TokStore.listGet(ts, pn, q), TokStore.listGet(ts, pt, q))
+				}
+				let ftok = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+				let lines = mut TokStore.childs(ts, ftok)
+				let nl = mut TokStore.listSize(ts, lines)
+				for li in 0..nl{
+					let lcs = mut TokStore.childs(ts, TokStore.listGet(ts, lines, li))
+					if TokStore.listSize(ts, lcs) == 0{
+						continue
+					}
+					let st = mut TokStore.listGet(ts, lcs, 0)
+					if TokStore.kind(ts, st) != TT_OPERATOR || TokStore.textEq(ts, st, "=") == false || TokStore.unary(ts, st) != 0{
+						continue
+					}
+					let lt = mut TokStore.left(ts, st)
+					if lt == TOK_NONE || TokStore.kind(ts, lt) != TT_KEYWORD || TokStore.textEq(ts, lt, "let") == false || TokStore.isStatic(ts, lt) != 0{
+						continue
+					}
+					let lname = mut TokStore.text(ts, TokStore.listGet(ts, TokStore.childs(ts, lt), 0))
+					PDump.putLit(out, "let ")
+					PDump.addStrOf(out, ts, nm)
+					PDump.putCh(out, '#')
+					PDump.putU64(out, j)
+					PDump.putCh(out, ' ')
+					PDump.addStrOf(out, ts, lname)
+					PDump.putCh(out, ' ')
+					let ty = mut ? Lets.typeLet(ts, cx, env, st, lim, er)
+					if ty == TOK_NONE{
+						let rh = mut TokStore.right(ts, st)
+						for ul in 0..12{
+							if TokStore.kind(ts, rh) == TT_OPERATOR && TokStore.unary(ts, rh) != 0 && (TokStore.textEq(ts, rh, "mut") || TokStore.textEq(ts, rh, "imut")) && TokStore.left(ts, rh) != TOK_NONE{
+								rh = TokStore.left(ts, rh)
+							} else if TokStore.kind(ts, rh) == TT_DELINEATOR && TokStore.textEq(ts, rh, "(") && TokStore.listSize(ts, TokStore.childs(ts, rh)) > 0{
+								rh = TokStore.listGet(ts, TokStore.childs(ts, rh), 0)
+							} else if (TokStore.kind(ts, rh) == TT_KEYWORD || TokStore.kind(ts, rh) == TT_OPERATOR) && TokStore.textEq(ts, rh, "try") && TokStore.listSize(ts, TokStore.sub(ts, rh)) > 0{
+								rh = TokStore.listGet(ts, TokStore.sub(ts, rh), 0)
+							}
+						}
+						PDump.putLit(out, "UNSUP ")
+						if TokStore.kind(ts, rh) == TT_OPERATOR || TokStore.kind(ts, rh) == TT_DELINEATOR || TokStore.kind(ts, rh) == TT_KEYWORD{
+							PDump.addStrOf(out, ts, TokStore.text(ts, rh))
+							if TokStore.kind(ts, rh) == TT_OPERATOR && TokStore.textEq(ts, rh, "CALL") && TokStore.left(ts, rh) != TOK_NONE{
+								PDump.putCh(out, ':')
+								if TokStore.kind(ts, TokStore.left(ts, rh)) == TT_VARREF{
+									PDump.addStrOf(out, ts, TokStore.text(ts, TokStore.left(ts, rh)))
+								} else {
+									PDump.addStrOf(out, ts, TokStore.text(ts, TokStore.left(ts, rh)))
+								}
+							}
+						} else {
+							PDump.putLit(out, "kind")
+							PDump.putU64(out, TokStore.kind(ts, rh))
+						}
+						PDump.putCh(out, '\n')
+						continue
+					}
+					? StrMap.put(ts, env, lname, ty)
+					let cn = mut ? Ty.canonical(ts, tl, ty)
+					PDump.addStrOf(out, ts, cn)
+					PDump.putCh(out, '\n')
+				}
+			}
+		}
+	}
+
+	/** Resolved type of each global initialiser through Globals.collect (Java ParseDump "gexpr"); UNSUP = not covered by Expr yet. */
+	static func dumpGexpr(out: ref mut String, ts: ref mut TokStore, tl: mut u64, cx: mut u64, w: mut u64, er: mut u64, flatLines: mut u64, flatSafety: mut u64) void{
 		?catch(e){
 			Io.eprintLit(e.msg)
 			Io.eprintLit("\n")
 			PDump.putLit(out, "gexpr ERR\n")
 			return
 		}
+		let lim = mut ? Expr.limits(ts)
 		let n = mut TokStore.listSize(ts, flatLines)
 		for i in 0..n{
 			let asg = mut Collect.globalLetAssignOf(ts, TokStore.listGet(ts, flatLines, i))
@@ -622,27 +714,16 @@ impl PDump{
 			}
 			let letTok = mut TokStore.left(ts, asg)
 			let nameTok = mut TokStore.listGet(ts, TokStore.childs(ts, letTok), 0)
-			let rhs = mut TokStore.right(ts, asg)
+			let name = mut TokStore.text(ts, nameTok)
 			PDump.putLit(out, "gexpr ")
-			PDump.addStrOf(out, ts, TokStore.text(ts, nameTok))
+			PDump.addStrOf(out, ts, name)
 			PDump.putLit(out, " ")
-			let ty = mut TOK_NONE
-			if TokStore.isStatic(ts, letTok) != 0 && TokStore.typeBound(ts, letTok) == TOK_NONE{
-				ty = ? Expr.typeOf(ts, tl, rhs)
-			}
-			if ty != TOK_NONE{
-				let mu = mut Ty.get(ts, tl, ty, TY_MUT)
-				if mu == TOK_NONE || (TokStore.strEq(ts, mu, "mut") == false && TokStore.strEq(ts, mu, "imut") == false){
-					ty = TOK_NONE
-				}
-			}
-			if ty == TOK_NONE{
+			let ok = mut ? Globals.collect(ts, cx, asg, i, lim, er)
+			if ok == 0{
 				PDump.putLit(out, "UNSUP\n")
 				continue
 			}
-			if Ty.get(ts, tl, ty, TY_ATOMIC) != 0 && PDump.isDirectAtomic(ts, rhs) == false{
-				ty = ? Ty.withAtomic(ts, tl, ty, 0)
-			}
+			let ty = mut StrMap.get(ts, World.get(ts, w, W_M_GLOBALS), name)
 			PDump.tyText(out, ts, tl, ty)
 			PDump.putLit(out, " lv=")
 			let lv = mut Ty.get(ts, tl, ty, TY_LITVAL)
@@ -666,12 +747,58 @@ impl PDump{
 			PDump.putU64(out, Ty.get(ts, tl, ty, TY_FLOAT_LIT))
 			PDump.putLit(out, " fal=")
 			PDump.putU64(out, Ty.get(ts, tl, ty, TY_FLOAT_ARR_LIT))
+			PDump.putLit(out, " ord=")
+			PDump.putU64(out, StrMap.get(ts, World.get(ts, w, W_M_GLOBAL_DECL_ORDER), name))
+			PDump.putLit(out, " pub=")
+			if StrMap.has(ts, World.get(ts, w, W_M_PUBLIC_GLOBALS), name){
+				PDump.putU64(out, 1)
+			} else {
+				PDump.putU64(out, 0)
+			}
 			PDump.putCh(out, '\n')
+		}
+		PDump.dumpRootAsm(out, ts, w, flatLines, flatSafety)
+	}
+
+	/** Pass 1e: root ASM declarations and invocations in file order, then the registry (Java ParseDump "gexpr" tail). */
+	static func dumpRootAsm(out: ref mut String, ts: ref mut TokStore, w: mut u64, flatLines: mut u64, flatSafety: mut u64) void{
+		?catch(e){
+			Io.eprintLit(e.msg)
+			Io.eprintLit("\n")
+			PDump.putLit(out, "asm ERR\n")
+			return
+		}
+		let n = mut TokStore.listSize(ts, flatLines)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, TokStore.childs(ts, TokStore.listGet(ts, flatLines, i)), 0)
+			let sf = mut TokStore.listGet(ts, flatSafety, i)
+			if TokStore.kind(ts, t) == TT_KEYWORD && TokStore.textEq(ts, t, "ASM"){
+				? RootAsm.declare(ts, w, t, sf)
+			}
+			else if TokStore.kind(ts, t) == TT_VARREF{
+				? RootAsm.invoke(ts, w, t, sf)
+			}
+		}
+		let m = mut World.get(ts, w, W_M_ROOT_ASMS)
+		let keys = mut ? Collect.sortedKeys(ts, m)
+		let nk = mut TokStore.listSize(ts, keys)
+		for k in 0..nk{
+			let nm = mut TokStore.listGet(ts, keys, k)
+			PDump.putLit(out, "asm ")
+			PDump.addStrOf(out, ts, nm)
+			PDump.putLit(out, " ")
+			let rawT = mut StrMap.get(ts, m, nm)
+			if rawT == TOK_NONE{
+				PDump.putLit(out, "UNSUP\n")
+			} else {
+				PDump.putU64(out, TokStore.strLen(ts, rawT))
+				PDump.putCh(out, '\n')
+			}
 		}
 	}
 
 	/** Pass 1a.5 flatten, externs, plain funcs and exports; prints the registries (one "funcs ERR" line if any step throws). */
-	static func dumpFuncs(out: ref mut String, ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, er: mut u64, ir: mut u64, cx: mut u64, flatLines: mut u64, flatSafety: mut u64) void{
+	static func dumpFuncs(out: ref mut String, ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, er: mut u64, ir: mut u64, cx: mut u64, flatLines: mut u64, flatSafety: mut u64, lets: mut u64) void{
 		?catch(e){
 			Io.eprintLit(e.msg)
 			Io.eprintLit("\n")
@@ -731,6 +858,10 @@ impl PDump{
 		? Hier.generateClassEnum(ts, cx)
 		? Hier.generateEnumForEnums(ts, cx)
 		? Hier.generateInterfaceDispatchers(ts, cx)
+		if lets != 0{
+			PDump.dumpLets(out, ts, w, tl, cx, er)
+			return
+		}
 		let fk = mut ? Collect.sortedKeys(ts, World.get(ts, w, W_M_FUNCS))
 		let nf = mut TokStore.listSize(ts, fk)
 		for i in 0..nf{
@@ -1116,7 +1247,7 @@ impl PDump{
 		let fileId = mut ? TokStore.internFile(ts, path)
 		let flat = mut ? ParserLines.toTokens(ts, result.tokens, fileId)
 		let res = mut ? ParserLines.nest(ts, flat)
-		if Txt.eqLit(stage, "resolved") || Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs"){
+		if Txt.eqLit(stage, "resolved") || Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
 			let treeStage = mut ? String.from("tree")
 			res = ? ParserLines.runStage(ts, treeStage, res)
 			let cwdList = mut ? new ObjectList:<String>()
@@ -1128,10 +1259,10 @@ impl PDump{
 			let platSid = mut ? TokStore.addLit(ts, "linux")
 			let resolver = mut ? new ImportResolver(ts, stdSid, platSid, cwdSid)
 			res = ? ImportResolver.resolve(resolver, ts, res, fileId)
-			if Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs"){
+			if Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
 				? DupExpander.expand(ts, res)
 			}
-			if Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs"){
+			if Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
 				res = ? GenericsExpander.expand(ts, res)
 			}
 		} else {
@@ -1142,7 +1273,7 @@ impl PDump{
 			extraFlag = 1
 		}
 		let out = mut ? new String()
-		if Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs"){
+		if Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
 			let w = mut ? World.make(ts)
 			let sr = mut ? TokStore.newList(ts)
 			let er = mut ? TokStore.newList(ts)
@@ -1162,13 +1293,17 @@ impl PDump{
 			? StrMap.put(ts, ccs, c2, 1)
 			? StrMap.put(ts, ccs, c3, 1)
 			let cx = mut ? TypeAnn.makeCx(ts, w, tl, c1, ccs, sr, ir)
-			if Txt.eqLit(stage, "funcs"){
+			if Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
 				let fl = mut ? TokStore.newList(ts)
 				let xr = mut ? TokStore.newList(ts)
 				? Funcs.extendCx(ts, cx, er, fl, xr)
 				let imr = mut ? TokStore.newList(ts)
 				? Funcs.extendCx2(ts, cx, lr, mr, imr)
-				PDump.dumpFuncs(out, ts, w, tl, sr, er, ir, cx, flatLines, flatSafety)
+				let letsFlag = mut 0
+				if Txt.eqLit(stage, "lets"){
+					letsFlag = 1
+				}
+				PDump.dumpFuncs(out, ts, w, tl, sr, er, ir, cx, flatLines, flatSafety, letsFlag)
 			}
 			else if Txt.eqLit(stage, "flat"){
 				PDump.dumpFlat(out, ts, w, tl, sr, er, cx)
@@ -1191,7 +1326,15 @@ impl PDump{
 			? Collect.flattenRootLines(ts, res, flatLines, flatSafety)
 			? Collect.pass1a(ts, w, sr, er, ir, mr, lr, flatLines)
 			let tl = mut ? TokStore.newList(ts)
-			PDump.dumpGexpr(out, ts, tl, flatLines)
+			let ccs = mut ? StrMap.make(ts)
+			let c1 = mut ? TokStore.addLit(ts, "win64")
+			let c2 = mut ? TokStore.addLit(ts, "sysv_x64")
+			let c3 = mut ? TokStore.addLit(ts, "arm64")
+			? StrMap.put(ts, ccs, c1, 1)
+			? StrMap.put(ts, ccs, c2, 1)
+			? StrMap.put(ts, ccs, c3, 1)
+			let cx = mut ? TypeAnn.makeCx(ts, w, tl, c1, ccs, sr, ir)
+			PDump.dumpGexpr(out, ts, tl, cx, w, er, flatLines, flatSafety)
 			Io.oprint(out)
 			return 0
 		}

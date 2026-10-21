@@ -1,0 +1,47 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "World.caspien"
+
+/**
+ * Port of TypeCheckerDeclarations.collectRootAsmDeclaration / collectRootAsmInvocation (pass 1e). W_M_ROOT_ASMS maps an ASM name to its raw text (string id).
+ * The file form ("ASM \"x.s\"") is registered with TOK_NONE as its text: reading the file relative to the declaring file is not ported yet.
+ * Not yet done: token.chk.resolvedAsmContent.
+ */
+@pub
+struct RootAsm{@pub{
+}}
+
+@pub
+impl RootAsm{
+	/** A root-level `ASM` declaration; `safety` is the string id of the declaring block's safety. */
+	@pub
+	@throws
+	static func declare(ts: ref mut TokStore, w: mut u64, t: mut u64, safety: mut u64) void{
+		?catch(e){ throw e }
+		if TokStore.strEq(ts, safety, "unsafe") == false{
+			throw "declaring 'ASM' requires 'unsafe' code"
+		}
+		let sub = mut TokStore.sub(ts, t)
+		if sub == TOK_NONE || TokStore.listSize(ts, sub) == 0{
+			return
+		}
+		// Java reads the name through Token.declName(), whose allowed kinds do not include ASM, so a NAMED root-level ASM is an internal error there
+		// (verified with the reference compiler's per-stage dump); the same is mirrored here so both fail identically.
+		throw "internal error: 'ASM' token has no declaration name"
+	}
+
+	/** A bare `asm_name;` line at the root. */
+	@pub
+	@throws
+	static func invoke(ts: ref mut TokStore, w: mut u64, t: mut u64, safety: mut u64) void{
+		?catch(e){ throw e }
+		if TokStore.strEq(ts, safety, "unsafe") == false{
+			throw "invoking an 'ASM' name requires 'unsafe' code"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_ROOT_ASMS), TokStore.text(ts, t)) == false{
+			throw "not a declared 'ASM' name (or used before its declaration)"
+		}
+	}
+}

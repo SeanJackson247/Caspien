@@ -1,0 +1,89 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Dec.caspien"
+import "Ty.caspien"
+import "TypeAnn.caspien"
+import "Expr.caspien"
+
+/**
+ * Port of TypeCheckerDeclarations.collectGlobal (pass 1a.8): one top-level `let static` into the World registries (globals, declaration order, order list,
+ * rhs token, public set). Not ported yet: checkNoRuntimeConstructs, requireNotStaticScoped, letTok.chk.resolvedType, error texts beyond the literals below.
+ * collect returns 1 when registered, 0 when the initialiser needs expression kinds Expr does not cover yet (nothing registered then).
+ */
+@pub
+struct Globals{@pub{
+}}
+
+@pub
+impl Globals{
+	@pub
+	@throws
+	static func collect(ts: ref mut TokStore, cx: mut u64, assign: mut u64, declOrder: mut u64, lim: mut u64, er: mut u64) mut u64{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let letTok = mut TokStore.left(ts, assign)
+		let nameTok = mut TokStore.listGet(ts, TokStore.childs(ts, letTok), 0)
+		let name = mut TokStore.text(ts, nameTok)
+		let rhs = mut TokStore.right(ts, assign)
+		if TokStore.isStatic(ts, letTok) == 0{
+			throw "only 'let static' is allowed at the top level"
+		}
+		let allowed = mut ? StrMap.make(ts)
+		let pubName = mut ? TokStore.addLit(ts, "pub")
+		? StrMap.put(ts, allowed, pubName, 1)
+		? Dec.validateDecorators(ts, TokStore.decorators(ts, letTok), allowed)
+		if StrMap.has(ts, World.get(ts, w, W_M_GLOBALS), name) || StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), name) || StrMap.has(ts, World.get(ts, w, W_M_ENUMS), name){
+			throw "a global name is already declared"
+		}
+		if StrMap.has(ts, World.get(ts, w, W_M_IFACES), name) || StrMap.has(ts, World.get(ts, w, W_M_ALIAS_RAW_TARGETS), name) || StrMap.has(ts, World.get(ts, w, W_M_CONST_EXPRS), name){
+			throw "a global name is already declared"
+		}
+		let ty = mut ? Expr.typeOf(ts, tl, w, er, rhs, TOK_NONE, cx)
+		if ty == TOK_NONE{
+			return 0
+		}
+		let bnd = mut TokStore.typeBound(ts, letTok)
+		if bnd != TOK_NONE{
+			let bt = mut ? TypeAnn.resolveRaw(ts, cx, bnd, letTok, 0)
+			ty = ? Expr.boundResult(ts, tl, lim, bt, ty)
+			if ty == TOK_NONE{
+				return 0
+			}
+		}
+		let mu = mut Ty.get(ts, tl, ty, TY_MUT)
+		let isStruct = mut StrMap.has(ts, World.get(ts, w, W_M_STRUCTS), Ty.get(ts, tl, ty, TY_BASE))
+		if isStruct == false && (mu == TOK_NONE || (TokStore.strEq(ts, mu, "mut") == false && TokStore.strEq(ts, mu, "imut") == false)){
+			throw "a 'static' variable must have a concrete mutability"
+		}
+		if Ty.get(ts, tl, ty, TY_ATOMIC) != 0 && Globals.isDirectAtomic(ts, rhs) == false{
+			ty = ? Ty.withAtomic(ts, tl, ty, 0)
+		}
+		if Dec.getDecorator(ts, TokStore.decorators(ts, letTok), "pub") != TOK_NONE{
+			? StrMap.put(ts, World.get(ts, w, W_M_PUBLIC_GLOBALS), name, 1)
+		}
+		? StrMap.put(ts, World.get(ts, w, W_M_GLOBALS), name, ty)
+		? StrMap.put(ts, World.get(ts, w, W_M_GLOBAL_DECL_ORDER), name, declOrder)
+		? TokStore.listAdd(ts, World.get(ts, w, W_L_GLOBAL_ORDER), name)
+		? StrMap.put(ts, World.get(ts, w, W_M_GLOBAL_RHS), name, rhs)
+		return 1
+	}
+
+	/** True when `e` is `[mut|imut]* atomic ...` (TypeCheckerImpls.isDirectAtomicDeclaration). */
+	@pub
+	static func isDirectAtomic(ts: ref imut TokStore, e: mut u64) mut bool{
+		let t = mut e
+		for lp in 0..1000000000{
+			if TokStore.kind(ts, t) == TT_OPERATOR && TokStore.unary(ts, t) != 0 && (TokStore.textEq(ts, t, "mut") || TokStore.textEq(ts, t, "imut")){
+				t = TokStore.left(ts, t)
+			} else {
+				break
+			}
+		}
+		return TokStore.kind(ts, t) == TT_OPERATOR && TokStore.textEq(ts, t, "atomic")
+	}
+}

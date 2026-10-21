@@ -858,6 +858,7 @@ impl TypeAnn{
 	}
 
 	/** The frame-stack resolver: no recursion, one frame per (nested) annotation. */
+	@pub
 	@throws
 	static func resolveRaw(ts: ref mut TokStore, cx: mut u64, tokens: mut u64, at: mut u64, allowInd: mut u64) mut u64{
 		?catch(e){ throw e }

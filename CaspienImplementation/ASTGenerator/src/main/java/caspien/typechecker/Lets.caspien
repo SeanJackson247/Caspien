@@ -1,0 +1,64 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Dec.caspien"
+import "Ty.caspien"
+import "TypeAnn.caspien"
+import "Expr.caspien"
+import "Globals.caspien"
+
+/**
+ * Function-body slice 1: the type a plain `let` gives its variable (TypeCheckerExpressions.assignPlainLet) for the top-level lets of a function body, with
+ * parameters and earlier lets as the only variables in scope. Returns TOK_NONE when the initialiser needs expression kinds Expr does not cover yet.
+ */
+@pub
+struct Lets{@pub{
+}}
+
+@pub
+impl Lets{
+	/** Type of `let name = rhs` (assign = the `=` token) under `env` (name -> Ty row); TOK_NONE = not covered. */
+	@pub
+	@throws
+	static func typeLet(ts: ref mut TokStore, cx: mut u64, env: mut u64, assign: mut u64, lim: mut u64, er: mut u64) mut u64{
+		?catch(e){ throw e }
+		let w = mut TokStore.listGet(ts, cx, CX_W)
+		let tl = mut TokStore.listGet(ts, cx, CX_TL)
+		let letTok = mut TokStore.left(ts, assign)
+		let rhs = mut TokStore.right(ts, assign)
+		let ty = mut ? Expr.typeOf(ts, tl, w, er, rhs, env, cx)
+		if ty == TOK_NONE{
+			return TOK_NONE
+		}
+		let bnd = mut TokStore.typeBound(ts, letTok)
+		if bnd != TOK_NONE{
+			let bt = mut ? TypeAnn.resolveRaw(ts, cx, bnd, letTok, 0)
+			if TokStore.strEq(ts, Ty.get(ts, tl, ty, TY_BASE), "null"){
+				if Ty.get(ts, tl, bt, TY_STORAGE) == TOK_NONE || Ty.get(ts, tl, bt, TY_SOME) != 0{
+					return TOK_NONE
+				}
+				ty = bt
+			} else {
+				ty = ? Expr.boundResult(ts, tl, lim, bt, ty)
+				if ty == TOK_NONE{
+					return TOK_NONE
+				}
+			}
+		} else {
+			let mu = mut Ty.get(ts, tl, ty, TY_MUT)
+			if mu == TOK_NONE || (TokStore.strEq(ts, mu, "mut") == false && TokStore.strEq(ts, mu, "imut") == false){
+				return TOK_NONE
+			}
+		}
+		if Ty.get(ts, tl, ty, TY_ATOMIC) != 0{
+			if Globals.isDirectAtomic(ts, rhs){
+				return TOK_NONE
+			}
+			ty = ? Ty.withAtomic(ts, tl, ty, 0)
+		}
+		return ty
+	}
+}
