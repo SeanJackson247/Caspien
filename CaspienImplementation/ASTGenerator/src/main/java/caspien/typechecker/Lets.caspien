@@ -42,6 +42,11 @@ impl Lets{
 				}
 				ty = bt
 			} else {
+				let lrec = mut TOK_NONE
+				if TokStore.listSize(ts, cx) > 16{
+					lrec = TokStore.listGet(ts, cx, 16)
+				}
+				? Expr.acceptAdapt(ts, tl, lim, lrec, rhs, bt, ty)
 				ty = ? Expr.boundResult(ts, tl, lim, bt, ty)
 				if ty == TOK_NONE{
 					return TOK_NONE

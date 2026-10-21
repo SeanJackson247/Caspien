@@ -46,6 +46,8 @@ impl Funcs{
 		? TokStore.listAdd(ts, cx, imr)
 		let roots = mut ? TokStore.newList(ts)
 		? TokStore.listAdd(ts, cx, roots)
+		let rec = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, cx, rec)
 	}
 
 	/** A StrMap set of the names that FUNC_ALL_DECORATORS allows on a function. */

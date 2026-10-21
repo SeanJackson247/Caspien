@@ -61,6 +61,21 @@ impl StrMap{
 		return TOK_NONE
 	}
 
+	/** A new map holding the same entries as `m` (scoped copies of an environment). */
+	@pub
+	@throws
+	static func copy(ts: ref mut TokStore, m: mut u64) mut u64{
+		?catch(e){ throw e }
+		let c = mut ? StrMap.make(ts)
+		let keys = mut TokStore.listGet(ts, m, 0)
+		let vals = mut TokStore.listGet(ts, m, 1)
+		let n = mut TokStore.listSize(ts, keys)
+		for i in 0..n{
+			? StrMap.put(ts, c, TokStore.listGet(ts, keys, i), TokStore.listGet(ts, vals, i))
+		}
+		return c
+	}
+
 	/** The value stored under `key`, or TOK_NONE. */
 	@pub
 	static func get(ts: ref imut TokStore, m: mut u64, key: mut u64) mut u64{

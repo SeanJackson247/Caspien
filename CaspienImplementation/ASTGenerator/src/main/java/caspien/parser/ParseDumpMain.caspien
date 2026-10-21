@@ -609,7 +609,183 @@ impl PDump{
 		return TokStore.kind(ts, t) == TT_OPERATOR && TokStore.textEq(ts, t, "atomic")
 	}
 
-	/** Type of every top-level plain `let` of every function body through Lets.typeLet (Java ParseDump "lets"); UNSUP = not covered by Expr yet. */
+	/** Marks every name appearing under `root` as unknown in `env` (a binding construct may retype it). */
+	@throws
+	static func unbindAll(ts: ref mut TokStore, env: mut u64, root: mut u64) void{
+		?catch(e){ throw e }
+		let wl = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, wl, root)
+		for k in 0..1000000{
+			if TokStore.listSize(ts, wl) == 0{
+				break
+			}
+			let t = mut TokStore.listPop(ts, wl)
+			if t == TOK_NONE{
+				continue
+			}
+			if TokStore.kind(ts, t) == TT_VARREF{
+				? StrMap.put(ts, env, TokStore.text(ts, t), TOK_NONE)
+			}
+			? TokStore.listAdd(ts, wl, TokStore.left(ts, t))
+			? TokStore.listAdd(ts, wl, TokStore.right(ts, t))
+			let cs = mut TokStore.childs(ts, t)
+			let nc = mut TokStore.listSize(ts, cs)
+			for q in 0..nc{
+				? TokStore.listAdd(ts, wl, TokStore.listGet(ts, cs, q))
+			}
+			let ss = mut TokStore.sub(ts, t)
+			let ns = mut TokStore.listSize(ts, ss)
+			for q in 0..ns{
+				? TokStore.listAdd(ts, wl, TokStore.listGet(ts, ss, q))
+			}
+		}
+	}
+
+	/** One `node` line per sub-expression typed since `mark` (pairs of node, type in the recorder list), under the statement at `line`. */
+	/** Nodes reachable from r1/r2 the way Java's nodeDump walks them: right, left, sub, childs; LINE tokens (and everything under them) are skipped. */
+	@throws
+	static func reachable(ts: ref mut TokStore, r1: mut u64, r2: mut u64) mut u64{
+		?catch(e){ throw e }
+		let reach = mut ? TokStore.newList(ts)
+		let stk = mut ? TokStore.newList(ts)
+		if r2 != TOK_NONE{
+			? TokStore.listAdd(ts, stk, r2)
+		}
+		if r1 != TOK_NONE{
+			? TokStore.listAdd(ts, stk, r1)
+		}
+		for lp in 0..100000000{
+			if TokStore.listSize(ts, stk) == 0{
+				break
+			}
+			let x = mut TokStore.listPop(ts, stk)
+			if x == TOK_NONE || TokStore.kind(ts, x) == TT_LINE{
+				continue
+			}
+			? TokStore.listAdd(ts, reach, x)
+			let a = mut TokStore.right(ts, x)
+			if a != TOK_NONE{
+				? TokStore.listAdd(ts, stk, a)
+			}
+			let b = mut TokStore.left(ts, x)
+			if b != TOK_NONE{
+				? TokStore.listAdd(ts, stk, b)
+			}
+			let sb = mut TokStore.sub(ts, x)
+			if sb != TOK_NONE{
+				let nsb = mut TokStore.listSize(ts, sb)
+				for i in 0..nsb{
+					? TokStore.listAdd(ts, stk, TokStore.listGet(ts, sb, i))
+				}
+			}
+			let cd = mut TokStore.childs(ts, x)
+			if cd != TOK_NONE{
+				let ncd = mut TokStore.listSize(ts, cd)
+				for i in 0..ncd{
+					? TokStore.listAdd(ts, stk, TokStore.listGet(ts, cd, i))
+				}
+			}
+		}
+		return reach
+	}
+
+	/** The string's characters unescaped (Java prints a node's text as is). */
+	static func addRawOf(out: ref mut String, ts: ref imut TokStore, sid: mut u64) void{
+		if sid == TOK_NONE{
+			return
+		}
+		let n = mut TokStore.strLen(ts, sid)
+		for i in 0..n{
+			if String.charCode(TokStore.strCh(ts, sid, i)) != 0{
+				PDump.putCh(out, TokStore.strCh(ts, sid, i))
+			}
+		}
+	}
+
+	static func listHas(ts: ref mut TokStore, l: mut u64, x: mut u64) mut bool{
+		let nl = mut TokStore.listSize(ts, l)
+		for i in 0..nl{
+			if TokStore.listGet(ts, l, i) == x{
+				return true
+			}
+		}
+		return false
+	}
+
+	/** One "node" line per reachable annotated node: the LAST type recorded for it since `mark`. */
+	static func putNodes(out: ref mut String, ts: ref mut TokStore, tl: mut u64, rec: mut u64, mark: mut u64, fname: mut u64, j: mut u64, line: mut u64, r1: mut u64, r2: mut u64) void{
+		?catch(e){ return }
+		let reach = mut ? PDump.reachable(ts, r1, r2)
+		let n = mut TokStore.listSize(ts, rec)
+		let q = mut mark
+		for lp in 0..100000000{
+			if q + 1 >= n{
+				break
+			}
+			let nd = mut TokStore.listGet(ts, rec, q)
+			let ty = mut TokStore.listGet(ts, rec, q + 1)
+			q = q + 2
+			if PDump.listHas(ts, reach, nd) == false{
+				continue
+			}
+			let later = mut false
+			let q2 = mut q
+			for lp2 in 0..100000000{
+				if q2 + 1 >= n{
+					break
+				}
+				if TokStore.listGet(ts, rec, q2) == nd{
+					later = true
+					break
+				}
+				q2 = q2 + 2
+			}
+			if later || ty == TOK_NONE{
+				continue
+			}
+			let cn = mut ? Ty.canonical(ts, tl, ty)
+			PDump.putLit(out, "node ")
+			PDump.addStrOf(out, ts, fname)
+			PDump.putCh(out, '#')
+			PDump.putU64(out, j)
+			PDump.putLit(out, " L")
+			PDump.putU64(out, line)
+			PDump.putCh(out, ' ')
+			PDump.putLit(out, tokenTypeName(TokStore.kind(ts, nd)))
+			PDump.putCh(out, ':')
+			PDump.addRawOf(out, ts, TokStore.text(ts, nd))
+			PDump.putCh(out, ' ')
+			PDump.addStrOf(out, ts, cn)
+			PDump.putCh(out, '\n')
+		}
+	}
+
+	/** "UNSUP <head>" for an expression the type walker does not cover: the head of the initialiser after peeling mut/imut, parentheses and try. */
+	static func unsupHead(out: ref mut String, ts: ref mut TokStore, rh0: mut u64) void{
+					let rh = mut rh0
+					for ul in 0..12{
+						if TokStore.kind(ts, rh) == TT_OPERATOR && TokStore.unary(ts, rh) != 0 && (TokStore.textEq(ts, rh, "mut") || TokStore.textEq(ts, rh, "imut")) && TokStore.left(ts, rh) != TOK_NONE{
+							rh = TokStore.left(ts, rh)
+						} else if TokStore.kind(ts, rh) == TT_DELINEATOR && TokStore.textEq(ts, rh, "(") && TokStore.listSize(ts, TokStore.childs(ts, rh)) > 0{
+							rh = TokStore.listGet(ts, TokStore.childs(ts, rh), 0)
+						} else if (TokStore.kind(ts, rh) == TT_KEYWORD || TokStore.kind(ts, rh) == TT_OPERATOR) && TokStore.textEq(ts, rh, "try") && TokStore.listSize(ts, TokStore.sub(ts, rh)) > 0{
+							rh = TokStore.listGet(ts, TokStore.sub(ts, rh), 0)
+						}
+					}
+					PDump.putLit(out, "UNSUP ")
+					if TokStore.kind(ts, rh) == TT_OPERATOR || TokStore.kind(ts, rh) == TT_DELINEATOR || TokStore.kind(ts, rh) == TT_KEYWORD{
+						PDump.addStrOf(out, ts, TokStore.text(ts, rh))
+						if TokStore.kind(ts, rh) == TT_OPERATOR && TokStore.textEq(ts, rh, "CALL") && TokStore.left(ts, rh) != TOK_NONE{
+							PDump.putCh(out, ':')
+							PDump.addStrOf(out, ts, TokStore.text(ts, TokStore.left(ts, rh)))
+						}
+					} else {
+						PDump.putLit(out, "kind")
+						PDump.putU64(out, TokStore.kind(ts, rh))
+					}
+	}
+
+	/** Type of every plain `let` of every function body, nested blocks included (Java ParseDump "lets"); UNSUP = not covered by Expr yet. */
 	static func dumpLets(out: ref mut String, ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, er: mut u64) void{
 		?catch(e){
 			Io.eprintLit(e.msg)
@@ -618,6 +794,7 @@ impl PDump{
 			return
 		}
 		let fl = mut TokStore.listGet(ts, cx, 7)
+		let rec = mut TokStore.listGet(ts, cx, 16)
 		let lim = mut ? Expr.limits(ts)
 		let fk = mut ? Collect.sortedKeys(ts, World.get(ts, w, W_M_FUNCS))
 		let nf = mut TokStore.listSize(ts, fk)
@@ -627,22 +804,175 @@ impl PDump{
 			let no = mut TokStore.listSize(ts, ov)
 			for j in 0..no{
 				let fi = mut TokStore.listGet(ts, ov, j)
-				let env = mut ? StrMap.make(ts)
+				let env0 = mut ? StrMap.make(ts)
 				let pn = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
 				let pt = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
 				let np = mut TokStore.listSize(ts, pn)
 				for q in 0..np{
-					? StrMap.put(ts, env, TokStore.listGet(ts, pn, q), TokStore.listGet(ts, pt, q))
+					? StrMap.put(ts, env0, TokStore.listGet(ts, pn, q), TokStore.listGet(ts, pt, q))
 				}
 				let ftok = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
-				let lines = mut TokStore.childs(ts, ftok)
-				let nl = mut TokStore.listSize(ts, lines)
-				for li in 0..nl{
+				let isRec = mut false
+				if Dec.getDecorator(ts, TokStore.decorators(ts, ftok), "recursive") != TOK_NONE{
+					isRec = true
+				}
+				// frames of three entries: lines list, next index, environment
+				let stk = mut ? TokStore.newList(ts)
+				? TokStore.listAdd(ts, stk, TokStore.childs(ts, ftok))
+				? TokStore.listAdd(ts, stk, 0)
+				? TokStore.listAdd(ts, stk, env0)
+				for step in 0..100000000{
+					let sz = mut TokStore.listSize(ts, stk)
+					if sz == 0{
+						break
+					}
+					let lines = mut TokStore.listGet(ts, stk, sz - 3)
+					let li = mut TokStore.listGet(ts, stk, sz - 2)
+					let env = mut TokStore.listGet(ts, stk, sz - 1)
+					if li >= TokStore.listSize(ts, lines){
+						let d1 = mut TokStore.listPop(ts, stk)
+						let d2 = mut TokStore.listPop(ts, stk)
+						let d3 = mut TokStore.listPop(ts, stk)
+						continue
+					}
+					TokStore.listSet(ts, stk, sz - 2, li + 1)
 					let lcs = mut TokStore.childs(ts, TokStore.listGet(ts, lines, li))
 					if TokStore.listSize(ts, lcs) == 0{
 						continue
 					}
 					let st = mut TokStore.listGet(ts, lcs, 0)
+					if TokStore.kind(ts, st) == TT_KEYWORD && TokStore.listSize(ts, TokStore.childs(ts, st)) > 0 && TokStore.left(ts, st) == TOK_NONE{
+						// a block statement: its body and the chain of else parts; unsafe/safe blocks share the scope
+						let chain = mut ? TokStore.newList(ts)
+						let ct = mut st
+						for cl in 0..64{
+							if ct == TOK_NONE{
+								break
+							}
+							? TokStore.listAdd(ts, chain, ct)
+							ct = TokStore.next(ts, ct)
+						}
+						let nch = mut TokStore.listSize(ts, chain)
+						for ci in 0..nch{
+							let bt = mut TokStore.listGet(ts, chain, nch - 1 - ci)
+							let shared = mut false
+							if TokStore.textEq(ts, bt, "unsafe") || TokStore.textEq(ts, bt, "safe"){
+								shared = true
+							}
+							let benv = mut env
+							if shared == false{
+								benv = ? StrMap.copy(ts, env)
+								let bsub = mut TokStore.sub(ts, bt)
+								let nbs = mut TokStore.listSize(ts, bsub)
+								for q in 0..nbs{
+									let cnd = mut TokStore.listGet(ts, bsub, q)
+									let isSome = mut false
+									if TokStore.kind(ts, cnd) == TT_OPERATOR && TokStore.textEq(ts, cnd, "CALL") && TokStore.left(ts, cnd) != TOK_NONE && TokStore.textEq(ts, TokStore.left(ts, cnd), "Some"){
+										isSome = true
+									}
+									let keepsTypes = mut false
+									if TokStore.kind(ts, cnd) == TT_OPERATOR && (TokStore.textEq(ts, cnd, "fits") || TokStore.textEq(ts, cnd, "in") || TokStore.textEq(ts, cnd, "into") || TokStore.textEq(ts, cnd, "within")){
+										keepsTypes = true
+									}
+									let forIn = mut false
+									if TokStore.textEq(ts, bt, "for") && TokStore.kind(ts, cnd) == TT_OPERATOR && (TokStore.textEq(ts, cnd, "in") || TokStore.textEq(ts, cnd, "into")) && TokStore.kind(ts, TokStore.left(ts, cnd)) == TT_VARREF{
+										forIn = true
+									}
+									if forIn{
+										? StrMap.put(ts, benv, TokStore.text(ts, TokStore.left(ts, cnd)), TOK_NONE)
+									} else if TokStore.textEq(ts, bt, "for") || (TokStore.textEq(ts, bt, "match") && isSome == false && keepsTypes == false){
+										? PDump.unbindAll(ts, benv, cnd)
+									}
+									if TokStore.textEq(ts, bt, "for") && TokStore.kind(ts, cnd) == TT_OPERATOR && (TokStore.textEq(ts, cnd, "in") || TokStore.textEq(ts, cnd, "into")) && TokStore.kind(ts, TokStore.left(ts, cnd)) == TT_VARREF{
+										let rty = mut ? Expr.typeOf(ts, tl, w, er, TokStore.right(ts, cnd), env, cx)
+										if rty != TOK_NONE{
+											let lvt = mut ? Expr.loopVarType(ts, tl, rty)
+											if lvt != TOK_NONE{
+												? StrMap.put(ts, benv, TokStore.text(ts, TokStore.left(ts, cnd)), lvt)
+											}
+										}
+									}
+								}
+								if TokStore.textEq(ts, bt, "for") == false && TokStore.textEq(ts, bt, "match") == false && TokStore.textEq(ts, bt, "if") == false && TokStore.textEq(ts, bt, "else") == false && TokStore.textEq(ts, bt, "elseif") == false && TokStore.textEq(ts, bt, "while") == false && TokStore.textEq(ts, bt, "loop") == false{
+									continue
+								}
+							}
+							? TokStore.listAdd(ts, stk, TokStore.childs(ts, bt))
+							? TokStore.listAdd(ts, stk, 0)
+							? TokStore.listAdd(ts, stk, benv)
+						}
+						continue
+					}
+					let stKind = mut 0
+					if TokStore.kind(ts, st) == TT_KEYWORD && TokStore.textEq(ts, st, "return"){
+						stKind = 1
+					} else if TokStore.kind(ts, st) == TT_OPERATOR && TokStore.unary(ts, st) == 0 && TokStore.textEq(ts, st, "CALL"){
+						stKind = 2
+					} else if TokStore.kind(ts, st) == TT_OPERATOR && TokStore.unary(ts, st) == 0 && TokStore.textEq(ts, st, "=") && TokStore.left(ts, st) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, st)) != TT_KEYWORD{
+						stKind = 3
+					}
+					if stKind != 0{
+						PDump.putLit(out, "stmt ")
+						PDump.addStrOf(out, ts, nm)
+						PDump.putCh(out, '#')
+						PDump.putU64(out, j)
+						PDump.putCh(out, ' ')
+						PDump.putCh(out, 'L')
+						PDump.putU64(out, TokStore.line(ts, st))
+						PDump.putCh(out, ' ')
+						PDump.addStrOf(out, ts, TokStore.text(ts, st))
+						PDump.putCh(out, ' ')
+						let mark = mut TokStore.listSize(ts, rec)
+						if stKind == 1 && isRec{
+							PDump.putLit(out, "UNSUP return\n")
+							continue
+						}
+						if stKind == 1{
+							let rtc = mut ? Ty.canonical(ts, tl, Infos.fget(ts, fl, fi, FI_RETURN))
+							PDump.addStrOf(out, ts, rtc)
+							PDump.putCh(out, '\n')
+							let rsub = mut TokStore.sub(ts, st)
+							if rsub != TOK_NONE && TokStore.listSize(ts, rsub) == 1{
+								let rdone = mut ? Expr.typeOf(ts, tl, w, er, TokStore.listGet(ts, rsub, 0), env, cx)
+								if rdone != TOK_NONE{
+									? Expr.acceptAdapt(ts, tl, lim, rec, TokStore.listGet(ts, rsub, 0), Infos.fget(ts, fl, fi, FI_RETURN), rdone)
+									PDump.putNodes(out, ts, tl, rec, mark, nm, j, TokStore.line(ts, st), TokStore.listGet(ts, rsub, 0), TOK_NONE)
+								}
+							}
+							continue
+						}
+						let styRoot = mut st
+						if stKind == 3{
+							styRoot = TokStore.left(ts, st)
+						}
+						let sty = mut ? Expr.typeOf(ts, tl, w, er, styRoot, env, cx)
+						if sty == TOK_NONE{
+							PDump.unsupHead(out, ts, styRoot)
+						} else {
+							let scn = mut ? Ty.canonical(ts, tl, sty)
+							PDump.addStrOf(out, ts, scn)
+						}
+						PDump.putCh(out, '\n')
+						let good = mut true
+						if sty == TOK_NONE{
+							good = false
+						}
+						if stKind == 3{
+							let rhsDone = mut ? Expr.typeOf(ts, tl, w, er, TokStore.right(ts, st), env, cx)
+							if rhsDone == TOK_NONE{
+								good = false
+							}
+							if rhsDone != TOK_NONE && sty != TOK_NONE{
+								? Expr.acceptAdapt(ts, tl, lim, rec, TokStore.right(ts, st), sty, rhsDone)
+							}
+						}
+						if good && stKind == 3{
+							PDump.putNodes(out, ts, tl, rec, mark, nm, j, TokStore.line(ts, st), TokStore.left(ts, st), TokStore.right(ts, st))
+						} else if good{
+							PDump.putNodes(out, ts, tl, rec, mark, nm, j, TokStore.line(ts, st), st, TOK_NONE)
+						}
+						continue
+					}
 					if TokStore.kind(ts, st) != TT_OPERATOR || TokStore.textEq(ts, st, "=") == false || TokStore.unary(ts, st) != 0{
 						continue
 					}
@@ -656,35 +986,16 @@ impl PDump{
 					PDump.putCh(out, '#')
 					PDump.putU64(out, j)
 					PDump.putCh(out, ' ')
+					PDump.putCh(out, 'L')
+					PDump.putU64(out, TokStore.line(ts, lt))
+					PDump.putCh(out, ' ')
 					PDump.addStrOf(out, ts, lname)
 					PDump.putCh(out, ' ')
+					let lmark = mut TokStore.listSize(ts, rec)
 					let ty = mut ? Lets.typeLet(ts, cx, env, st, lim, er)
 					if ty == TOK_NONE{
-						let rh = mut TokStore.right(ts, st)
-						for ul in 0..12{
-							if TokStore.kind(ts, rh) == TT_OPERATOR && TokStore.unary(ts, rh) != 0 && (TokStore.textEq(ts, rh, "mut") || TokStore.textEq(ts, rh, "imut")) && TokStore.left(ts, rh) != TOK_NONE{
-								rh = TokStore.left(ts, rh)
-							} else if TokStore.kind(ts, rh) == TT_DELINEATOR && TokStore.textEq(ts, rh, "(") && TokStore.listSize(ts, TokStore.childs(ts, rh)) > 0{
-								rh = TokStore.listGet(ts, TokStore.childs(ts, rh), 0)
-							} else if (TokStore.kind(ts, rh) == TT_KEYWORD || TokStore.kind(ts, rh) == TT_OPERATOR) && TokStore.textEq(ts, rh, "try") && TokStore.listSize(ts, TokStore.sub(ts, rh)) > 0{
-								rh = TokStore.listGet(ts, TokStore.sub(ts, rh), 0)
-							}
-						}
-						PDump.putLit(out, "UNSUP ")
-						if TokStore.kind(ts, rh) == TT_OPERATOR || TokStore.kind(ts, rh) == TT_DELINEATOR || TokStore.kind(ts, rh) == TT_KEYWORD{
-							PDump.addStrOf(out, ts, TokStore.text(ts, rh))
-							if TokStore.kind(ts, rh) == TT_OPERATOR && TokStore.textEq(ts, rh, "CALL") && TokStore.left(ts, rh) != TOK_NONE{
-								PDump.putCh(out, ':')
-								if TokStore.kind(ts, TokStore.left(ts, rh)) == TT_VARREF{
-									PDump.addStrOf(out, ts, TokStore.text(ts, TokStore.left(ts, rh)))
-								} else {
-									PDump.addStrOf(out, ts, TokStore.text(ts, TokStore.left(ts, rh)))
-								}
-							}
-						} else {
-							PDump.putLit(out, "kind")
-							PDump.putU64(out, TokStore.kind(ts, rh))
-						}
+						? StrMap.put(ts, env, lname, TOK_NONE)
+						PDump.unsupHead(out, ts, TokStore.right(ts, st))
 						PDump.putCh(out, '\n')
 						continue
 					}
@@ -692,8 +1003,23 @@ impl PDump{
 					let cn = mut ? Ty.canonical(ts, tl, ty)
 					PDump.addStrOf(out, ts, cn)
 					PDump.putCh(out, '\n')
+					PDump.putNodes(out, ts, tl, rec, lmark, nm, j, TokStore.line(ts, lt), TokStore.right(ts, st), TOK_NONE)
 				}
 			}
+		}
+	}
+
+	/** Registers every global initialiser the way the checker does before it looks at function bodies (stops quietly at the first one Globals.collect rejects). */
+	static func collectGlobals(ts: ref mut TokStore, cx: mut u64, w: mut u64, er: mut u64, flatLines: mut u64) void{
+		?catch(e){ return }
+		let lim = mut ? Expr.limits(ts)
+		let n = mut TokStore.listSize(ts, flatLines)
+		for i in 0..n{
+			let asg = mut Collect.globalLetAssignOf(ts, TokStore.listGet(ts, flatLines, i))
+			if asg == TOK_NONE{
+				continue
+			}
+			let ok = mut ? Globals.collect(ts, cx, asg, i, lim, er)
 		}
 	}
 
@@ -859,6 +1185,7 @@ impl PDump{
 		? Hier.generateEnumForEnums(ts, cx)
 		? Hier.generateInterfaceDispatchers(ts, cx)
 		if lets != 0{
+			PDump.collectGlobals(ts, cx, w, er, flatLines)
 			PDump.dumpLets(out, ts, w, tl, cx, er)
 			return
 		}
