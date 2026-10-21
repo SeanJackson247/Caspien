@@ -874,6 +874,9 @@ impl PDump{
 									if TokStore.kind(ts, cnd) == TT_OPERATOR && (TokStore.textEq(ts, cnd, "fits") || TokStore.textEq(ts, cnd, "in") || TokStore.textEq(ts, cnd, "into") || TokStore.textEq(ts, cnd, "within")){
 										keepsTypes = true
 									}
+									if TokStore.kind(ts, cnd) == TT_OPERATOR && TokStore.unary(ts, cnd) == 0 && (TokStore.textEq(ts, cnd, "!=") || TokStore.textEq(ts, cnd, "==") || TokStore.textEq(ts, cnd, "<") || TokStore.textEq(ts, cnd, ">") || TokStore.textEq(ts, cnd, "<=") || TokStore.textEq(ts, cnd, ">=")){
+										keepsTypes = true
+									}
 									let forIn = mut false
 									if TokStore.textEq(ts, bt, "for") && TokStore.kind(ts, cnd) == TT_OPERATOR && (TokStore.textEq(ts, cnd, "in") || TokStore.textEq(ts, cnd, "into")) && TokStore.kind(ts, TokStore.left(ts, cnd)) == TT_VARREF{
 										forIn = true
