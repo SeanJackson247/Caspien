@@ -92,6 +92,7 @@ impl Dec{
 		return 0
 	}
 
+	@pub
 	static func nArgs(ts: ref imut TokStore, d: mut u64) mut u64{
 		let args = mut TokStore.dArgs(ts, d)
 		if args == TOK_NONE{

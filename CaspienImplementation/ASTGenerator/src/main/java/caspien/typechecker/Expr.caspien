@@ -1516,6 +1516,7 @@ impl Expr{
 	}
 
 	/** Appends the comma-separated argument tokens of a call's `(` token to `out` in order; returns their count. */
+	@pub
 	static func collectArgs(ts: ref mut TokStore, args: mut u64, out: mut u64) mut u64{
 		?catch(e){ return 0 }
 		if args == TOK_NONE{

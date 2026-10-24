@@ -21,6 +21,7 @@ import "../typechecker/Hier.caspien"
 import "../typechecker/Expr.caspien"
 import "../typechecker/Globals.caspien"
 import "../typechecker/Lets.caspien"
+import "../typechecker/Checks.caspien"
 import "../typechecker/RootAsm.caspien"
 
 /**
@@ -866,6 +867,7 @@ impl PDump{
 								let nbs = mut TokStore.listSize(ts, bsub)
 								for q in 0..nbs{
 									let cnd = mut TokStore.listGet(ts, bsub, q)
+									let ctyp = mut ? Expr.typeOf(ts, tl, w, er, cnd, env, cx)
 									let isSome = mut false
 									if TokStore.kind(ts, cnd) == TT_OPERATOR && TokStore.textEq(ts, cnd, "CALL") && TokStore.left(ts, cnd) != TOK_NONE && TokStore.textEq(ts, TokStore.left(ts, cnd), "Some"){
 										isSome = true
@@ -1131,6 +1133,10 @@ impl PDump{
 		?catch(e){
 			Io.eprintLit(e.msg)
 			Io.eprintLit("\n")
+			if lets == 2{
+				PDump.putLit(out, "VERDICT ERR\n")
+				return
+			}
 			PDump.putLit(out, "funcs ERR\n")
 			return
 		}
@@ -1189,6 +1195,13 @@ impl PDump{
 		? Hier.generateInterfaceDispatchers(ts, cx)
 		if lets != 0{
 			PDump.collectGlobals(ts, cx, w, er, flatLines)
+			if lets == 2{
+				let scratch = mut ? new String()
+				PDump.dumpLets(scratch, ts, w, tl, cx, er)
+				? Checks.run(out, ts, w, tl, cx, er)
+				PDump.putLit(out, "VERDICT OK\n")
+				return
+			}
 			PDump.dumpLets(out, ts, w, tl, cx, er)
 			return
 		}
@@ -1577,7 +1590,7 @@ impl PDump{
 		let fileId = mut ? TokStore.internFile(ts, path)
 		let flat = mut ? ParserLines.toTokens(ts, result.tokens, fileId)
 		let res = mut ? ParserLines.nest(ts, flat)
-		if Txt.eqLit(stage, "resolved") || Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
+		if Txt.eqLit(stage, "resolved") || Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")) || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")){
 			let treeStage = mut ? String.from("tree")
 			res = ? ParserLines.runStage(ts, treeStage, res)
 			let cwdList = mut ? new ObjectList:<String>()
@@ -1589,10 +1602,10 @@ impl PDump{
 			let platSid = mut ? TokStore.addLit(ts, "linux")
 			let resolver = mut ? new ImportResolver(ts, stdSid, platSid, cwdSid)
 			res = ? ImportResolver.resolve(resolver, ts, res, fileId)
-			if Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
+			if Txt.eqLit(stage, "dup") || Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")) || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")){
 				? DupExpander.expand(ts, res)
 			}
-			if Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
+			if Txt.eqLit(stage, "generics") || Txt.eqLit(stage, "decl") || Txt.eqLit(stage, "gexpr") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")) || Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")){
 				res = ? GenericsExpander.expand(ts, res)
 			}
 		} else {
@@ -1603,7 +1616,7 @@ impl PDump{
 			extraFlag = 1
 		}
 		let out = mut ? new String()
-		if Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
+		if Txt.eqLit(stage, "types") || Txt.eqLit(stage, "flat") || Txt.eqLit(stage, "funcs") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")){
 			let w = mut ? World.make(ts)
 			let sr = mut ? TokStore.newList(ts)
 			let er = mut ? TokStore.newList(ts)
@@ -1623,7 +1636,7 @@ impl PDump{
 			? StrMap.put(ts, ccs, c2, 1)
 			? StrMap.put(ts, ccs, c3, 1)
 			let cx = mut ? TypeAnn.makeCx(ts, w, tl, c1, ccs, sr, ir)
-			if Txt.eqLit(stage, "funcs") || Txt.eqLit(stage, "lets"){
+			if Txt.eqLit(stage, "funcs") || (Txt.eqLit(stage, "lets") || Txt.eqLit(stage, "verdict")){
 				let fl = mut ? TokStore.newList(ts)
 				let xr = mut ? TokStore.newList(ts)
 				? Funcs.extendCx(ts, cx, er, fl, xr)
@@ -1632,6 +1645,9 @@ impl PDump{
 				let letsFlag = mut 0
 				if Txt.eqLit(stage, "lets"){
 					letsFlag = 1
+				}
+				if Txt.eqLit(stage, "verdict"){
+					letsFlag = 2
 				}
 				PDump.dumpFuncs(out, ts, w, tl, sr, er, ir, cx, flatLines, flatSafety, letsFlag)
 			}

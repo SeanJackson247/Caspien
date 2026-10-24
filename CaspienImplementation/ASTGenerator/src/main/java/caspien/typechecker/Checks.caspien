@@ -1,0 +1,1460 @@
+import "stdlib/string.caspien"
+import "../token/TokStore.caspien"
+import "../token/TokenType.caspien"
+import "../util/StrMap.caspien"
+import "Infos.caspien"
+import "World.caspien"
+import "Dec.caspien"
+import "Ty.caspien"
+import "TypeAnn.caspien"
+import "Decl.caspien"
+import "Collect.caspien"
+
+/**
+ * The error checks of the type checker (the accept/reject decisions; message texts are fixed literals, the owner allowed them to differ from Java).
+ * `run` is the entry point used by the `verdict` stage: it throws on the first violation, returns normally for an accepted program.
+ * Each check is a port of one Java validator named in its comment.
+ */
+@pub
+struct Checks{@pub{
+}}
+
+@pub
+impl Checks{
+	/** The (name, type, swap) triples of a struct's declared members (the `types` stage listing). */
+	@throws
+	static func members(ts: ref mut TokStore, cx: mut u64, sr: mut u64, row: mut u64) mut u64{
+		?catch(e){ throw e }
+		let lines = mut Infos.sget(ts, sr, row, SI_RAW_LINES)
+		let acc = mut ? TokStore.newList(ts)
+		let nl = mut TokStore.listSize(ts, lines)
+		for i in 0..nl{
+			let ml = mut TokStore.listGet(ts, lines, i)
+			? TypeAnn.parseNameTypeGroups(ts, cx, TokStore.childs(ts, ml), 1, acc)
+		}
+		return acc
+	}
+
+	/** True when `ty` is, or holds (array/dynarray element, any depth), an `auto` pointer (TypeCheckerSignatures.typeHoldsAuto). */
+	@throws
+	static func holdsAuto(ts: ref mut TokStore, tl: mut u64, ty: mut u64) mut bool{
+		?catch(e){ throw e }
+		let work = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, work, ty)
+		let found = mut false
+		for step in 0..100000{
+			let nw = mut TokStore.listSize(ts, work)
+			if nw == 0{
+				break
+			}
+			let t = mut TokStore.listPop(ts, work)
+			if t == TOK_NONE{
+				continue
+			}
+			let st = mut Ty.get(ts, tl, t, TY_STORAGE)
+			if st != TOK_NONE && TokStore.strEq(ts, st, "auto"){
+				found = true
+				break
+			}
+			? TokStore.listAdd(ts, work, Ty.get(ts, tl, t, TY_ARR_ELEM))
+			? TokStore.listAdd(ts, work, Ty.get(ts, tl, t, TY_DYN_ELEM))
+			? TokStore.listAdd(ts, work, Ty.get(ts, tl, t, TY_UDYN_ELEM))
+		}
+		return found
+	}
+
+	/** Every function row: top-level overloads plus instance and static impl methods. */
+	@throws
+	static func allFuncs(ts: ref mut TokStore, w: mut u64, cx: mut u64) mut u64{
+		?catch(e){ throw e }
+		let all = mut ? TokStore.newList(ts)
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		let fk = mut ? Collect.sortedKeys(ts, funcs)
+		let nf = mut TokStore.listSize(ts, fk)
+		for i in 0..nf{
+			let ov = mut StrMap.get(ts, funcs, TokStore.listGet(ts, fk, i))
+			? TokStore.listAddAll(ts, all, ov)
+		}
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let byType = mut World.get(ts, w, W_M_IMPLS_BY_TYPE)
+		let ck = mut ? Collect.sortedKeys(ts, byType)
+		let nck = mut TokStore.listSize(ts, ck)
+		for i in 0..nck{
+			let il = mut StrMap.get(ts, byType, TokStore.listGet(ts, ck, i))
+			let nil = mut TokStore.listSize(ts, il)
+			for j in 0..nil{
+				let im = mut TokStore.listGet(ts, il, j)
+				for pass in 0..2{
+					let mslot = mut IM_METHODS
+					if pass == 1{
+						mslot = IM_STATIC_METHODS
+					}
+					let mm = mut Infos.rget(ts, mr, 12, im, mslot)
+					let mvals = mut TokStore.listGet(ts, mm, 1)
+					? TokStore.listAddAll(ts, all, mvals)
+				}
+			}
+		}
+		return all
+	}
+
+	/** validateNoAutoReturns / requireNoAutoReturn: no container of `auto` as a parameter, no `auto` (or container of it) returned. */
+	@throws
+	static func autoReturns(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let all = mut ? Checks.allFuncs(ts, w, cx)
+		let n = mut TokStore.listSize(ts, all)
+		for i in 0..n{
+			let fi = mut TokStore.listGet(ts, all, i)
+			let pt = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+			let np = mut TokStore.listSize(ts, pt)
+			for q in 0..np{
+				let ty = mut TokStore.listGet(ts, pt, q)
+				let st = mut Ty.get(ts, tl, ty, TY_STORAGE)
+				let isAuto = mut false
+				if st != TOK_NONE && TokStore.strEq(ts, st, "auto"){
+					isAuto = true
+				}
+				let ha = mut ? Checks.holdsAuto(ts, tl, ty)
+				if isAuto == false && ha{
+					throw "a parameter is a container of 'auto' pointers: a callee could store its own local's address into a container that outlives it"
+				}
+			}
+			let rt = mut Infos.fget(ts, fl, fi, FI_RETURN)
+			if rt != TOK_NONE{
+				let hr = mut ? Checks.holdsAuto(ts, tl, rt)
+				if hr{
+					throw "a function returns an 'auto' pointer: it would point into the stack frame of the function that is returning"
+				}
+			}
+		}
+	}
+
+	/** validateNoPointersInLockStructs: no `ref`/`auto` anywhere inside an `@lock` struct (nested structs, arrays, dynarrays, owns pointees, interface implementers). */
+	@throws
+	static func lockPointers(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let mr = mut TokStore.listGet(ts, cx, 14)
+		let order = mut World.get(ts, w, W_L_STRUCT_ORDER)
+		let smap = mut World.get(ts, w, W_M_STRUCTS)
+		let imap = mut World.get(ts, w, W_M_IFACES)
+		let byType = mut World.get(ts, w, W_M_IMPLS_BY_TYPE)
+		let ns = mut TokStore.listSize(ts, order)
+		for i in 0..ns{
+			let nm = mut TokStore.listGet(ts, order, i)
+			let row = mut StrMap.get(ts, smap, nm)
+			if Infos.sget(ts, sr, row, SI_LOCK_FIELD) == TOK_NONE{
+				continue
+			}
+			let visited = mut ? StrMap.make(ts)
+			? StrMap.put(ts, visited, nm, 1)
+			let work = mut ? TokStore.newList(ts)
+			let acc0 = mut ? Checks.members(ts, cx, sr, row)
+			let na0 = mut (TokStore.listSize(ts, acc0) / 3)
+			for j in 0..na0{
+				? TokStore.listAdd(ts, work, TokStore.listGet(ts, acc0, j * 3 + 1))
+			}
+			for step in 0..10000000{
+				if TokStore.listSize(ts, work) == 0{
+					break
+				}
+				let t = mut TokStore.listPop(ts, work)
+				if t == TOK_NONE{
+					continue
+				}
+				let st = mut Ty.get(ts, tl, t, TY_STORAGE)
+				if st != TOK_NONE && (TokStore.strEq(ts, st, "ref") || TokStore.strEq(ts, st, "auto")){
+					throw "an '@lock' struct cannot contain a 'ref' or 'auto' anywhere inside it: a reference taken out of the lock would reach data the lock does not protect"
+				}
+				? TokStore.listAdd(ts, work, Ty.get(ts, tl, t, TY_ARR_ELEM))
+				? TokStore.listAdd(ts, work, Ty.get(ts, tl, t, TY_DYN_ELEM))
+				? TokStore.listAdd(ts, work, Ty.get(ts, tl, t, TY_UDYN_ELEM))
+				let base = mut Ty.get(ts, tl, t, TY_BASE)
+				if base == TOK_NONE{
+					continue
+				}
+				let sb = mut ? Decl.stripArrayDims(ts, base)
+				if StrMap.has(ts, imap, sb){
+					let nyt = mut ? TokStore.newList(ts)
+					let ck = mut ? Collect.sortedKeys(ts, byType)
+					let nck = mut TokStore.listSize(ts, ck)
+					for a in 0..nck{
+						let il = mut StrMap.get(ts, byType, TokStore.listGet(ts, ck, a))
+						let nil = mut TokStore.listSize(ts, il)
+						for b in 0..nil{
+							let im = mut TokStore.listGet(ts, il, b)
+							let ifn = mut Infos.rget(ts, mr, 12, im, IM_INTERFACE)
+							if ifn != TOK_NONE && TokStore.strsEq(ts, ifn, sb){
+								let cn = mut Infos.rget(ts, mr, 12, im, IM_CONCRETE)
+								if StrMap.has(ts, visited, cn) == false && StrMap.has(ts, smap, cn){
+									? StrMap.put(ts, visited, cn, 1)
+									let crow = mut StrMap.get(ts, smap, cn)
+									let cacc = mut ? Checks.members(ts, cx, sr, crow)
+									let nca = mut (TokStore.listSize(ts, cacc) / 3)
+									for j in 0..nca{
+										? TokStore.listAdd(ts, work, TokStore.listGet(ts, cacc, j * 3 + 1))
+									}
+								}
+							}
+						}
+					}
+					continue
+				}
+				if StrMap.has(ts, smap, sb) && StrMap.has(ts, visited, sb) == false{
+					? StrMap.put(ts, visited, sb, 1)
+					let irow = mut StrMap.get(ts, smap, sb)
+					let iacc = mut ? Checks.members(ts, cx, sr, irow)
+					let nia = mut (TokStore.listSize(ts, iacc) / 3)
+					for j in 0..nia{
+						? TokStore.listAdd(ts, work, TokStore.listGet(ts, iacc, j * 3 + 1))
+					}
+				}
+			}
+		}
+	}
+
+	/** Every token under `root` (not following root's own `next`), as a list. */
+	@throws
+	static func descendants(ts: ref mut TokStore, root: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		let work = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, work, root)
+		let first = mut true
+		for step in 0..100000000{
+			if TokStore.listSize(ts, work) == 0{
+				break
+			}
+			let t = mut TokStore.listPop(ts, work)
+			if t == TOK_NONE{
+				continue
+			}
+			? TokStore.listAdd(ts, out, t)
+			? TokStore.listAdd(ts, work, TokStore.left(ts, t))
+			? TokStore.listAdd(ts, work, TokStore.right(ts, t))
+			if first == false{
+				? TokStore.listAdd(ts, work, TokStore.next(ts, t))
+			}
+			first = false
+			let sb = mut TokStore.sub(ts, t)
+			if sb != TOK_NONE{
+				? TokStore.listAddAll(ts, work, sb)
+			}
+			let cs = mut TokStore.childs(ts, t)
+			if cs != TOK_NONE{
+				? TokStore.listAddAll(ts, work, cs)
+			}
+		}
+		return out
+	}
+
+	/** True when a function row carries `@pure` (rt = 0) or `@pure(rt)` (rt = 1). */
+	static func isPure(ts: ref imut TokStore, fl: mut u64, fi: mut u64, rt: mut u64) mut bool{
+		let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+		if ft == TOK_NONE{
+			return false
+		}
+		let d = mut Dec.getDecorator(ts, TokStore.decorators(ts, ft), "pure")
+		if d == TOK_NONE{
+			return false
+		}
+		if rt == 1{
+			return Dec.nArgs(ts, d) > 0
+		}
+		return true
+	}
+
+	/** Purity bans: requireNotPure / requireNotPureRt / requirePureRtNoPointer / requirePureCalleeIfPure (token-level port). */
+	@throws
+	static func purity(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		let all = mut ? Checks.allFuncs(ts, w, cx)
+		let n = mut TokStore.listSize(ts, all)
+		for i in 0..n{
+			let fi = mut TokStore.listGet(ts, all, i)
+			if Checks.isPure(ts, fl, fi, 0) == false{
+				continue
+			}
+			let rt = mut Checks.isPure(ts, fl, fi, 1)
+			let rtn = mut 0
+			if rt{
+				rtn = 1
+			}
+			let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+			if rt{
+				let pt = mut Infos.fget(ts, fl, fi, FI_PARAM_TYPES)
+				let np = mut TokStore.listSize(ts, pt)
+				for q in 0..np{
+					let ty = mut TokStore.listGet(ts, pt, q)
+					if Ty.get(ts, tl, ty, TY_STORAGE) != TOK_NONE || Ty.get(ts, tl, ty, TY_DYN_ELEM) != TOK_NONE{
+						throw "a '@pure(rt)' function cannot have a pointer or dynamic array parameter"
+					}
+				}
+				let rty = mut Infos.fget(ts, fl, fi, FI_RETURN)
+				if rty != TOK_NONE && (Ty.get(ts, tl, rty, TY_STORAGE) != TOK_NONE || Ty.get(ts, tl, rty, TY_DYN_ELEM) != TOK_NONE){
+					throw "a '@pure(rt)' function cannot return a pointer or dynamic array"
+				}
+			}
+			let body = mut ? Checks.descendants(ts, ft)
+			let nb = mut TokStore.listSize(ts, body)
+			for b in 0..nb{
+				let t = mut TokStore.listGet(ts, body, b)
+				let k = mut TokStore.kind(ts, t)
+				if k == TT_KEYWORD && (TokStore.textEq(ts, t, "unsafe") || TokStore.textEq(ts, t, "lock")){
+					throw "a '@pure' function cannot use an 'unsafe' block or 'match @lock'"
+				}
+				if k == TT_OPERATOR && TokStore.unary(ts, t) != 0 && (TokStore.textEq(ts, t, "par") || TokStore.textEq(ts, t, "await")){
+					throw "a '@pure' function cannot use 'par' or 'await'"
+				}
+				if rt && k == TT_OPERATOR && TokStore.unary(ts, t) != 0 && (TokStore.textEq(ts, t, "new") || TokStore.textEq(ts, t, "dyn")){
+					throw "a '@pure(rt)' function cannot allocate"
+				}
+				if k == TT_OPERATOR && TokStore.textEq(ts, t, "CALL") && TokStore.unary(ts, t) == 0 && TokStore.left(ts, t) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, t)) == TT_VARREF{
+					let cn = mut TokStore.text(ts, TokStore.left(ts, t))
+					if rt && (TokStore.strEq(ts, cn, "insecure_rand") || TokStore.strEq(ts, cn, "deref") || TokStore.strEq(ts, cn, "clone") || TokStore.strEq(ts, cn, "resize") || TokStore.strEq(ts, cn, "dyn")){
+						throw "a '@pure(rt)' function cannot use an allocating, non-deterministic or pointer-reading builtin"
+					}
+					if StrMap.has(ts, funcs, cn){
+						let ov = mut StrMap.get(ts, funcs, cn)
+						let nov = mut TokStore.listSize(ts, ov)
+						let anyPure = mut false
+						for o in 0..nov{
+							if Checks.isPure(ts, fl, TokStore.listGet(ts, ov, o), rtn){
+								anyPure = true
+							}
+						}
+						if anyPure == false{
+							throw "a '@pure' function can only call other '@pure' functions"
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Every token of a function body as triples (node, parent, flags). flags: bits 0-3 = what a `continue` here targets (0 nothing, 1 for/loop, 2 lock CLOSED,
+	 * 3 lock OPEN, 4 catch body); bit 4 = inside an `unsafe` block; bit 5 = the node is the guarded expression of a `try`.
+	 */
+	@throws
+	static func walkCtx(ts: ref mut TokStore, ft: mut u64) mut u64{
+		?catch(e){ throw e }
+		let out = mut ? TokStore.newList(ts)
+		let work = mut ? TokStore.newList(ts)
+		let bodyLines = mut TokStore.childs(ts, ft)
+		if bodyLines == TOK_NONE{
+			return out
+		}
+		let nbl = mut TokStore.listSize(ts, bodyLines)
+		for i in 0..nbl{
+			? TokStore.listAdd(ts, work, TokStore.listGet(ts, bodyLines, i))
+			? TokStore.listAdd(ts, work, ft)
+			? TokStore.listAdd(ts, work, 0)
+		}
+		for step in 0..100000000{
+			let nw = mut TokStore.listSize(ts, work)
+			if nw == 0{
+				break
+			}
+			let fl = mut TokStore.listPop(ts, work)
+			let prt = mut TokStore.listPop(ts, work)
+			let t = mut TokStore.listPop(ts, work)
+			if t == TOK_NONE{
+				continue
+			}
+			? TokStore.listAdd(ts, out, t)
+			? TokStore.listAdd(ts, out, prt)
+			? TokStore.listAdd(ts, out, fl)
+			let k = mut TokStore.kind(ts, t)
+			let ctk = mut (fl % 16)
+			let uns = mut (fl / 16 % 2)
+			let base = mut (ctk + uns * 16 + fl / 32 % 2 * 32)
+			// flags handed to the children (childs / sub / left / right)
+			let cflags = mut base
+			if k == TT_KEYWORD && (TokStore.textEq(ts, t, "for") || TokStore.textEq(ts, t, "loop")){
+				cflags = 1 + uns * 16 + fl / 32 % 2 * 32
+			}
+			if k == TT_KEYWORD && TokStore.textEq(ts, t, "unsafe"){
+				cflags = ctk + 16 + fl / 32 % 2 * 32
+			}
+			if k == TT_VARREF && prt != TOK_NONE && TokStore.kind(ts, prt) == TT_KEYWORD && TokStore.textEq(ts, prt, "lock"){
+				if TokStore.textEq(ts, t, "OPEN"){
+					cflags = 3 + uns * 16 + fl / 32 % 2 * 32
+				}
+				if TokStore.textEq(ts, t, "CLOSED"){
+					cflags = 2 + uns * 16 + fl / 32 % 2 * 32
+				}
+			}
+			let cl = mut TokStore.left(ts, t)
+			if cl != TOK_NONE{
+				? TokStore.listAdd(ts, work, cl)
+				? TokStore.listAdd(ts, work, t)
+				? TokStore.listAdd(ts, work, base)
+			}
+			let cr = mut TokStore.right(ts, t)
+			if cr != TOK_NONE{
+				? TokStore.listAdd(ts, work, cr)
+				? TokStore.listAdd(ts, work, t)
+				? TokStore.listAdd(ts, work, base)
+			}
+			let isTry = mut (k == TT_KEYWORD && TokStore.textEq(ts, t, "try"))
+			let sb = mut TokStore.sub(ts, t)
+			if sb != TOK_NONE{
+				let nsb = mut TokStore.listSize(ts, sb)
+				for q in 0..nsb{
+					let sflag = mut base
+					if isTry && q == 0{
+						sflag = ctk + uns * 16 + 32
+					}
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, sb, q))
+					? TokStore.listAdd(ts, work, t)
+					? TokStore.listAdd(ts, work, sflag)
+				}
+			}
+			let cs = mut TokStore.childs(ts, t)
+			if cs != TOK_NONE{
+				let ncs = mut TokStore.listSize(ts, cs)
+				for q in 0..ncs{
+					let chf = mut cflags
+					if isTry{
+						chf = 4 + uns * 16
+					}
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, cs, q))
+					? TokStore.listAdd(ts, work, t)
+					? TokStore.listAdd(ts, work, chf)
+				}
+			}
+		}
+		return out
+	}
+
+	/** Statement-level checks over every function body: continue placement, try wrapping of allocating/async/throwing operations, throw vs @throws. */
+	@throws
+	static func bodies(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		let all = mut ? Checks.allFuncs(ts, w, cx)
+		let n = mut TokStore.listSize(ts, all)
+		for i in 0..n{
+			let fi = mut TokStore.listGet(ts, all, i)
+			let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+			if ft == TOK_NONE{
+				continue
+			}
+			let walk = mut ? Checks.walkCtx(ts, ft)
+			let nt = mut (TokStore.listSize(ts, walk) / 3)
+			let sawThrow = mut false
+			let catchNames = mut ? StrMap.make(ts)
+			for b in 0..nt{
+				let t = mut TokStore.listGet(ts, walk, b * 3)
+				let prt = mut TokStore.listGet(ts, walk, b * 3 + 1)
+				let fg = mut TokStore.listGet(ts, walk, b * 3 + 2)
+				let k = mut TokStore.kind(ts, t)
+				let wrapped = mut (fg / 32 % 2 == 1)
+				if k == TT_KEYWORD && TokStore.textEq(ts, t, "continue"){
+					let ctk = mut (fg % 16)
+					if ctk == 0 || ctk == 3{
+						throw "'continue' can only be used inside a 'for' or 'loop', inside a 'catch' handler, or in the CLOSED case of a 'match @lock'"
+					}
+				}
+				if k == TT_KEYWORD && TokStore.textEq(ts, t, "throw"){
+					sawThrow = true
+				}
+				if k == TT_KEYWORD && TokStore.textEq(ts, t, "try") && TokStore.catchParamName(ts, t) != TOK_NONE{
+					? StrMap.put(ts, catchNames, TokStore.catchParamName(ts, t), 1)
+				}
+				if k == TT_VARREF && fg % 16 == 4 && StrMap.has(ts, catchNames, TokStore.text(ts, t)){
+					let okUse = mut false
+					if prt != TOK_NONE && TokStore.kind(ts, prt) == TT_OPERATOR && TokStore.textEq(ts, prt, ".") && TokStore.left(ts, prt) == t{
+						okUse = true
+					}
+					if prt != TOK_NONE && TokStore.kind(ts, prt) == TT_KEYWORD && TokStore.textEq(ts, prt, "throw"){
+						okUse = true
+					}
+					if okUse == false{
+						throw "the caught error can only be used as 'e.msg', 'e.stack_trace' or 'throw e'"
+					}
+				}
+				if k == TT_KEYWORD && TokStore.textEq(ts, t, "unsafe"){
+					let tg = mut TokStore.unsafeTags(ts, t)
+					if tg != TOK_NONE{
+						let ntg = mut TokStore.listSize(ts, tg)
+						for q in 0..ntg{
+							let tn = mut TokStore.listGet(ts, tg, q)
+							let known = mut false
+							if TokStore.strEq(ts, tn, "extern") || TokStore.strEq(ts, tn, "memcopy") || TokStore.strEq(ts, tn, "raw") || TokStore.strEq(ts, tn, "deref") || TokStore.strEq(ts, tn, "clone") || TokStore.strEq(ts, tn, "global") || TokStore.strEq(ts, tn, "loop") || TokStore.strEq(ts, tn, "udyn") || TokStore.strEq(ts, tn, "udyn:owns") || TokStore.strEq(ts, tn, "assume") || TokStore.strEq(ts, tn, "call") || TokStore.strEq(ts, tn, "asm") || TokStore.strEq(ts, tn, "async") || TokStore.strEq(ts, tn, "atomic") || TokStore.strEq(ts, tn, "file") || TokStore.strEq(ts, tn, "unaudited"){
+								known = true
+							}
+							if known == false{
+								throw "unknown unsafe tag"
+							}
+							if TokStore.strEq(ts, tn, "unaudited") && ntg > 1{
+								throw "'unsafe unaudited' stands for every other tag; write it alone"
+							}
+						}
+					}
+				}
+				let needsTry = mut false
+				if k == TT_OPERATOR && TokStore.unary(ts, t) != 0 && (TokStore.textEq(ts, t, "new") || TokStore.textEq(ts, t, "par") || TokStore.textEq(ts, t, "await")){
+					needsTry = true
+				}
+				if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "CALL") && TokStore.left(ts, t) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, t)) == TT_VARREF{
+					let cn = mut TokStore.text(ts, TokStore.left(ts, t))
+					if TokStore.strEq(ts, cn, "clone"){
+						needsTry = true
+					}
+					if StrMap.has(ts, funcs, cn){
+						let ov = mut StrMap.get(ts, funcs, cn)
+						let nov = mut TokStore.listSize(ts, ov)
+						let allThrow = mut true
+						let anyThrow = mut false
+						for o in 0..nov{
+							if Infos.fget(ts, fl, TokStore.listGet(ts, ov, o), FI_THROWS) != 0{
+								anyThrow = true
+							} else {
+								allThrow = false
+							}
+						}
+						if allThrow && nov > 0{
+							needsTry = true
+						}
+						let direct = mut (prt != TOK_NONE && TokStore.kind(ts, prt) == TT_KEYWORD && TokStore.textEq(ts, prt, "try"))
+						if direct && anyThrow == false && nov > 0 && TokStore.strEq(ts, cn, "tick") == false{
+							throw "'?'/'try' used on a call to a function that is not '@throws'"
+						}
+					}
+				}
+				if needsTry && wrapped == false{
+					throw "this operation can fail and must be wrapped in 'try ... catch { ... }' (or written with '?')"
+				}
+			}
+			let thr = mut (Infos.fget(ts, fl, fi, FI_THROWS) != 0)
+			if sawThrow && thr == false{
+				throw "a function containing 'throw' must be decorated '@throws'"
+			}
+			if thr && sawThrow == false{
+				throw "a '@throws' function must contain a real 'throw'"
+			}
+		}
+	}
+
+	static func sidIn(ts: ref imut TokStore, l: mut u64, sid: mut u64) mut bool{
+		let n = mut TokStore.listSize(ts, l)
+		for i in 0..n{
+			if TokStore.strsEq(ts, TokStore.listGet(ts, l, i), sid){
+				return true
+			}
+		}
+		return false
+	}
+
+	/** Type recorded for every typed token (index = token id; TOK_NONE = unknown), from the recorder list at cx slot 16. */
+	@throws
+	static func typeTable(ts: ref mut TokStore, cx: mut u64) mut u64{
+		?catch(e){ throw e }
+		let ntok = mut TokStore.tokenCount(ts)
+		let tab = mut ? TokStore.newList(ts)
+		for i in 0..ntok{
+			? TokStore.listAdd(ts, tab, TOK_NONE)
+		}
+		if TokStore.listSize(ts, cx) <= 16{
+			return tab
+		}
+		let rec = mut TokStore.listGet(ts, cx, 16)
+		if rec == TOK_NONE{
+			return tab
+		}
+		let np = mut (TokStore.listSize(ts, rec) / 2)
+		for p in 0..np{
+			let nd = mut TokStore.listGet(ts, rec, p * 2)
+			if nd < ntok{
+				TokStore.listSet(ts, tab, nd, TokStore.listGet(ts, rec, p * 2 + 1))
+			}
+		}
+		return tab
+	}
+
+	/** typeReachesDropHook: the struct `base` (or a struct reachable through its members) is the owner of a `@drop` hook. */
+	@throws
+	static func reachesDrop(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, base: mut u64) mut bool{
+		?catch(e){ throw e }
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let smap = mut World.get(ts, w, W_M_STRUCTS)
+		let hooks = mut World.get(ts, w, W_M_DROP_HOOK_OWNERS)
+		let seen = mut ? StrMap.make(ts)
+		let work = mut ? TokStore.newList(ts)
+		let b0 = mut ? Decl.stripArrayDims(ts, base)
+		? TokStore.listAdd(ts, work, b0)
+		for step in 0..1000000{
+			if TokStore.listSize(ts, work) == 0{
+				break
+			}
+			let cur = mut TokStore.listPop(ts, work)
+			if StrMap.has(ts, seen, cur){
+				continue
+			}
+			? StrMap.put(ts, seen, cur, 1)
+			if StrMap.has(ts, hooks, cur){
+				return true
+			}
+			if StrMap.has(ts, smap, cur) == false{
+				continue
+			}
+			let row = mut StrMap.get(ts, smap, cur)
+			let acc = mut ? Checks.members(ts, cx, sr, row)
+			let na = mut (TokStore.listSize(ts, acc) / 3)
+			for j in 0..na{
+				let mty = mut TokStore.listGet(ts, acc, j * 3 + 1)
+				let mb = mut Ty.get(ts, tl, mty, TY_BASE)
+				if mb != TOK_NONE{
+					let sb = mut ? Decl.stripArrayDims(ts, mb)
+					? TokStore.listAdd(ts, work, sb)
+				}
+				let de = mut Ty.get(ts, tl, mty, TY_DYN_ELEM)
+				if de != TOK_NONE && Ty.get(ts, tl, de, TY_BASE) != TOK_NONE{
+					? TokStore.listAdd(ts, work, Ty.get(ts, tl, de, TY_BASE))
+				}
+			}
+		}
+		return false
+	}
+
+	/** Checks that need the types of expressions: enum matches, bits_* operands, atomic access. */
+	@throws
+	static func typed(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, er: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let tab = mut ? Checks.typeTable(ts, cx)
+		let enums = mut World.get(ts, w, W_M_ENUMS)
+		let all = mut ? Checks.allFuncs(ts, w, cx)
+		let n = mut TokStore.listSize(ts, all)
+		for i in 0..n{
+			let fi = mut TokStore.listGet(ts, all, i)
+			let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+			if ft == TOK_NONE{
+				continue
+			}
+			let walk = mut ? Checks.walkCtx(ts, ft)
+			let nt = mut (TokStore.listSize(ts, walk) / 3)
+			let locals = mut ? StrMap.make(ts)
+			let pnm = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+			let npn = mut TokStore.listSize(ts, pnm)
+			for q in 0..npn{
+				? StrMap.put(ts, locals, TokStore.listGet(ts, pnm, q), 1)
+			}
+			for b in 0..nt{
+				let t0 = mut TokStore.listGet(ts, walk, b * 3)
+				if TokStore.kind(ts, t0) == TT_KEYWORD && TokStore.textEq(ts, t0, "let") && TokStore.childs(ts, t0) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, t0)) > 0{
+					? StrMap.put(ts, locals, TokStore.text(ts, TokStore.listGet(ts, TokStore.childs(ts, t0), 0)), 1)
+				}
+			}
+			let sr = mut TokStore.listGet(ts, cx, CX_SR)
+			let globals = mut World.get(ts, w, W_M_GLOBALS)
+			let structs = mut World.get(ts, w, W_M_STRUCTS)
+			for b in 0..nt{
+				let t = mut TokStore.listGet(ts, walk, b * 3)
+				let prt = mut TokStore.listGet(ts, walk, b * 3 + 1)
+				let fg = mut TokStore.listGet(ts, walk, b * 3 + 2)
+				let k = mut TokStore.kind(ts, t)
+				if k == TT_OPERATOR && TokStore.unary(ts, t) != 0 && TokStore.left(ts, t) != TOK_NONE && (TokStore.textEq(ts, t, "auto") || TokStore.textEq(ts, t, "static")){
+					let opn = mut TokStore.left(ts, t)
+					let oty = mut TokStore.listGet(ts, tab, opn)
+					let isAutoOp = mut TokStore.textEq(ts, t, "auto")
+					if isAutoOp && oty != TOK_NONE{
+						let ost = mut Ty.get(ts, tl, oty, TY_STORAGE)
+						if ost != TOK_NONE && TokStore.strEq(ts, ost, "static") == false{
+							throw "'auto' cannot be applied to a value that is already a pointer"
+						}
+					}
+					let root = mut opn
+					for rs in 0..64{
+						if TokStore.kind(ts, root) == TT_OPERATOR && TokStore.textEq(ts, root, ".") && TokStore.left(ts, root) != TOK_NONE{
+							root = TokStore.left(ts, root)
+						} else {
+							break
+						}
+					}
+					if TokStore.kind(ts, root) == TT_VARREF && StrMap.has(ts, globals, TokStore.text(ts, root)) && StrMap.has(ts, locals, TokStore.text(ts, root)) == false{
+						if isAutoOp{
+							throw "'auto' cannot point at a static or global: it is shared memory"
+						}
+					}
+					if isAutoOp == false && oty != TOK_NONE && TokStore.kind(ts, opn) == TT_VARREF && StrMap.has(ts, globals, TokStore.text(ts, opn)) && StrMap.has(ts, locals, TokStore.text(ts, opn)) == false{
+						let ob = mut Ty.get(ts, tl, oty, TY_BASE)
+						if ob != TOK_NONE && Ty.get(ts, tl, oty, TY_STORAGE) == TOK_NONE && StrMap.has(ts, structs, ob){
+							throw "'static' of a struct-typed global is not supported"
+						}
+					}
+				}
+				if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "=") && TokStore.left(ts, t) != TOK_NONE && TokStore.right(ts, t) != TOK_NONE{
+					let lt = mut TokStore.left(ts, t)
+					let isLet = mut (TokStore.kind(ts, lt) == TT_KEYWORD && TokStore.textEq(ts, lt, "let"))
+					let rsrc = mut Checks.stripWrap(ts, TokStore.right(ts, t))
+					let rty = mut TokStore.listGet(ts, tab, TokStore.right(ts, t))
+					if isLet && rty != TOK_NONE{
+						let rst = mut Ty.get(ts, tl, rty, TY_STORAGE)
+						let rIsAuto = mut (rst != TOK_NONE && TokStore.strEq(ts, rst, "auto"))
+						let ha = mut ? Checks.holdsAuto(ts, tl, rty)
+						if ha && rIsAuto == false{
+							throw "a local is a container of 'auto' pointers: an 'auto' points into a stack frame"
+						}
+					}
+					let declTy = mut rty
+					if isLet == false{
+						declTy = TokStore.listGet(ts, tab, lt)
+					}
+					let inl = mut ? Decl.isInlineOwningStruct(ts, w, tl, sr, declTy)
+					if inl == 1{
+						if TokStore.kind(ts, rsrc) == TT_OPERATOR && TokStore.textEq(ts, rsrc, "CALL") && TokStore.left(ts, rsrc) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, rsrc)) == TT_VARREF && TokStore.textEq(ts, TokStore.left(ts, rsrc), "deref"){
+							throw "'deref(...)' would copy a struct that owns memory -- two owners of one block"
+						}
+						let chain = mut rsrc
+						for cs in 0..64{
+							if TokStore.kind(ts, chain) == TT_OPERATOR && TokStore.textEq(ts, chain, ".") && TokStore.left(ts, chain) != TOK_NONE{
+								chain = TokStore.left(ts, chain)
+							} else {
+								break
+							}
+						}
+						if TokStore.kind(ts, chain) == TT_OPERATOR && TokStore.textEq(ts, chain, "LOOKUP"){
+							throw "reading a struct that owns memory out of an array element would copy it -- two owners of one block"
+						}
+					}
+				}
+				if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "CALL") && TokStore.left(ts, t) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, t)) == TT_VARREF && TokStore.textEq(ts, TokStore.left(ts, t), "deref") && TokStore.right(ts, t) != TOK_NONE{
+					let dargs = mut ? TokStore.newList(ts)
+					let nda = mut Expr.collectArgs(ts, TokStore.right(ts, t), dargs)
+					if nda == 1{
+						let dat = mut TokStore.listGet(ts, tab, TokStore.listGet(ts, dargs, 0))
+						if dat != TOK_NONE && Ty.get(ts, tl, dat, TY_STORAGE) != TOK_NONE && TokStore.strEq(ts, Ty.get(ts, tl, dat, TY_STORAGE), "raw") && (fg / 16) % 2 == 0{
+							throw "'deref' of a raw pointer needs an 'unsafe deref' block"
+						}
+					}
+				}
+				if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "CALL") && TokStore.left(ts, t) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, t)) == TT_VARREF && TokStore.textEq(ts, TokStore.left(ts, t), "clone") && TokStore.right(ts, t) != TOK_NONE{
+					let cargs = mut ? TokStore.newList(ts)
+					let nca = mut Expr.collectArgs(ts, TokStore.right(ts, t), cargs)
+					if nca == 1{
+						let cat = mut TokStore.listGet(ts, tab, TokStore.listGet(ts, cargs, 0))
+						if cat != TOK_NONE && Ty.get(ts, tl, cat, TY_STORAGE) != TOK_NONE && TokStore.strEq(ts, Ty.get(ts, tl, cat, TY_STORAGE), "raw") && (fg / 16) % 2 == 0{
+							throw "'clone' of a raw pointer needs an 'unsafe clone' block"
+						}
+						if cat != TOK_NONE && Ty.get(ts, tl, cat, TY_BASE) != TOK_NONE{
+							let rd = mut ? Checks.reachesDrop(ts, w, tl, cx, Ty.get(ts, tl, cat, TY_BASE))
+							if rd{
+								throw "'clone' is rejected: the type holds a '@drop' resource (a handle cannot be duplicated)"
+							}
+						}
+					}
+				}
+				if k == TT_KEYWORD && TokStore.textEq(ts, t, "match") && TokStore.isCaseMatch(ts, t) != 0{
+					? Checks.enumMatch(ts, tl, enums, er, tab, t)
+				}
+				if k == TT_VARREF && TokStore.listGet(ts, tab, t) != TOK_NONE && Ty.get(ts, tl, TokStore.listGet(ts, tab, t), TY_ATOMIC) != 0 && fg / 16 % 2 == 0{
+					let isMember = mut (prt != TOK_NONE && TokStore.kind(ts, prt) == TT_OPERATOR && TokStore.textEq(ts, prt, ".") && TokStore.right(ts, prt) == t)
+					if isMember == false{
+						throw "an atomic variable outside a lock can only be read, written or swapped from 'unsafe atomic{...}' code"
+					}
+				}
+				if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "CALL") && TokStore.left(ts, t) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, t)) == TT_VARREF{
+					let cn = mut TokStore.text(ts, TokStore.left(ts, t))
+					let isBits = mut (TokStore.strEq(ts, cn, "bits_rotl") || TokStore.strEq(ts, cn, "bits_rotr") || TokStore.strEq(ts, cn, "bits_and") || TokStore.strEq(ts, cn, "bits_or") || TokStore.strEq(ts, cn, "bits_xor") || TokStore.strEq(ts, cn, "bits_left") || TokStore.strEq(ts, cn, "bits_right"))
+					if isBits{
+						let args = mut ? TokStore.newList(ts)
+						let na = mut Expr.collectArgs(ts, TokStore.right(ts, t), args)
+						if na == 2{
+							let t0 = mut TokStore.listGet(ts, tab, TokStore.listGet(ts, args, 0))
+							let t1 = mut TokStore.listGet(ts, tab, TokStore.listGet(ts, args, 1))
+							if t0 != TOK_NONE && Expr.isIntBase(ts, Ty.get(ts, tl, t0, TY_BASE)) == false{
+								throw "a bitwise builtin requires an integer type"
+							}
+							if t1 != TOK_NONE && Expr.isIntBase(ts, Ty.get(ts, tl, t1, TY_BASE)) == false{
+								throw "a bitwise builtin requires an integer type"
+							}
+							if t0 != TOK_NONE && t1 != TOK_NONE{
+								let lit0 = mut (Ty.get(ts, tl, t0, TY_LITVAL) != TOK_NONE)
+								let lit1 = mut (Ty.get(ts, tl, t1, TY_LITVAL) != TOK_NONE)
+								if lit0 == false && lit1 == false && TokStore.strsEq(ts, Ty.get(ts, tl, t0, TY_BASE), Ty.get(ts, tl, t1, TY_BASE)) == false{
+									throw "a bitwise builtin requires both sides to be the same integer type"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/** checkEnumMatch: coverage, `default` placement and non-exhaustive rules of a match on an enum value. */
+	@throws
+	static func enumMatch(ts: ref mut TokStore, tl: mut u64, enums: mut u64, er: mut u64, tab: mut u64, m: mut u64) void{
+		?catch(e){ throw e }
+		let subs = mut TokStore.sub(ts, m)
+		if subs == TOK_NONE || TokStore.listSize(ts, subs) == 0{
+			return
+		}
+		let cty = mut TokStore.listGet(ts, tab, TokStore.listGet(ts, subs, 0))
+		if cty == TOK_NONE{
+			return
+		}
+		let base = mut Ty.get(ts, tl, cty, TY_BASE)
+		if base == TOK_NONE || StrMap.has(ts, enums, base) == false{
+			return
+		}
+		let row = mut StrMap.get(ts, enums, base)
+		let variants = mut Infos.rget(ts, er, 8, row, EI_VARIANTS)
+		let nonEx = mut (Infos.rget(ts, er, 8, row, EI_NON_EXHAUSTIVE) != 0)
+		let cases = mut TokStore.childs(ts, m)
+		if cases == TOK_NONE{
+			return
+		}
+		let nc = mut TokStore.listSize(ts, cases)
+		let covered = mut ? StrMap.make(ts)
+		let sawDefault = mut false
+		for i in 0..nc{
+			let ct = mut TokStore.listGet(ts, cases, i)
+			let labels = mut TokStore.sub(ts, ct)
+			if labels == TOK_NONE{
+				continue
+			}
+			let nl = mut TokStore.listSize(ts, labels)
+			if sawDefault{
+				throw "'default' must be the last case in the match"
+			}
+			if nl == 1 && TokStore.textEq(ts, TokStore.listGet(ts, labels, 0), "default"){
+				if nonEx == false{
+					throw "'default' is only allowed matching an enum decorated '@non_exhaustive'"
+				}
+				sawDefault = true
+			} else {
+				for q in 0..nl{
+					let lt = mut TokStore.text(ts, TokStore.listGet(ts, labels, q))
+					if TokStore.strEq(ts, lt, "default"){
+						throw "'default' can't be combined with another label in a '|'-chain"
+					}
+					if Checks.sidIn(ts, variants, lt) == false{
+						throw "the enum has no variant of this name"
+					}
+					if StrMap.has(ts, covered, lt){
+						throw "this variant is already covered by an earlier case in this match"
+					}
+					? StrMap.put(ts, covered, lt, 1)
+				}
+			}
+		}
+		let nv = mut TokStore.listSize(ts, variants)
+		let missing = mut 0
+		for v in 0..nv{
+			let vn = mut TokStore.listGet(ts, variants, v)
+			if TokStore.strEq(ts, vn, "default") == false && StrMap.has(ts, covered, vn) == false{
+				missing = missing + 1
+			}
+		}
+		if nonEx{
+			if sawDefault && missing == 0{
+				throw "'default' is unreachable: every variant is already covered by name"
+			}
+			if sawDefault == false && missing != 0{
+				throw "match on a '@non_exhaustive' enum needs a 'default' case as the last one"
+			}
+		} else if missing != 0{
+			throw "match on an enum isn't exhaustive"
+		}
+	}
+
+	/** Scope.declare: a name may be declared once per scope (`unsafe`/`safe` blocks are transparent); parameters live in the function's root scope. */
+	@throws
+	static func scopes(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let all = mut ? Checks.allFuncs(ts, w, cx)
+		let n = mut TokStore.listSize(ts, all)
+		for i in 0..n{
+			let fi = mut TokStore.listGet(ts, all, i)
+			let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+			if ft == TOK_NONE || TokStore.childs(ts, ft) == TOK_NONE{
+				continue
+			}
+			let root = mut ? StrMap.make(ts)
+			let pn = mut Infos.fget(ts, fl, fi, FI_PARAM_NAMES)
+			let np = mut TokStore.listSize(ts, pn)
+			for q in 0..np{
+				? StrMap.put(ts, root, TokStore.listGet(ts, pn, q), 1)
+			}
+			let stk = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, stk, TokStore.childs(ts, ft))
+			? TokStore.listAdd(ts, stk, 0)
+			? TokStore.listAdd(ts, stk, root)
+			for step in 0..100000000{
+				let sz = mut TokStore.listSize(ts, stk)
+				if sz == 0{
+					break
+				}
+				let lines = mut TokStore.listGet(ts, stk, sz - 3)
+				let li = mut TokStore.listGet(ts, stk, sz - 2)
+				let env = mut TokStore.listGet(ts, stk, sz - 1)
+				if li >= TokStore.listSize(ts, lines){
+					TokStore.listPop(ts, stk)
+					TokStore.listPop(ts, stk)
+					TokStore.listPop(ts, stk)
+					continue
+				}
+				TokStore.listSet(ts, stk, sz - 2, li + 1)
+				let lcs = mut TokStore.childs(ts, TokStore.listGet(ts, lines, li))
+				if lcs == TOK_NONE || TokStore.listSize(ts, lcs) == 0{
+					continue
+				}
+				let st = mut TokStore.listGet(ts, lcs, 0)
+				if TokStore.kind(ts, st) == TT_KEYWORD && TokStore.childs(ts, st) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, st)) > 0 && TokStore.left(ts, st) == TOK_NONE{
+					let ct = mut st
+					for cl in 0..64{
+						if ct == TOK_NONE{
+							break
+						}
+						let benv = mut env
+						if TokStore.textEq(ts, ct, "unsafe") == false && TokStore.textEq(ts, ct, "safe") == false{
+							benv = ? StrMap.make(ts)
+						}
+						if TokStore.childs(ts, ct) != TOK_NONE{
+							? TokStore.listAdd(ts, stk, TokStore.childs(ts, ct))
+							? TokStore.listAdd(ts, stk, 0)
+							? TokStore.listAdd(ts, stk, benv)
+						}
+						ct = TokStore.next(ts, ct)
+					}
+					continue
+				}
+				if TokStore.kind(ts, st) == TT_OPERATOR && TokStore.textEq(ts, st, "=") && TokStore.unary(ts, st) == 0 && TokStore.left(ts, st) != TOK_NONE{
+					let lt = mut TokStore.left(ts, st)
+					if TokStore.kind(ts, lt) == TT_KEYWORD && TokStore.textEq(ts, lt, "let") && TokStore.childs(ts, lt) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, lt)) > 0{
+						let nm = mut TokStore.text(ts, TokStore.listGet(ts, TokStore.childs(ts, lt), 0))
+						if StrMap.has(ts, env, nm){
+							throw "variable is already declared in this scope"
+						}
+						? StrMap.put(ts, env, nm, 1)
+					}
+				}
+			}
+		}
+	}
+
+	/** True when the type owns memory by itself: an `owns` pointer or an inline struct (array of them) with an owns member. */
+	@throws
+	static func isOwning(ts: ref mut TokStore, w: mut u64, tl: mut u64, sr: mut u64, ty: mut u64) mut bool{
+		?catch(e){ throw e }
+		if ty == TOK_NONE{
+			return false
+		}
+		let st = mut Ty.get(ts, tl, ty, TY_STORAGE)
+		if st != TOK_NONE{
+			return TokStore.strEq(ts, st, "owns")
+		}
+		let r = mut ? Decl.isInlineOwningStruct(ts, w, tl, sr, ty)
+		return r == 1
+	}
+
+	/** Strips parentheses and mut/imut wrappers. */
+	static func stripWrap(ts: ref imut TokStore, t: mut u64) mut u64{
+		let cur = mut t
+		for step in 0..64{
+			if cur == TOK_NONE{
+				break
+			}
+			if TokStore.kind(ts, cur) == TT_DELINEATOR && TokStore.textEq(ts, cur, "(") && TokStore.childs(ts, cur) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, cur)) > 0{
+				cur = TokStore.listGet(ts, TokStore.childs(ts, cur), 0)
+			} else if TokStore.kind(ts, cur) == TT_OPERATOR && TokStore.unary(ts, cur) != 0 && (TokStore.textEq(ts, cur, "mut") || TokStore.textEq(ts, cur, "imut")) && TokStore.left(ts, cur) != TOK_NONE{
+				cur = TokStore.left(ts, cur)
+			} else {
+				break
+			}
+		}
+		return cur
+	}
+
+	/** Expression nodes of one statement, preorder, with the index of each parent (-1 root); does not enter `let` names or catch bodies. */
+	@throws
+	static func collectTree(ts: ref mut TokStore, root: mut u64, nodes: mut u64, pidx: mut u64) void{
+		?catch(e){ throw e }
+		let work = mut ? TokStore.newList(ts)
+		? TokStore.listAdd(ts, work, root)
+		? TokStore.listAdd(ts, work, TOK_NONE)
+		for step in 0..100000000{
+			if TokStore.listSize(ts, work) == 0{
+				break
+			}
+			let pi = mut TokStore.listPop(ts, work)
+			let t = mut TokStore.listPop(ts, work)
+			if t == TOK_NONE{
+				continue
+			}
+			let me = mut TokStore.listSize(ts, nodes)
+			? TokStore.listAdd(ts, nodes, t)
+			? TokStore.listAdd(ts, pidx, pi)
+			let k = mut TokStore.kind(ts, t)
+			if k == TT_KEYWORD && TokStore.textEq(ts, t, "let"){
+				continue
+			}
+			let isTry = mut (k == TT_KEYWORD && TokStore.textEq(ts, t, "try"))
+			// push in reverse so the first child is visited first
+			let cs = mut TokStore.childs(ts, t)
+			if cs != TOK_NONE && isTry == false{
+				let ncs = mut TokStore.listSize(ts, cs)
+				for q in 0..ncs{
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, cs, ncs - 1 - q))
+					? TokStore.listAdd(ts, work, me)
+				}
+			}
+			let sb = mut TokStore.sub(ts, t)
+			if sb != TOK_NONE{
+				let nsb = mut TokStore.listSize(ts, sb)
+				for q in 0..nsb{
+					? TokStore.listAdd(ts, work, TokStore.listGet(ts, sb, nsb - 1 - q))
+					? TokStore.listAdd(ts, work, me)
+				}
+			}
+			? TokStore.listAdd(ts, work, TokStore.right(ts, t))
+			? TokStore.listAdd(ts, work, me)
+			? TokStore.listAdd(ts, work, TokStore.left(ts, t))
+			? TokStore.listAdd(ts, work, me)
+		}
+	}
+
+	/** Parameter `i` of any overload of `name` (with `argc` parameters) is an owning type. */
+	@throws
+	static func paramOwning(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, name: mut u64, argc: mut u64, i: mut u64) mut bool{
+		?catch(e){ throw e }
+		let funcs = mut World.get(ts, w, W_M_FUNCS)
+		if StrMap.has(ts, funcs, name) == false{
+			return false
+		}
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let ov = mut StrMap.get(ts, funcs, name)
+		let nov = mut TokStore.listSize(ts, ov)
+		for o in 0..nov{
+			let pt = mut Infos.fget(ts, fl, TokStore.listGet(ts, ov, o), FI_PARAM_TYPES)
+			if TokStore.listSize(ts, pt) == argc{
+				let owning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, pt, i))
+				if owning{
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	/** Records the move of VARREF `src` (once per statement). */
+	@throws
+	static func noteMove(ts: ref mut TokStore, stMoves: mut u64, src: mut u64) void{
+		?catch(e){ throw e }
+		let nm = mut TokStore.text(ts, src)
+		if StrMap.get(ts, stMoves, nm) == 1{
+			throw "a variable is moved more than once in the same expression -- two owners of one block"
+		}
+		? StrMap.put(ts, stMoves, nm, 1)
+	}
+
+	/** Use-after-move and double-move checks of one statement (or condition) tree; applies its moves to the holder's map. */
+	@throws
+	static func moveStmt(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, tab: mut u64, st: mut u64, holder: mut u64) void{
+		?catch(e){ throw e }
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let moved = mut TokStore.listGet(ts, holder, 0)
+		let nodes = mut ? TokStore.newList(ts)
+		let pidx = mut ? TokStore.newList(ts)
+		? Checks.collectTree(ts, st, nodes, pidx)
+		let n = mut TokStore.listSize(ts, nodes)
+		let stMoves = mut ? StrMap.make(ts)
+		let cleared = mut ? TokStore.newList(ts)
+		for i in 0..n{
+			let t = mut TokStore.listGet(ts, nodes, i)
+			let k = mut TokStore.kind(ts, t)
+			let pi = mut TokStore.listGet(ts, pidx, i)
+			let p = mut TOK_NONE
+			if pi != TOK_NONE{
+				p = TokStore.listGet(ts, nodes, pi)
+			}
+			if k == TT_VARREF && StrMap.get(ts, moved, TokStore.text(ts, t)) == 1{
+				let skip = mut false
+				if p != TOK_NONE && TokStore.kind(ts, p) == TT_OPERATOR && TokStore.textEq(ts, p, ".") && TokStore.right(ts, p) == t{
+					skip = true
+				}
+				if p != TOK_NONE && TokStore.kind(ts, p) == TT_OPERATOR && TokStore.textEq(ts, p, "CALL") && TokStore.left(ts, p) == t{
+					skip = true
+				}
+				if p != TOK_NONE && TokStore.kind(ts, p) == TT_OPERATOR && TokStore.textEq(ts, p, "=") && TokStore.unary(ts, p) == 0 && TokStore.left(ts, p) == t{
+					skip = true
+				}
+				if skip == false{
+					throw "use of a variable after its ownership was moved"
+				}
+			}
+			if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "="){
+				let lt = mut TokStore.left(ts, t)
+				let rt = mut TokStore.right(ts, t)
+				if lt != TOK_NONE && rt != TOK_NONE{
+					let src = mut Checks.stripWrap(ts, rt)
+					if TokStore.kind(ts, lt) == TT_KEYWORD && TokStore.textEq(ts, lt, "let"){
+						if TokStore.childs(ts, lt) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, lt)) > 0{
+							? TokStore.listAdd(ts, cleared, TokStore.text(ts, TokStore.listGet(ts, TokStore.childs(ts, lt), 0)))
+						}
+						if TokStore.kind(ts, src) == TT_VARREF{
+							let owning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, tab, src))
+							if owning{
+								? Checks.noteMove(ts, stMoves, src)
+							}
+						}
+					} else {
+						if TokStore.kind(ts, lt) == TT_VARREF{
+							? TokStore.listAdd(ts, cleared, TokStore.text(ts, lt))
+						}
+						if TokStore.kind(ts, src) == TT_VARREF{
+							let lowning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, tab, lt))
+							let rowning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, tab, src))
+							if lowning && rowning{
+								? Checks.noteMove(ts, stMoves, src)
+							}
+						}
+					}
+				}
+			}
+			if k == TT_OPERATOR && TokStore.unary(ts, t) == 0 && TokStore.textEq(ts, t, "CALL") && TokStore.left(ts, t) != TOK_NONE && TokStore.kind(ts, TokStore.left(ts, t)) == TT_VARREF && TokStore.right(ts, t) != TOK_NONE{
+				let args = mut ? TokStore.newList(ts)
+				let na = mut Expr.collectArgs(ts, TokStore.right(ts, t), args)
+				let cn = mut TokStore.text(ts, TokStore.left(ts, t))
+				for a in 0..na{
+					let src = mut Checks.stripWrap(ts, TokStore.listGet(ts, args, a))
+					if TokStore.kind(ts, src) == TT_VARREF{
+						let owning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, tab, src))
+						if owning{
+							let po = mut ? Checks.paramOwning(ts, w, tl, cx, cn, na, a)
+							if po{
+								? Checks.noteMove(ts, stMoves, src)
+							}
+						}
+					}
+				}
+			}
+			if k == TT_DELINEATOR && TokStore.textEq(ts, t, "[") && TokStore.childs(ts, t) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, t)) > 0 && (p == TOK_NONE || TokStore.textEq(ts, p, "LOOKUP") == false){
+				let args = mut ? TokStore.newList(ts)
+				let na = mut Expr.collectArgs(ts, t, args)
+				for a in 0..na{
+					let src = mut Checks.stripWrap(ts, TokStore.listGet(ts, args, a))
+					if TokStore.kind(ts, src) == TT_VARREF{
+						let owning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, tab, src))
+						if owning{
+							? Checks.noteMove(ts, stMoves, src)
+						}
+					}
+				}
+			}
+			if k == TT_OPERATOR && TokStore.textEq(ts, t, "INSTANTIATE") && TokStore.right(ts, t) != TOK_NONE && TokStore.childs(ts, TokStore.right(ts, t)) != TOK_NONE{
+				let ml = mut TokStore.childs(ts, TokStore.right(ts, t))
+				let nml = mut TokStore.listSize(ts, ml)
+				for a in 0..nml{
+					let lcs = mut TokStore.childs(ts, TokStore.listGet(ts, ml, a))
+					if lcs != TOK_NONE && TokStore.listSize(ts, lcs) > 0{
+						let asg = mut TokStore.listGet(ts, lcs, 0)
+						if TokStore.kind(ts, asg) == TT_OPERATOR && TokStore.textEq(ts, asg, "=") && TokStore.right(ts, asg) != TOK_NONE{
+							let src = mut Checks.stripWrap(ts, TokStore.right(ts, asg))
+							if TokStore.kind(ts, src) == TT_VARREF{
+								let owning = mut ? Checks.isOwning(ts, w, tl, sr, TokStore.listGet(ts, tab, src))
+								if owning{
+									? Checks.noteMove(ts, stMoves, src)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		let mk = mut ? Collect.sortedKeys(ts, stMoves)
+		let nmk = mut TokStore.listSize(ts, mk)
+		for i in 0..nmk{
+			? StrMap.put(ts, moved, TokStore.listGet(ts, mk, i), 1)
+		}
+		let ncl = mut TokStore.listSize(ts, cleared)
+		for i in 0..ncl{
+			? StrMap.put(ts, moved, TokStore.listGet(ts, cleared, i), TOK_NONE)
+		}
+	}
+
+	/** Adds every moved name of `from` to `into`. */
+	@throws
+	static func unionMoved(ts: ref mut TokStore, dst: mut u64, src: mut u64) void{
+		?catch(e){ throw e }
+		let ks = mut ? Collect.sortedKeys(ts, src)
+		let n = mut TokStore.listSize(ts, ks)
+		for i in 0..n{
+			let key = mut TokStore.listGet(ts, ks, i)
+			if StrMap.get(ts, src, key) == 1{
+				? StrMap.put(ts, dst, key, 1)
+			}
+		}
+	}
+
+	/** Ownership moves (use after move, moved twice in one expression) over every function body. */
+	@throws
+	static func moves(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let fl = mut TokStore.listGet(ts, cx, 7)
+		let tab = mut ? Checks.typeTable(ts, cx)
+		let all = mut ? Checks.allFuncs(ts, w, cx)
+		let n = mut TokStore.listSize(ts, all)
+		for i in 0..n{
+			let fi = mut TokStore.listGet(ts, all, i)
+			let ft = mut Infos.fget(ts, fl, fi, FI_FUNC_TOK)
+			if ft == TOK_NONE || TokStore.childs(ts, ft) == TOK_NONE{
+				continue
+			}
+			let holder = mut ? TokStore.newList(ts)
+			let m0 = mut ? StrMap.make(ts)
+			? TokStore.listAdd(ts, holder, m0)
+			// frames of six slots: lines, next index, kind (0 plain, 1 branch, 2 merge), pre-state, accumulated state, flag
+			let stk = mut ? TokStore.newList(ts)
+			? TokStore.listAdd(ts, stk, TokStore.childs(ts, ft))
+			? TokStore.listAdd(ts, stk, 0)
+			? TokStore.listAdd(ts, stk, 0)
+			? TokStore.listAdd(ts, stk, TOK_NONE)
+			? TokStore.listAdd(ts, stk, TOK_NONE)
+			? TokStore.listAdd(ts, stk, 0)
+			for step in 0..100000000{
+				let sz = mut TokStore.listSize(ts, stk)
+				if sz == 0{
+					break
+				}
+				let fb = mut (sz - 6)
+				let lines = mut TokStore.listGet(ts, stk, fb)
+				let idx = mut TokStore.listGet(ts, stk, fb + 1)
+				let kind = mut TokStore.listGet(ts, stk, fb + 2)
+				let pre = mut TokStore.listGet(ts, stk, fb + 3)
+				let acc = mut TokStore.listGet(ts, stk, fb + 4)
+				let flag = mut TokStore.listGet(ts, stk, fb + 5)
+				if kind == 2{
+					if flag == 1{
+						? Checks.unionMoved(ts, acc, pre)
+					}
+					TokStore.listSet(ts, holder, 0, acc)
+					for q in 0..6{
+						TokStore.listPop(ts, stk)
+					}
+					continue
+				}
+				if kind == 1 && idx == 0 && flag == 0{
+					let cp = mut ? StrMap.copy(ts, pre)
+					TokStore.listSet(ts, holder, 0, cp)
+					TokStore.listSet(ts, stk, fb + 5, 1)
+				}
+				if idx >= TokStore.listSize(ts, lines){
+					if kind == 1{
+						let falls = mut true
+						let nl = mut TokStore.listSize(ts, lines)
+						if nl > 0{
+							let lastc = mut TokStore.childs(ts, TokStore.listGet(ts, lines, nl - 1))
+							if lastc != TOK_NONE && TokStore.listSize(ts, lastc) > 0{
+								let lst = mut TokStore.listGet(ts, lastc, 0)
+								if TokStore.kind(ts, lst) == TT_KEYWORD && (TokStore.textEq(ts, lst, "return") || TokStore.textEq(ts, lst, "throw") || TokStore.textEq(ts, lst, "break") || TokStore.textEq(ts, lst, "continue")){
+									falls = false
+								}
+							}
+						}
+						if falls{
+							? Checks.unionMoved(ts, acc, TokStore.listGet(ts, holder, 0))
+						}
+					}
+					for q in 0..6{
+						TokStore.listPop(ts, stk)
+					}
+					continue
+				}
+				TokStore.listSet(ts, stk, fb + 1, idx + 1)
+				let lcs = mut TokStore.childs(ts, TokStore.listGet(ts, lines, idx))
+				if lcs == TOK_NONE || TokStore.listSize(ts, lcs) == 0{
+					continue
+				}
+				let st = mut TokStore.listGet(ts, lcs, 0)
+				let isBlock = mut (TokStore.kind(ts, st) == TT_KEYWORD && TokStore.childs(ts, st) != TOK_NONE && TokStore.listSize(ts, TokStore.childs(ts, st)) > 0 && TokStore.left(ts, st) == TOK_NONE)
+				if isBlock == false{
+					? Checks.moveStmt(ts, w, tl, cx, tab, st, holder)
+					continue
+				}
+				// block statement: conditions first, then the branches
+				let chain = mut ? TokStore.newList(ts)
+				let ct = mut st
+				for cl in 0..64{
+					if ct == TOK_NONE{
+						break
+					}
+					? TokStore.listAdd(ts, chain, ct)
+					ct = TokStore.next(ts, ct)
+				}
+				let nch = mut TokStore.listSize(ts, chain)
+				for ci in 0..nch{
+					let bt = mut TokStore.listGet(ts, chain, ci)
+					let bsub = mut TokStore.sub(ts, bt)
+					if bsub != TOK_NONE{
+						let nbs = mut TokStore.listSize(ts, bsub)
+						for q in 0..nbs{
+							? Checks.moveStmt(ts, w, tl, cx, tab, TokStore.listGet(ts, bsub, q), holder)
+						}
+					}
+				}
+				if TokStore.textEq(ts, st, "unsafe") || TokStore.textEq(ts, st, "safe"){
+					? TokStore.listAdd(ts, stk, TokStore.childs(ts, st))
+					? TokStore.listAdd(ts, stk, 0)
+					? TokStore.listAdd(ts, stk, 0)
+					? TokStore.listAdd(ts, stk, TOK_NONE)
+					? TokStore.listAdd(ts, stk, TOK_NONE)
+					? TokStore.listAdd(ts, stk, 0)
+					continue
+				}
+				let curMoved = mut TokStore.listGet(ts, holder, 0)
+				let preCopy = mut ? StrMap.copy(ts, curMoved)
+				let accMap = mut ? StrMap.make(ts)
+				// branch line lists, in source order
+				let blines = mut ? TokStore.newList(ts)
+				let includePre = mut 1
+				if TokStore.textEq(ts, st, "if") || TokStore.textEq(ts, st, "elseif") || TokStore.textEq(ts, st, "else"){
+					for ci in 0..nch{
+						? TokStore.listAdd(ts, blines, TokStore.childs(ts, TokStore.listGet(ts, chain, ci)))
+					}
+					if TokStore.textEq(ts, TokStore.listGet(ts, chain, nch - 1), "else"){
+						includePre = 0
+					}
+				} else if TokStore.isCaseMatch(ts, st) != 0 || TokStore.textEq(ts, st, "lock"){
+					let cases = mut TokStore.childs(ts, st)
+					let ncase = mut TokStore.listSize(ts, cases)
+					for ci in 0..ncase{
+						? TokStore.listAdd(ts, blines, TokStore.childs(ts, TokStore.listGet(ts, cases, ci)))
+					}
+				} else {
+					? TokStore.listAdd(ts, blines, TokStore.childs(ts, st))
+				}
+				// merge frame first (runs last), then the branches in reverse order so the first branch runs first
+				? TokStore.listAdd(ts, stk, 0)
+				? TokStore.listAdd(ts, stk, 0)
+				? TokStore.listAdd(ts, stk, 2)
+				? TokStore.listAdd(ts, stk, preCopy)
+				? TokStore.listAdd(ts, stk, accMap)
+				? TokStore.listAdd(ts, stk, includePre)
+				let nbl = mut TokStore.listSize(ts, blines)
+				for q in 0..nbl{
+					? TokStore.listAdd(ts, stk, TokStore.listGet(ts, blines, nbl - 1 - q))
+					? TokStore.listAdd(ts, stk, 0)
+					? TokStore.listAdd(ts, stk, 1)
+					? TokStore.listAdd(ts, stk, preCopy)
+					? TokStore.listAdd(ts, stk, accMap)
+					? TokStore.listAdd(ts, stk, 0)
+				}
+			}
+		}
+	}
+
+	/** validateNoAutoStructMembers + validateNoRefSomeStructMembers + validateNoRecursiveStructs. */
+	@throws
+	static func structs(ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64) void{
+		?catch(e){ throw e }
+		let sr = mut TokStore.listGet(ts, cx, CX_SR)
+		let order = mut World.get(ts, w, W_L_STRUCT_ORDER)
+		let smap = mut World.get(ts, w, W_M_STRUCTS)
+		let ns = mut TokStore.listSize(ts, order)
+		let accs = mut ? TokStore.newList(ts)
+		for i in 0..ns{
+			let nm = mut TokStore.listGet(ts, order, i)
+			let row = mut StrMap.get(ts, smap, nm)
+			let acc = mut ? Checks.members(ts, cx, sr, row)
+			? TokStore.listAdd(ts, accs, acc)
+			let na = mut (TokStore.listSize(ts, acc) / 3)
+			for j in 0..na{
+				let ty = mut TokStore.listGet(ts, acc, j * 3 + 1)
+				let ha = mut ? Checks.holdsAuto(ts, tl, ty)
+				if ha{
+					throw "a struct member is an 'auto' pointer (or holds one): an 'auto' points into a stack frame and cannot be stored in a struct"
+				}
+			}
+		}
+		// recursive structs: iterative depth-first search over struct-typed members (a plain nullable `ref` member is not an edge)
+		let visited = mut ? StrMap.make(ts)
+		let onStack = mut ? StrMap.make(ts)
+		for r in 0..ns{
+			let root = mut TokStore.listGet(ts, order, r)
+			if StrMap.has(ts, visited, root){
+				continue
+			}
+			let fNames = mut ? TokStore.newList(ts)
+			let fAccs = mut ? TokStore.newList(ts)
+			let fIdx = mut ? TokStore.newList(ts)
+			? StrMap.put(ts, visited, root, 1)
+			? StrMap.put(ts, onStack, root, 1)
+			? TokStore.listAdd(ts, fNames, root)
+			? TokStore.listAdd(ts, fAccs, TokStore.listGet(ts, accs, r))
+			? TokStore.listAdd(ts, fIdx, 0)
+			for step in 0..10000000{
+				let nf = mut TokStore.listSize(ts, fNames)
+				if nf == 0{
+					break
+				}
+				let top = mut (nf - 1)
+				let sname = mut TokStore.listGet(ts, fNames, top)
+				let acc = mut TokStore.listGet(ts, fAccs, top)
+				let idx = mut TokStore.listGet(ts, fIdx, top)
+				if idx >= TokStore.listSize(ts, acc) / 3{
+					? StrMap.put(ts, onStack, sname, TOK_NONE)
+					TokStore.listPop(ts, fNames)
+					TokStore.listPop(ts, fAccs)
+					TokStore.listPop(ts, fIdx)
+					continue
+				}
+				TokStore.listSet(ts, fIdx, top, idx + 1)
+				let mty = mut TokStore.listGet(ts, acc, idx * 3 + 1)
+				let mst = mut Ty.get(ts, tl, mty, TY_STORAGE)
+				if mst != TOK_NONE && TokStore.strEq(ts, mst, "ref") && Ty.get(ts, tl, mty, TY_SOME) == 0{
+					continue
+				}
+				let mb = mut Ty.get(ts, tl, mty, TY_BASE)
+				let refd = mut mb
+				if Decl.isArrayType(ts, mb) == 1{
+					refd = ? Decl.arrayElementType(ts, mb)
+				}
+				if StrMap.has(ts, smap, refd) == false{
+					continue
+				}
+				if StrMap.get(ts, onStack, refd) == 1{
+					throw "recursive struct detected: a member refers back to its own struct, directly or transitively"
+				}
+				if StrMap.has(ts, visited, refd) == false{
+					? StrMap.put(ts, visited, refd, 1)
+					? StrMap.put(ts, onStack, refd, 1)
+					let rrow = mut StrMap.get(ts, smap, refd)
+					? TokStore.listAdd(ts, fNames, refd)
+					let racc = mut ? Checks.members(ts, cx, sr, rrow)
+					? TokStore.listAdd(ts, fAccs, racc)
+					? TokStore.listAdd(ts, fIdx, 0)
+				}
+			}
+		}
+	}
+
+	@pub
+	@throws
+	static func run(out: ref mut String, ts: ref mut TokStore, w: mut u64, tl: mut u64, cx: mut u64, er: mut u64) void{
+		?catch(e){ throw e }
+		let mainSid = mut ? TokStore.addLit(ts, "main")
+		if StrMap.has(ts, World.get(ts, w, W_M_FUNCS), mainSid) == false{
+			throw "no 'main' function found -- every program needs exactly one"
+		}
+		? Checks.typed(ts, w, tl, cx, er)
+		? Checks.moves(ts, w, tl, cx)
+		? Checks.autoReturns(ts, w, tl, cx)
+		? Checks.scopes(ts, w, tl, cx)
+		? Checks.purity(ts, w, tl, cx)
+		? Checks.bodies(ts, w, tl, cx)
+		? Checks.structs(ts, w, tl, cx)
+		? Checks.lockPointers(ts, w, tl, cx)
+	}
+}
